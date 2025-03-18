@@ -1,3 +1,5 @@
+#!/bin/bash
+
 PWD=$(pwd)
 
 mkdir -p vector_db

@@ -1,10 +1,14 @@
+#!/bin/bash
+
 PWD=$(pwd)
 
 cd $PWD/3dparty/VILA
-git checkout ec7fb2c264920bf004fd9fa37f1ec36ea0942db5
 
-pip install "setuptools<66.0.0"
-pip install -e ".[train,eval]"
+pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.5.8/flash_attn-2.5.8+cu122torch2.3cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+
+pip install -e .
+pip install -e ".[train]"
+pip install -e ".[eval]"
 pip install triton==3.1.0
 site_pkg_path=$(python -c 'import site; print(site.getsitepackages()[0])')
 cp -rv ./llava/train/deepspeed_replace/* $site_pkg_path/deepspeed/

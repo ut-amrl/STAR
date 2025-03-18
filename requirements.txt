@@ -11,3 +11,6 @@ langchain-community
 langgraph 
 langchain_openai 
 langchain_nvidia_ai_endpoints
+langchain_community
+langchain_huggingface
+pymilvus
