@@ -1,0 +1,13 @@
+numpy
+opencv-python
+matplotlib
+Pillow
+tqdm
+pycocotools
+onnx
+onnxruntime
+ultralytics
+langchain-community 
+langgraph 
+langchain_openai 
+langchain_nvidia_ai_endpoints

@@ -1,0 +1,1 @@
+Make sure "python -c "import torch; print(torch.version.cuda)"` and `nvcc --version` report the same pytorch version.
