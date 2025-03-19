@@ -43,7 +43,7 @@ class Memory:
     def memory_to_string(self, memory_list: list[MemoryItem]) -> str:
         raise NotImplementedError
     
-class MilvusVideoWrapper:
+class MilvusWrapper:
 
     def __init__(self, collection_name='test', ip_address='127.0.0.1', port=19530, drop_collection=False):
         self.collection_name = collection_name
@@ -101,7 +101,7 @@ class MilvusVideoWrapper:
         res = self.collection.insert(data_list)
         
         
-class MilvusVideoMemory(Memory):
+class MilvusMemory(Memory):
     def __init__(self, db_collection_name: str, obs_savepth: str, db_ip='127.0.0.1', db_port=19530):
         self.last_id = 0
         
@@ -122,7 +122,7 @@ class MilvusVideoMemory(Memory):
             if confirm == 'y' and os.path.isdir(self.obs_savepth):
                 import shutil
                 shutil.rmtree(self.obs_savepth)
-        self.milv_wrapper = MilvusVideoWrapper(self.db_collection_name, self.db_ip, self.db_port, drop_collection=drop_collection)
+        self.milv_wrapper = MilvusWrapper(self.db_collection_name, self.db_ip, self.db_port, drop_collection=drop_collection)
         
     def insert(self, item: MemoryItem, images=None):
         memory_dict = asdict(item)

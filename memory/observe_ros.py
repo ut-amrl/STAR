@@ -1,4 +1,4 @@
-from memory import MemoryItem, MilvusVideoMemory
+from memory import MemoryItem, MilvusMemory
 
 import os
 import torch
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     os.makedirs(SAVEPATH, exist_ok=True)
     
     PROMPT = args.query
-    MEMORY = MilvusVideoMemory("test", obs_savepth=args.obs_savepath, db_ip='127.0.0.1')
+    MEMORY = MilvusMemory("test", obs_savepth=args.obs_savepath, db_ip='127.0.0.1')
     MODEL = VILACaptioner(args)
     
     milvus_observation_service()
