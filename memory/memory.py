@@ -102,8 +102,10 @@ class MilvusVideoWrapper:
         
         
 class MilvusVideoMemory(Memory):
-    def __init__(self, db_collection_name: str, db_ip='127.0.0.1', db_port=19530):
+    def __init__(self, db_collection_name: str, obs_savepth: str, db_ip='127.0.0.1', db_port=19530):
         self.last_id = 0
+        
+        self.obs_savepth = obs_savepth
         self.db_collection_name = db_collection_name
         self.db_ip = db_ip
         self.db_port = db_port
@@ -114,10 +116,15 @@ class MilvusVideoMemory(Memory):
         
     def reset(self, drop_collection=True):
         if drop_collection:
+            utility.drop_collection(self.db_collection_name)
             print("Resetting memory. We are dropping the current collection")
+            confirm = input(f"Delete all files under {self.obs_savepth} (y/n)?  ")
+            if confirm == 'y' and os.path.isdir(self.obs_savepth):
+                import shutil
+                shutil.rmtree(self.obs_savepth)
         self.milv_wrapper = MilvusVideoWrapper(self.db_collection_name, self.db_ip, self.db_port, drop_collection=drop_collection)
         
-    def insert(self, item: MemoryItem):
+    def insert(self, item: MemoryItem, images=None):
         memory_dict = asdict(item)
         memory_dict['id'] = self.last_id # cannot use num_entities from db until we call `self.milv_wrapper.collection.load()`
         self.last_id += 1
@@ -129,3 +136,9 @@ class MilvusVideoMemory(Memory):
             memory_dict["text_embedding"] = self.embedder.embed_query(memory_dict['caption'])
         
         self.milv_wrapper.insert([memory_dict])
+        
+        if images is not None:
+            for fid, frame in zip(range(memory_dict["start_frame"], memory_dict["end_frame"]+1), images):
+                import pdb; pdb.set_trace()
+                savepath = os.path.join(self.obs_savepth, f"{fid:06d}.png")
+                frame.save(savepath)

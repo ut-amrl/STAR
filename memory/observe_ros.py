@@ -158,7 +158,7 @@ def handle_observation_request(req):
         start_frame=start_frame,
         end_frame=end_frame
     )
-    MEMORY.insert(item)
+    MEMORY.insert(item, images=pil_images)
     
     return True
 
@@ -190,7 +190,7 @@ if __name__ == "__main__":
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--max_new_tokens", type=int, default=512)
-    parser.add_argument("--obs_savepath", type=str, default="data")
+    parser.add_argument("--obs_savepath", type=str, required=True)
     args = parser.parse_args()
     
     # add some rules here
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     os.makedirs(SAVEPATH, exist_ok=True)
     
     PROMPT = args.query
-    MEMORY = MilvusVideoMemory("test", db_ip='127.0.0.1')
+    MEMORY = MilvusVideoMemory("test", obs_savepth=args.obs_savepath, db_ip='127.0.0.1')
     MODEL = VILACaptioner(args)
     
     milvus_observation_service()
