@@ -99,6 +99,28 @@ class MilvusWrapper:
     
     def insert(self, data_list):
         res = self.collection.insert(data_list)
+        return res
+        
+    def search(self, query_embedding, k:int, expr:str="timestamp >= 0"):
+        self.collection.load()
+        param = {
+                "metric_type": "L2",
+                "params": {
+                    "nprobe": 1024
+                }
+            }
+        BATCH_SIZE = 2
+        res = self.collection.search(
+            data=[query_embedding],
+            anns_field="text_embedding",
+            param=param,
+            batch_size=BATCH_SIZE,
+            limit=k,
+            expr=expr,
+            output_fields=["*"],
+            consistency_level="Strong"
+        )
+        return res
         
         
 class MilvusMemory(Memory):
@@ -112,6 +134,15 @@ class MilvusMemory(Memory):
 
         self.embedder = HuggingFaceEmbeddings(model_name='mixedbread-ai/mxbai-embed-large-v1')
         self.working_memory = []
+        
+        self.text_vector_db = Milvus(
+            self.embedder,
+            connection_args={"host": self.db_ip, "port": self.db_port},
+            collection_name=self.db_collection_name,
+            vector_field='text_embedding',
+            text_field='caption',
+        )
+        
         self.reset(drop_collection=False)
         
     def reset(self, drop_collection=True):
@@ -123,6 +154,15 @@ class MilvusMemory(Memory):
                 import shutil
                 shutil.rmtree(self.obs_savepth)
         self.milv_wrapper = MilvusWrapper(self.db_collection_name, self.db_ip, self.db_port, drop_collection=drop_collection)
+        
+        # This is mostly redundant due to milv_wrapper; Only use it to parse documents
+        self.text_vector_db = Milvus(
+            self.embedder,
+            connection_args={"host": self.db_ip, "port": self.db_port},
+            collection_name=self.db_collection_name,
+            vector_field='text_embedding',
+            text_field='caption',
+        )
         
     def insert(self, item: MemoryItem, images=None):
         memory_dict = asdict(item)
@@ -142,3 +182,38 @@ class MilvusMemory(Memory):
                 import pdb; pdb.set_trace()
                 savepath = os.path.join(self.obs_savepth, f"{fid:06d}.png")
                 frame.save(savepath)
+                
+    def search_by_text(self, query: str, k:int = 8) -> str:
+        query_embedding = self.embedder.embed_query(query)
+        results = self.milv_wrapper.search(query_embedding, k = k)
+        docs = self._parse_query_results(results)
+        docs = self._memory_to_json(docs)
+        return docs
+        
+    def _parse_query_results(self, results):
+        ret = []
+        output_fields = self.text_vector_db.fields[:]
+        for result in results[0]:
+            if type(result) is dict:
+                data = {x: result[x] for x in output_fields}
+            else:
+                data = {x: result.entity.get(x) for x in output_fields}
+            doc = self.text_vector_db._parse_document(data)
+            if type(result) is dict:
+                pair = (doc, 0.0)
+            else:
+                pair = (doc, result.score)
+            ret.append(pair)
+        return [doc for doc, _ in ret]
+                
+    def _memory_to_json(self, memory_list: list[MemoryItem]):
+        rets = []
+        for item in memory_list:
+            ret = {"id": item.metadata["id"], 
+                   "vidpath": item.metadata["vidpath"], 
+                   "start_frame": item.metadata["start_frame"], 
+                   "end_frame": item.metadata["end_frame"], 
+                   "text": item.page_content}
+            rets.append(ret)
+        import json
+        return json.dumps(rets)
