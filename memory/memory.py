@@ -145,10 +145,11 @@ class MilvusMemory(Memory):
         
         self.reset(drop_collection=False)
         
-    def reset(self, drop_collection=True):
+    def reset(self, drop_collection:bool =True, delete_all_files:bool =False):
         if drop_collection:
             utility.drop_collection(self.db_collection_name)
             print("Resetting memory. We are dropping the current collection")
+        if delete_all_files:
             confirm = input(f"Delete all files under {self.obs_savepth} (y/n)?  ")
             if confirm == 'y' and os.path.isdir(self.obs_savepth):
                 import shutil
