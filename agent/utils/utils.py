@@ -2,11 +2,15 @@ import os
 import copy
 import traceback, sys
 import base64
+from io import BytesIO
 from typing import Sequence
 import json
 import cv2
 from PIL import Image as PILImage
 from langchain_core.messages import ToolMessage
+import numpy as np
+
+from sensor_msgs.msg import Image
 
 def file_to_string(filename):
     with open(filename, "r", encoding="utf-8") as file:
@@ -23,6 +27,38 @@ def try_except_continue(state, func):
             print(e)
             traceback.print_exception(*sys.exc_info())
             continue
+        
+def ros_image_to_pil(ros_image):
+    # Convert raw image data to numpy array
+    np_arr = np.frombuffer(ros_image.data, dtype=np.uint8)
+
+    # Reshape based on encoding
+    if ros_image.encoding == "rgb8":
+        image = np_arr.reshape((ros_image.height, ros_image.width, 3))
+    elif ros_image.encoding == "mono8":
+        image = np_arr.reshape((ros_image.height, ros_image.width))
+    else:
+        raise ValueError(f"Unsupported encoding: {ros_image.encoding}")
+
+    return PILImage.fromarray(image)
+
+def pil_to_utf8(pil_img: PILImage) -> str:
+    buffer = BytesIO()
+    pil_img.save(buffer, format="PNG")  # or "JPEG" etc.
+    encoded_bytes = base64.b64encode(buffer.getvalue())
+    utf8_str = encoded_bytes.decode("utf-8")
+    return utf8_str
+
+def numpy_to_ros_image(np_image, encoding="rgb8"):
+    """ Convert a NumPy image (OpenCV) to a ROS Image message. """
+    ros_image = Image()
+    ros_image.height = np_image.shape[0]
+    ros_image.width = np_image.shape[1]
+    ros_image.encoding = encoding  # "bgr8" for OpenCV images, "rgb8" for PIL images
+    ros_image.is_bigendian = 0
+    ros_image.step = np_image.shape[1] * np_image.shape[2]  # width * channels
+    ros_image.data = np_image.tobytes()
+    return ros_image
         
 def get_image(vidpath: str, start_fram, end_frame, type: str = "opencv"):
     start_frame, end_frame = int(start_frame), int(end_frame)

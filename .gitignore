@@ -3,3 +3,4 @@ vector_db
 data
 *__pycache__*
 *.pyc
+*.png

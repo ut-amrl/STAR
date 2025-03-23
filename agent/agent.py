@@ -10,12 +10,22 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from utils.function_wrapper import FunctionsWrapper
 from utils.utils import *
-from utils.tools import create_recall_any_tool, create_recall_last_tool, create_find_any_at_tool
+from utils.tools import (
+    create_recall_any_tool, 
+    create_recall_last_tool, 
+    create_find_any_at_tool, 
+    is_instance_observed
+)
 
 from memory.memory import MilvusMemory
 
+import rospy
+import roslib; roslib.load_manifest('amrl_msgs')
+from amrl_msgs.srv import GetImageAtPoseSrv, GetImageAtPoseSrvRequest
+
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
+    target: Annotated[Sequence, replace_messages]
     task: Annotated[Sequence, replace_messages]
     
 
@@ -25,12 +35,13 @@ class Agent:
         
         self.llm_type, self.vlm_type = llm_type, vlm_type
         self.llm = self._llm_selector(self.llm_type)
-        self.vlm = self._vlm_selector(self.vlm_type)
+        self.vlm, self.vlm_processor = self._vlm_selector(self.vlm_type)
     
-        # if "qwen" in self.vlm_type:
-        #     self.local_vlm = self.vlm
-        # else:
-        #     self.local_vlm =  self._vlm_selector("qwen")
+        if "qwen" in self.vlm_type:
+            self.local_vlm = self.vlm
+            self.local_vlm_processor = self.vlm_processor
+        else:
+            self.local_vlm, self.local_vlm_processor =  self._vlm_selector("qwen")
         
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
@@ -131,12 +142,8 @@ class Agent:
             if len(record_id) == 0:
                 continue
             record_id = int(eval(record_id))
-            
-            for record in eval(docs):
-                if int(record["id"]) == record_id:
-                    record_found = copy.copy(record)
-            if record_found is not None:
-                break
+            docs = self.memory.get_by_id(record_id)
+            record_found = eval(docs)
             
         return record_found
     
@@ -145,10 +152,30 @@ class Agent:
     
     def recall_last_seen(self, state):
         record = self._recall_last_seen_from_txt(state["task"])
-        import pdb; pdb.set_trace()
+        return {"target": record}
         
     def find_at(self, state):
-        pass
+        target = state["target"][-1]
+        if type(target["position"]) == str:
+            target["position"] = eval(target["position"])
+        
+        rospy.wait_for_service("/Cobot/GetImageAtPose")
+        try: 
+            get_image_at_pose = rospy.ServiceProxy("/Cobot/GetImageAtPose", GetImageAtPoseSrv)
+            request = GetImageAtPoseSrvRequest()
+            request.x = target["position"][0]
+            request.y = target["position"][1]
+            request.theta = target["position"][2]
+            response = get_image_at_pose(request)
+            
+            import pdb; pdb.set_trace()
+            pil_img = ros_image_to_pil(response.image)
+            img_data = pil_to_utf8(pil_img)
+            img_message = get_vlm_img_message(img_data)
+            is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, "a cup from a table")
+            
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Service call failed: {e}")
     
     def terminate(self, state):
         import pdb; pdb.set_trace()
@@ -170,7 +197,7 @@ class Agent:
         # workflow.add_edge("recall_any_node", "recall_any_action_node")
         # workflow.add_edge("recall_any_action_node", "terminate")
         
-        workflow.add_node("recall_last_seen", lambda state: self.recall_last_seen(state))
+        workflow.add_node("recall_last_seen", lambda state: try_except_continue(state, self.recall_last_seen))
         workflow.add_node("find_at", lambda state: self.find_at(state))
         workflow.add_edge("initialize", "recall_last_seen")
         workflow.add_edge("recall_last_seen", "find_at")

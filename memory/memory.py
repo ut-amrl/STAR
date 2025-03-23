@@ -100,6 +100,17 @@ class MilvusWrapper:
     def insert(self, data_list):
         res = self.collection.insert(data_list)
         return res
+    
+    def search_by_expr(self, expr, k:int):
+        self.collection.load()
+        res = self.collection.query(
+            limit=k, 
+            expr=expr, 
+            output_fields=["*"],
+            consistency_level="Strong"
+        )
+        res = [res]
+        return res
         
     def search(self, query_embedding, k:int, expr:str="timestamp >= 0"):
         self.collection.load()
@@ -208,6 +219,12 @@ class MilvusMemory(Memory):
         docs = self._memory_to_json(docs)
         self.last_seen_id = start_id
         return docs
+    
+    def get_by_id(self, id) -> str:
+        results = self.milv_wrapper.search_by_expr(expr=f"id == {id}", k=1)
+        docs = self._parse_query_results(results)
+        docs = self._memory_to_json(docs)
+        return docs
         
     def _parse_query_results(self, results):
         ret = []
@@ -229,6 +246,7 @@ class MilvusMemory(Memory):
         rets = []
         for item in memory_list:
             ret = {"id": item.metadata["id"], 
+                   "position": str(item.metadata["position"]), 
                    "vidpath": item.metadata["vidpath"], 
                    "start_frame": item.metadata["start_frame"], 
                    "end_frame": item.metadata["end_frame"], 

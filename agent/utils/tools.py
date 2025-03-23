@@ -2,6 +2,8 @@ import os
 import re
 from typing import Annotated, Sequence, TypedDict
 
+from qwen_vl_utils import process_vision_info
+
 from langchain.tools import StructuredTool
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.messages import BaseMessage
@@ -321,3 +323,41 @@ def create_recall_last_tool(memory: MilvusMemory, llm, vlm):
     
 def create_find_any_at_tool(vlm, x: float, y: float, theta: float):
     pass
+
+def is_instance_observed(vlm, vlm_processor, obs, instance):
+    messages = [
+        {
+            "role": "system",
+            "content": "You will be provided with an image and a text description of an instance. Your job is to determine if the instance appears on the foreground of the image. Please provide a 'yes' or 'no' answer to the following question. Do not answer anything other than 'yes' or 'no'"
+        },
+        {
+            "role": "user",
+            "content": [
+                obs,
+                {
+                    "type": "text", 
+                    "text": f"Does this image contain the following instance: {instance}?"
+                },
+            ]
+        }
+    ]
+    text = vlm_processor.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    image_inputs, video_inputs = process_vision_info(messages)
+    inputs = vlm_processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+    inputs = inputs.to(vlm.device)
+    generated_ids = vlm.generate(**inputs, max_new_tokens=128)
+    generated_ids_trimmed = [
+        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    output_text = vlm_processor.batch_decode(
+        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
+    return "yes" in output_text[0].lower()
