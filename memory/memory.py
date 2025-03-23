@@ -126,6 +126,7 @@ class MilvusWrapper:
 class MilvusMemory(Memory):
     def __init__(self, db_collection_name: str, obs_savepth: str, db_ip='127.0.0.1', db_port=19530):
         self.last_id = 0
+        self.last_seen_id = None
         
         self.obs_savepth = obs_savepth
         self.db_collection_name = db_collection_name
@@ -189,6 +190,23 @@ class MilvusMemory(Memory):
         results = self.milv_wrapper.search(query_embedding, k = k)
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
+        return docs
+    
+    def search_last_k_by_text(self, is_first_time: bool, query: str, k: int = 30) -> str:
+        if self.last_seen_id is not None and self.last_seen_id == 0:
+            self.last_seen_id = None
+            return ''
+        
+        query_embedding = self.embedder.embed_query(query)
+        if is_first_time:
+            start_id, end_id = max(self.last_id-k, 0), self.last_id
+        else:
+            start_id, end_id = max(self.last_seen_id-k, 0), self.last_seen_id
+        n_retrieval = max((k // 4), 6)
+        results = self.milv_wrapper.search(query_embedding=query_embedding, k=n_retrieval, expr=f"id >= {start_id} and id < {end_id}")
+        docs = self._parse_query_results(results)
+        docs = self._memory_to_json(docs)
+        self.last_seen_id = start_id
         return docs
         
     def _parse_query_results(self, results):

@@ -110,16 +110,34 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
         def generate(self, state):
             messages = state["messages"]
             
-            import pdb; pdb.set_trace()
+            last_response = eval(messages[-1].content)
+            if "moment_ids" not in last_response:
+                prompt = self.agent_gen_only_prompt
+                agent_prompt = ChatPromptTemplate.from_messages(
+                    [
+                        # ("system", prompt),
+                        MessagesPlaceholder("chat_history"),
+                        (("human"), self.previous_tool_requests),
+                        ("ai", prompt),
+                        ("human", "{question}"),
+                    ]
+                )
+                model = agent_prompt | model
+                
+                db_messages = state["retrieved_messages"]
+                parsed_db_messages = parse_db_records_for_llm(db_messages)
+                question = f"The object user wants to find is: {messages[0].content}"
+                last_response = model.invoke({"question": question, "chat_history": parsed_db_messages})
+                last_response = eval(last_response.content)
             
-            
-            record_ids = eval(messages[-1].content)["moment_ids"]
+            record_ids = last_response["moment_ids"]
+            if type(record_ids) == str:
+                record_ids = eval(record_ids)
             record_ids = [int(id) for id in record_ids]
             retrieved_messages = state["retrieved_messages"]
             retrieved_messages = {r["id"]: r for r in retrieved_messages}
             
             records = [retrieved_messages[id] for id in record_ids]
-            
             
             return {"output": records}
                 
@@ -182,5 +200,124 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
     )
     return retriever_tool
 
+def create_recall_last_tool(memory: MilvusMemory, llm, vlm):
+    class AgentState(TypedDict):
+        messages: Annotated[Sequence[BaseMessage], add_messages]
+        keywords: Annotated[Sequence, replace_messages]
+        output: Annotated[Sequence, replace_messages]
+        
+    class DBLastRetriever:
+        def __init__(self, memory, llm, vlm, local_vlm):
+            self.memory = memory
+            self.llm = llm
+            self.vlm = vlm
+            self.local_vlm = local_vlm
+            
+            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/recall_last/'
+            self.get_param_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'get_param_from_txt_prompt.txt'))
+            self.find_instance_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'find_instance_from_txt_prompt.txt'))
+            
+            self._build_graph()
+        
+        def param(self, state):
+            question = state["messages"][0]
+            question = eval(question.content)
+            
+            model = self.llm
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("ai", self.get_param_from_txt_prompt),
+                    ("human", "{question}"),
+                ]
+            )
+            model = prompt | model
+            question = f"User Task: {question}"
+            response = model.invoke({"question": question})
+            keywords = eval(response.content)
+            return {"keywords": keywords}
+        
+        def query(self, state):
+            keywords = state["keywords"]
+            
+            query = ', or '.join(keywords)
+            record_found = None
+            for _ in range(5):
+                docs = self.memory.search_last_k_by_text(is_first_time=True, query=query)
+                if docs == '':
+                    break
+                
+                parsed_docs = parse_db_records_for_llm(eval(docs))
+                
+                model = self.llm
+                prompt = ChatPromptTemplate.from_messages(
+                    [
+                        ("system", "{docs}"),
+                        ("ai", self.find_instance_from_txt_prompt),
+                        ("human", "{question}"),
+                    ]
+                )
+                model = prompt | model
+                question = f"User Task: {question}. Have you seen the instance user needs in your recalled moments?"
+                response = model.invoke({"question": question, "docs": parsed_docs})
+                
+                record_id = response.content
+                if len(record_id) == 0:
+                    continue
+                record_id = int(eval(record_id))
+                
+                for record in eval(docs):
+                    if int(record["id"]) == record_id:
+                        record_found = copy.copy(record)
+                if record_found is not None:
+                    break
+                
+            return {"output": record_found}
+        
+        def _build_graph(self):
+            workflow = StateGraph(AgentState)
+            
+            workflow.add_node("param", lambda state: try_except_continue(state, self.param))
+            workflow.add_node("query", lambda state: try_except_continue(state, self.query))
+            
+            workflow.add_edge("param", "query")
+            workflow.add_edge("query", END)
+            
+            workflow.set_entry_point("param")
+            self.graph = workflow.compile()
+            
+        def run(self, instance_description, obs=None):
+            self.obs = obs
+            self.instance_description = instance_description
+            inputs = { "messages": [
+                    (("user", instance_description)),
+                ]
+            }
+            state = self.graph.invoke(inputs)
+            output = state['output']
+            ret = {
+                "output": output,
+                "instance_description": instance_description
+            }
+            return ret
+
+    tool = DBLastRetriever(memory, llm, vlm)
+    class RecallLastInput(BaseModel):
+        instance_description: str = Field(description="You are a robot agent with extensive past observations. This tool helps you recall the specific moment when you observed an instance matching the given description. \
+                            This query argument should be a phrase such as 'a book', 'the book that was on a table', or 'an apple that was in kitchen yesterday'. \
+                            The query will then search your memories for you.")
+        obs: str = Field(
+            description="(Optional) This is an optional message for image message that contain the instance."
+        )
+    retriever_tool = StructuredTool.from_function(
+        func=lambda instance_description, obs: tool.run(
+            instance_description, obs
+        ),
+        name="recall_lastest_observation_of_instance",
+        description="Search memory to recall the lastest moment when you observed the instance matching the given description",
+        args_schema=RecallLastInput
+        # coroutine= ... <- you can specify an async method if desired as well
+    )
+    return retriever_tool
+    
 def create_find_any_at_tool(vlm, x: float, y: float, theta: float):
     pass
