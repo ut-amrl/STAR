@@ -23,9 +23,31 @@ import rospy
 import roslib; roslib.load_manifest('amrl_msgs')
 from amrl_msgs.srv import GetImageAtPoseSrv, GetImageAtPoseSrvRequest
 
+
+def from_find_at_to(state):
+    if state["current_goal"].found:
+        return "next"
+    else:
+        return "try_again"
+
+
+class ObjectRetrievalPlan:
+    def __init__(self):
+        self.found = False
+        self.plan = None # a description of the plan
+        self.object = None # a semantic class label for object detection
+        self.object_obs = None # a past observation of the instance
+        self.records = []
+        
+    def curr_target(self):
+        if len(self.records) == 0:
+            return None
+        return copy.copy(self.records[-1])
+    
+
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
-    target: Annotated[Sequence, replace_messages]
+    current_goal: Annotated[Sequence, replace_messages]
     task: Annotated[Sequence, replace_messages]
     
 
@@ -87,7 +109,13 @@ class Agent:
     def initialize(self, state):
         messages = state["messages"]
         task = messages[0].content
-        return {"task": task}
+        
+        # TODO ask LLM to fill it in
+        current_goal = ObjectRetrievalPlan()
+        current_goal.plan = "bring me a cup from a table"
+        current_goal.object = "cup"
+        
+        return {"task": task, "current_goal": current_goal}
     
     def recall_any(self, state):
         model = self.llm
@@ -104,7 +132,9 @@ class Agent:
         response = model.invoke({"question": question})
         return {"messages": [response]}
     
-    def _recall_last_seen_from_txt(self, question):
+    def _recall_last_seen_from_txt(self, current_goal):
+        question = current_goal.plan
+        
         model = self.llm
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -151,11 +181,15 @@ class Agent:
         pass
     
     def recall_last_seen(self, state):
-        record = self._recall_last_seen_from_txt(state["task"])
-        return {"target": record}
+        current_goal = state["current_goal"]
+        # TODO need to handle the case where no record is retrieved
+        record = self._recall_last_seen_from_txt(current_goal)
+        current_goal.records.append(record[0])
+        return {"current_goal": current_goal}
         
     def find_at(self, state):
-        target = state["target"][-1]
+        current_goal = state["current_goal"]
+        target = current_goal.curr_target()
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])
         
@@ -168,14 +202,16 @@ class Agent:
             request.theta = target["position"][2]
             response = get_image_at_pose(request)
             
-            import pdb; pdb.set_trace()
             pil_img = ros_image_to_pil(response.image)
             img_data = pil_to_utf8(pil_img)
             img_message = get_vlm_img_message(img_data)
-            is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, "a cup from a table")
+            if is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, "a cup from a table"):
+                current_goal.found = True
             
         except rospy.ServiceException as e:
             rospy.logerr(f"Service call failed: {e}")
+            
+        return {"current_goal": current_goal}
     
     def terminate(self, state):
         import pdb; pdb.set_trace()
@@ -201,8 +237,14 @@ class Agent:
         workflow.add_node("find_at", lambda state: self.find_at(state))
         workflow.add_edge("initialize", "recall_last_seen")
         workflow.add_edge("recall_last_seen", "find_at")
-        workflow.add_edge("find_at", "terminate")
-        
+        workflow.add_conditional_edges(
+            "find_at",
+            from_find_at_to,
+            {
+                "next": "terminate",
+                "try_again": "recall_last_seen",
+            },
+        )
         workflow.add_edge("terminate", END)
         
         workflow.set_entry_point("initialize")

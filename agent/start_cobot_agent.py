@@ -197,9 +197,11 @@ if __name__ == "__main__":
     agent = Agent()
     agent.set_memory(MEMORY)
     
-    threading.Thread(target=milvus_observation_service, daemon=True).start()
+    agent.run(question="Bring me a cup from a table.")
     
-    while True:
-        import time
-        time.sleep(10)
-        import pdb; pdb.set_trace()
+    # threading.Thread(target=milvus_observation_service, daemon=True).start()
+    
+    # while True:
+    #     import time
+    #     time.sleep(10)
+    #     import pdb; pdb.set_trace()

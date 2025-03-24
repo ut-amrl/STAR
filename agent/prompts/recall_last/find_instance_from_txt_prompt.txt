@@ -15,6 +15,16 @@ Type I: __conversational_response. It calls a system to response to the user. Us
 }}]
 ```
 
+Example:
+```json
+[{{
+    "tool": "__conversational_response", 
+    "tool_input": {{ 
+        "response":  "28"
+    }}
+}}]
+```
+
 Output Rules:
 You must return a single string ID of the moment that contains the described instance.
 Do not include any additional explanation or content.
