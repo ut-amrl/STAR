@@ -27,8 +27,7 @@ from amrl_msgs.srv import GetImageAtPoseSrv, GetImageAtPoseSrvRequest
 def from_find_at_to(state):
     if state["current_goal"].found:
         return "next"
-    else:
-        return "try_again"
+    return "try_again"
 
 
 class ObjectRetrievalPlan:
@@ -214,8 +213,9 @@ class Agent:
         return {"current_goal": current_goal}
     
     def terminate(self, state):
-        import pdb; pdb.set_trace()
-        print()
+        curr_target = state["current_goal"].curr_target()
+        debug_vid(curr_target, "debug")
+        print(curr_target)
         pass
     
     def _build_graph(self):

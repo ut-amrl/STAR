@@ -60,7 +60,7 @@ def numpy_to_ros_image(np_image, encoding="rgb8"):
     ros_image.data = np_image.tobytes()
     return ros_image
         
-def get_image(vidpath: str, start_fram, end_frame, type: str = "opencv"):
+def get_image(vidpath: str, start_frame, end_frame, type: str = "opencv"):
     start_frame, end_frame = int(start_frame), int(end_frame)
     frame = (start_frame + end_frame) // 2
     imgpath = os.path.join(vidpath, f"{frame:06d}.png")
@@ -76,6 +76,35 @@ def get_image(vidpath: str, start_fram, end_frame, type: str = "opencv"):
     else:
         ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
     return img
+
+def get_images(vidpath: str, start_frame, end_frame, type: str = "opencv"):
+    images = []
+    for frame in range(start_frame, end_frame+1):
+        imgpath = os.path.join(vidpath, f"{frame:06d}.png")
+        if type.lower() == "opencv":
+            img = cv2.imread(imgpath)
+        elif type.lower() == "pil":
+            img = PILImage.open(imgpath)
+        elif type.lower() == "utf-8":
+            with open(imgpath, "rb") as imgfile:
+                data = imgfile.read()
+                data = base64.b64encode(data)
+                img = copy.copy(img.decode("utf-8"))
+        else:
+            ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
+        images.append(img)
+    return images
+
+def debug_vid(vid, debugdir: str):
+    os.makedirs(debugdir, exist_ok=True)
+    for filename in os.listdir(debugdir):
+            filepath = os.path.join(debugdir, filename)
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+    images = get_images(vid["vidpath"], vid["start_frame"], vid["end_frame"])
+    for i, img in enumerate(images):
+            imgpath = os.path.join(debugdir, f"{i:06d}.png")
+            import cv2; cv2.imwrite(imgpath, img)
 
 def get_vlm_img_message(img, type: str = "qwen"):
     if "qwen" in type:
