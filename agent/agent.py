@@ -1,6 +1,7 @@
 import os
 import json
 from typing import Annotated, Sequence, TypedDict
+from math import radians
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage
@@ -185,32 +186,53 @@ class Agent:
         record = self._recall_last_seen_from_txt(current_goal)
         current_goal.records.append(record[0])
         return {"current_goal": current_goal}
+    
+    def _send_getImageAtPose_request(self, goal_x:float, goal_y:float, goal_theta:float):
+        rospy.wait_for_service("/Cobot/GetImageAtPose")
+        img_message = None
+        try: 
+            get_image_at_pose = rospy.ServiceProxy("/Cobot/GetImageAtPose", GetImageAtPoseSrv)
+            request = GetImageAtPoseSrvRequest()
+            request.x = goal_x
+            request.y = goal_y
+            request.theta = goal_theta
+            response = get_image_at_pose(request)
+            
+            pil_img = ros_image_to_pil(response.image)
+            img_data = pil_to_utf8(pil_img)
+            img_message = get_vlm_img_message(img_data)
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Service call failed: {e}")
+        return img_message
         
     def find_at(self, state):
         current_goal = state["current_goal"]
         target = current_goal.curr_target()
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])
-        
-        rospy.wait_for_service("/Cobot/GetImageAtPose")
-        try: 
-            get_image_at_pose = rospy.ServiceProxy("/Cobot/GetImageAtPose", GetImageAtPoseSrv)
-            request = GetImageAtPoseSrvRequest()
-            request.x = target["position"][0]
-            request.y = target["position"][1]
-            request.theta = target["position"][2]
-            response = get_image_at_pose(request)
+        object_desc = "a cup" # TODO retrieve this from current_goal
             
-            pil_img = ros_image_to_pil(response.image)
-            img_data = pil_to_utf8(pil_img)
-            img_message = get_vlm_img_message(img_data)
-            if is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, "a cup from a table"):
+        goal_x, goal_y, goal_theta = target["position"][0], target["position"][1], target["position"][2]
+        img_message = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta)
+        if is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
+            current_goal.found = True
+        if not current_goal.found:
+            img_message = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta-radians(15))
+            if is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
                 current_goal.found = True
-            
-        except rospy.ServiceException as e:
-            rospy.logerr(f"Service call failed: {e}")
-            
+        if not current_goal.found:
+            img_message = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta+radians(15))
+            if is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
+                current_goal.found = True
+                
+        if current_goal.found:
+            debug_vid(current_goal.curr_target(), "debug")
+        
+        import pdb; pdb.set_trace()
         return {"current_goal": current_goal}
+    
+    def pick(self, state):
+        pass
     
     def terminate(self, state):
         curr_target = state["current_goal"].curr_target()
@@ -235,16 +257,18 @@ class Agent:
         
         workflow.add_node("recall_last_seen", lambda state: try_except_continue(state, self.recall_last_seen))
         workflow.add_node("find_at", lambda state: self.find_at(state))
+        workflow.add_node("pick", lambda state: self.pick(state))
         workflow.add_edge("initialize", "recall_last_seen")
         workflow.add_edge("recall_last_seen", "find_at")
         workflow.add_conditional_edges(
             "find_at",
             from_find_at_to,
             {
-                "next": "terminate",
+                "next": "pick",
                 "try_again": "recall_last_seen",
             },
         )
+        workflow.add_edge("pick", "terminate")
         workflow.add_edge("terminate", END)
         
         workflow.set_entry_point("initialize")

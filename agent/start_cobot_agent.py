@@ -183,7 +183,7 @@ if __name__ == "__main__":
     
     CAPTIONER = VILACaptioner(args)
     
-    MEMORY = MilvusMemory("test1", obs_savepth=SAVEPATH, db_ip='127.0.0.1')
+    MEMORY = MilvusMemory("test2", obs_savepth=SAVEPATH, db_ip='127.0.0.1')
     MEMORY.reset()
     inpaths = [
         "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-01-55_VILA1.5-8b_3_secs.json",
