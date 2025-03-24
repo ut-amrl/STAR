@@ -77,7 +77,7 @@ class Agent:
             from qwen_vl_utils import process_vision_info
             model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                model_name, torch_dtype="auto", device_map="auto"
+                model_name, torch_dtype="auto", device_map={"": 1}
             )
             processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
         else:
@@ -214,7 +214,8 @@ class Agent:
                 (("user", question)),
             ],
         }
-        self.graph.invoke(inputs)
+        state = self.graph.invoke(inputs)
+        
         
 if __name__ == "__main__":
     from utils.memloader import remember_from_paths

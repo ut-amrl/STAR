@@ -33,7 +33,7 @@ def ros_image_to_pil(ros_image):
     np_arr = np.frombuffer(ros_image.data, dtype=np.uint8)
 
     # Reshape based on encoding
-    if ros_image.encoding == "rgb8":
+    if ros_image.encoding == "rgb8" or ros_image.encoding == "bgr8":
         image = np_arr.reshape((ros_image.height, ros_image.width, 3))
     elif ros_image.encoding == "mono8":
         image = np_arr.reshape((ros_image.height, ros_image.width))

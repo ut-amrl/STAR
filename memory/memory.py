@@ -192,7 +192,6 @@ class MilvusMemory(Memory):
         
         if images is not None:
             for fid, frame in zip(range(memory_dict["start_frame"], memory_dict["end_frame"]+1), images):
-                import pdb; pdb.set_trace()
                 savepath = os.path.join(self.obs_savepth, f"{fid:06d}.png")
                 frame.save(savepath)
                 
