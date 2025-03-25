@@ -207,6 +207,7 @@ class Agent:
         
     def find_at(self, state):
         current_goal = state["current_goal"]
+        current_goal.found = False
         target = current_goal.curr_target()
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])
@@ -228,11 +229,13 @@ class Agent:
         if current_goal.found:
             debug_vid(current_goal.curr_target(), "debug")
         
-        import pdb; pdb.set_trace()
         return {"current_goal": current_goal}
     
     def pick(self, state):
-        pass
+        curr_target = state["current_goal"].curr_target()
+        
+        import pdb; pdb.set_trace()
+        return
     
     def terminate(self, state):
         curr_target = state["current_goal"].curr_target()
