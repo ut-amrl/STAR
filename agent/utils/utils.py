@@ -233,3 +233,15 @@ def request_bbox_detection_service(ros_image, query_text: str):
         return response
     except rospy.ServiceException as e:
         rospy.logerr(f"Service call failed: {e}")
+        
+def request_pick_service(query_image: Image = Image(), query_txt: str = ""):
+    rospy.wait_for_service("/Cobot/Pick")
+    try: 
+        pick_object = rospy.ServiceProxy("/Cobot/Pick", PickObjectSrv)
+        request = PickObjectSrvRequest()
+        request.query_image = query_image
+        request.query_text = query_txt
+        response = pick_object(request)
+    except rospy.ServiceException as e:
+        rospy.logerr(f"Service call failed: {e}")
+    return response

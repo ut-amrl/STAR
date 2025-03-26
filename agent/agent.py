@@ -256,6 +256,7 @@ class Agent:
             if self._find_at_by_txt(candidate_goal[0], candidate_goal[1], candidate_goal[2], query_txt):
                 current_goal.found = True
                 break
+            
         import pdb; pdb.set_trace()
         
         # rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta}")
@@ -280,12 +281,8 @@ class Agent:
     def pick(self, state):
         object_text = state["current_goal"].object
         curr_target = state["current_goal"].curr_target()
-        image = self._send_getImage_request()
-        bbox_msgs = request_bbox_detection_service(image.image, object_text)
         import pdb; pdb.set_trace()
-        
-        response = self._send_pickObject_request(bbox_msgs.bounding_boxes)
-        print()
+        response = request_pick_service(query_txt=object_text)
         return
     
     def terminate(self, state):
