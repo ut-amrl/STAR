@@ -60,7 +60,7 @@ def numpy_to_ros_image(np_image, encoding="rgb8"):
     ros_image.data = np_image.tobytes()
     return ros_image
         
-def get_image(vidpath: str, start_frame, end_frame, type: str = "opencv"):
+def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv"):
     start_frame, end_frame = int(start_frame), int(end_frame)
     frame = (start_frame + end_frame) // 2
     imgpath = os.path.join(vidpath, f"{frame:06d}.png")
@@ -77,7 +77,7 @@ def get_image(vidpath: str, start_frame, end_frame, type: str = "opencv"):
         ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
     return img
 
-def get_images(vidpath: str, start_frame, end_frame, type: str = "opencv"):
+def get_images(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv"):
     images = []
     for frame in range(start_frame, end_frame+1):
         imgpath = os.path.join(vidpath, f"{frame:06d}.png")
@@ -130,3 +130,106 @@ def parse_db_records_for_llm(messages: list):
     processed_records = [{"record_id": record["id"], "text": record["text"]} for record in messages]
     parsed_processed_records = [json.dumps(record) for record in processed_records]
     return parsed_processed_records
+
+
+### LLM/VLM/ML tools
+from qwen_vl_utils import process_vision_info
+
+def get_depth(xyxy, depth, padding:int=8):
+    xyxy = [int(x) for x in xyxy]
+    # If object is too small, return invalid depth
+    if xyxy[2] - xyxy[0] < 4 or xyxy[3] - xyxy[1] < 4:
+        return np.nan
+    center_x = (xyxy[0] + xyxy[2]) // 2
+    center_y = (xyxy[1] + xyxy[3]) // 2
+    xl = max(xyxy[0]+2, center_x-padding)
+    xr = min(xyxy[2]-2, center_x+padding)
+    yl = max(xyxy[1]+2, center_y-padding)
+    yr = min(xyxy[3]-2, center_y+padding)
+    
+    Zs = depth[yl:yr+1, xl:xr+1]
+    mask = ~np.isnan(Zs)
+    Z = Zs[mask]
+    
+    if len(Z) > 2:
+        mean, std = np.mean(Z), np.std(Z)
+        threshold = 2
+        Z = Z[np.fabs(Z - mean) <= threshold * std]
+        
+    if len(Z) == 0:
+        return np.nan
+    print("depth: ", Z.mean())
+    return Z.mean()
+
+def is_txt_instance_observed(query_img, query_txt: str, depth = None):
+    response = request_bbox_detection_service(query_img, query_txt)
+    for detection in response.bounding_boxes.bboxes:
+        z = get_depth(detection.xyxy, depth)
+        if (z is not np.nan) and (z < 2.0):
+            return True
+    return False
+
+def is_viz_instance_observed(vlm, vlm_processor, obs, instance):
+    messages = [
+        {
+            "role": "system",
+            "content": "You will be provided with an image and a text description of an instance. Your job is to determine if the instance appears on the foreground of the image. Please provide a 'yes' or 'no' answer to the following question. Do not answer anything other than 'yes' or 'no'"
+        },
+        {
+            "role": "user",
+            "content": [
+                obs,
+                {
+                    "type": "text", 
+                    "text": f"Does this image contain the following instance: {instance}?"
+                },
+            ]
+        }
+    ]
+    text = vlm_processor.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    image_inputs, video_inputs = process_vision_info(messages)
+    inputs = vlm_processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+    inputs = inputs.to(vlm.device)
+    generated_ids = vlm.generate(**inputs, max_new_tokens=128)
+    generated_ids_trimmed = [
+        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    output_text = vlm_processor.batch_decode(
+        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
+    return "yes" in output_text[0].lower()
+
+
+## ROS Service Calls
+import rospy
+import roslib; roslib.load_manifest('amrl_msgs')
+from amrl_msgs.srv import (
+    GetImageSrv,
+    GetImageSrvRequest,
+    GetImageAtPoseSrv, 
+    GetImageAtPoseSrvRequest, 
+    SemanticObjectDetectionSrv, 
+    SemanticObjectDetectionSrvRequest,
+    PickObjectSrv,
+    PickObjectSrvRequest,
+)
+
+def request_bbox_detection_service(ros_image, query_text: str):
+    rospy.wait_for_service('grounding_dino_bbox_detector')
+    try: 
+        grounding_dino = rospy.ServiceProxy('grounding_dino_bbox_detector', SemanticObjectDetectionSrv)
+        request = SemanticObjectDetectionSrvRequest()
+        request.query_text = query_text
+        request.query_image = ros_image
+        response = grounding_dino(request)
+        return response
+    except rospy.ServiceException as e:
+        rospy.logerr(f"Service call failed: {e}")

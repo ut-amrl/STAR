@@ -6,6 +6,7 @@ import re
 import os
 import threading
 import time
+import numpy as np
 
 from agent import Agent
 from utils.utils import ros_image_to_pil
@@ -18,9 +19,11 @@ from amrl_msgs.msg import BBox2DMsg, BBox2DArrayMsg
 from amrl_msgs.srv import RememberSrv, SemanticObjectDetectionSrv, SemanticObjectDetectionSrvResponse
 
 
-
+OBJECT_DETECTOR = None
 CAPTIONER = None
 MEMORY = None
+
+gd_device = "cuda:2"
 
 def parse_args():
     default_query = "<video>\n You are a wandering around a household area. Please describe in detail what you see in the few seconds of the video. \
@@ -113,7 +116,7 @@ def plot_boxes_to_image(image_pil, tgt):
 
 def load_grounding_dino_model(model_config_path, model_checkpoint_path):
     args = SLConfig.fromfile(model_config_path)
-    args.device = "cuda: 2"
+    args.device = gd_device
     model = build_model(args)
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
@@ -170,7 +173,7 @@ def handle_object_detection_request(req):
     query_image, _ = transform(query_pil_img, None) 
     # run model
     boxes_filt, pred_phrases, labels, confs = get_grounding_output(
-        OBJECT_DETECTOR, query_image, query_txt, GD_BOX_THRESHOLD, GD_TEXT_THRESHOLD, device="cuda: 2", token_spans=eval(f"{TOKEN_SPANS}")
+        OBJECT_DETECTOR, query_image, query_txt, GD_BOX_THRESHOLD, GD_TEXT_THRESHOLD, device=gd_device, token_spans=eval(f"{GD_TOKEN_SPANS}")
     )
     
     if VERBOSE:
@@ -324,8 +327,8 @@ def handle_observation_request(req):
 def start_services():
     rospy.Service('/memory/observe', RememberSrv, handle_observation_request)
     rospy.loginfo("Memory observation service is ready.")
-    rospy.Service('grounding_dino_bbox_detector', SemanticObjectDetectionSrv, handle_object_detection_request)
-    rospy.loginfo("GroundingDINO service is ready.")
+    # rospy.Service('grounding_dino_bbox_detector', SemanticObjectDetectionSrv, handle_object_detection_request)
+    # rospy.loginfo("GroundingDINO service is ready.")
     rospy.spin()
 
 if __name__ == "__main__":
@@ -348,22 +351,18 @@ if __name__ == "__main__":
     remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
     
     # grounding dino
-    GD_BOX_THRESHOLD = args.gd_box_threshold
-    GD_TEXT_THRESHOLD = args.gd_text_threshold
-    GD_TOKEN_SPANS = args.gd_token_spans
-    OBJECT_DETECTOR = load_grounding_dino_model(args.gd_config_file, args.gd_checkpoint_path)
+    # GD_BOX_THRESHOLD = args.gd_box_threshold
+    # GD_TEXT_THRESHOLD = args.gd_text_threshold
+    # GD_TOKEN_SPANS = args.gd_token_spans
+    # OBJECT_DETECTOR = load_grounding_dino_model(args.gd_config_file, args.gd_checkpoint_path)
     
     # start agent
     rospy.init_node("remote_agent")
-    
+    threading.Thread(target=start_services, daemon=True).start()
     agent = Agent()
     agent.set_memory(MEMORY)
     
+    rospy.loginfo("Finish loading...")
+    
+    rospy.sleep(0.5)
     agent.run(question="Bring me a cup from a table.")
-    
-    # threading.Thread(target=start_services, daemon=True).start()
-    
-    # while True:
-    #     import time
-    #     time.sleep(10)
-    #     import pdb; pdb.set_trace()

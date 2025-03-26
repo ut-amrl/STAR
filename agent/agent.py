@@ -15,14 +15,22 @@ from utils.tools import (
     create_recall_any_tool, 
     create_recall_last_tool, 
     create_find_any_at_tool, 
-    is_instance_observed
 )
 
 from memory.memory import MilvusMemory
 
 import rospy
 import roslib; roslib.load_manifest('amrl_msgs')
-from amrl_msgs.srv import GetImageAtPoseSrv, GetImageAtPoseSrvRequest
+from amrl_msgs.srv import (
+    GetImageSrv,
+    GetImageSrvRequest,
+    GetImageAtPoseSrv, 
+    GetImageAtPoseSrvRequest, 
+    SemanticObjectDetectionSrv, 
+    SemanticObjectDetectionSrvRequest,
+    PickObjectSrv,
+    PickObjectSrvRequest,
+)
 
 
 def from_find_at_to(state):
@@ -83,7 +91,7 @@ class Agent:
     def _llm_selector(self, llm_type):
         if 'gpt-4' in llm_type:
             import os
-            llm = ChatOpenAI(model='gpt-4o', api_key=os.environ.get("OPENAI_API_KEY"))
+            llm = ChatOpenAI(model=llm_type, api_key=os.environ.get("OPENAI_API_KEY"))
             return FunctionsWrapper(llm)
         else:
             raise ValueError("Unsupported LLM type!")
@@ -187,6 +195,7 @@ class Agent:
         current_goal.records.append(record[0])
         return {"current_goal": current_goal}
     
+    # Requests to robots
     def _send_getImageAtPose_request(self, goal_x:float, goal_y:float, goal_theta:float):
         rospy.wait_for_service("/Cobot/GetImageAtPose")
         img_message = None
@@ -197,13 +206,36 @@ class Agent:
             request.y = goal_y
             request.theta = goal_theta
             response = get_image_at_pose(request)
-            
-            pil_img = ros_image_to_pil(response.image)
-            img_data = pil_to_utf8(pil_img)
-            img_message = get_vlm_img_message(img_data)
         except rospy.ServiceException as e:
             rospy.logerr(f"Service call failed: {e}")
-        return img_message
+        return response
+        
+    def _send_getImage_request(self):
+        rospy.wait_for_service("/Cobot/GetImage")
+        try: 
+            get_image = rospy.ServiceProxy("/Cobot/GetImage", GetImageSrv)
+            request = GetImageSrvRequest()
+            response = get_image(request)
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Service call failed: {e}")
+        return response
+        
+    def _send_pickObject_request(self, bounding_boxes):
+        rospy.wait_for_service("/Cobot/Pick")
+        try: 
+            pick_object = rospy.ServiceProxy("/Cobot/Pick", PickObjectSrv)
+            request = PickObjectSrvRequest()
+            request.bounding_boxes = bounding_boxes
+            response = pick_object(request)
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Service call failed: {e}")
+        return response
+        
+    def _find_at_by_txt(self, goal_x: float, goal_y: float, goal_theta: float, query_txt):
+        obs = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta)
+        depth = np.array(obs.depth.data).reshape((obs.depth.height, obs.depth.width))
+        rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta}")
+        return is_txt_instance_observed(obs.image, query_txt, depth)
         
     def find_at(self, state):
         current_goal = state["current_goal"]
@@ -211,20 +243,34 @@ class Agent:
         target = current_goal.curr_target()
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])
-        object_desc = "a cup" # TODO retrieve this from current_goal
+        query_txt = "a cup" # TODO retrieve this from current_goal
             
         goal_x, goal_y, goal_theta = target["position"][0], target["position"][1], target["position"][2]
-        img_message = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta)
-        if is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
-            current_goal.found = True
-        if not current_goal.found:
-            img_message = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta-radians(15))
-            if is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
+        
+        candidate_goals = [
+            [goal_x, goal_y, goal_theta],
+            [goal_x, goal_y, goal_theta-radians(30)],
+            [goal_x, goal_y, goal_theta+radians(30)],
+        ]
+        for candidate_goal in candidate_goals:
+            if self._find_at_by_txt(candidate_goal[0], candidate_goal[1], candidate_goal[2], query_txt):
                 current_goal.found = True
-        if not current_goal.found:
-            img_message = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta+radians(15))
-            if is_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
-                current_goal.found = True
+                break
+        import pdb; pdb.set_trace()
+        
+        # rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta}")
+        # if is_viz_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
+        #     current_goal.found = True
+        # if not current_goal.found:
+        #     rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta-radians(30)}")
+        #     img_message = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta-radians(30))
+        #     if is_viz_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
+        #         current_goal.found = True
+        # if not current_goal.found:
+        #     rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta+radians(30)}")
+        #     img_message = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta+radians(30))
+        #     if is_viz_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
+        #         current_goal.found = True
                 
         if current_goal.found:
             debug_vid(current_goal.curr_target(), "debug")
@@ -232,9 +278,14 @@ class Agent:
         return {"current_goal": current_goal}
     
     def pick(self, state):
+        object_text = state["current_goal"].object
         curr_target = state["current_goal"].curr_target()
-        
+        image = self._send_getImage_request()
+        bbox_msgs = request_bbox_detection_service(image.image, object_text)
         import pdb; pdb.set_trace()
+        
+        response = self._send_pickObject_request(bbox_msgs.bounding_boxes)
+        print()
         return
     
     def terminate(self, state):
