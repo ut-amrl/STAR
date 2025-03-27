@@ -9,6 +9,7 @@ from langgraph.graph.message import add_messages
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+from utils.debug import get_logger
 from utils.function_wrapper import FunctionsWrapper
 from utils.utils import *
 from utils.tools import (
@@ -61,6 +62,8 @@ class AgentState(TypedDict):
 
 class Agent:
     def __init__(self, llm_type: str = "gpt-4", vlm_type: str = "gpt-4o", verbose: bool = False):
+        self.logger = get_logger()
+        
         self.verbose = verbose
         
         self.llm_type, self.vlm_type = llm_type, vlm_type
@@ -123,6 +126,8 @@ class Agent:
         current_goal.plan = "bring me a cup from a table"
         current_goal.object = "cup"
         
+        self.logger.info(current_goal.plan)
+        
         return {"task": task, "current_goal": current_goal}
     
     def recall_any(self, state):
@@ -155,6 +160,8 @@ class Agent:
         response = model.invoke({"question": question})
         keywords = eval(response.content)
         
+        self.logger.info(f"Searching vector db for keywords: {keywords}")
+        
         query = ', or '.join(keywords)
         record_found = None
         for i in range(5):
@@ -176,10 +183,17 @@ class Agent:
             question = f"User Task: {question}. Have you seen the instance user needs in your recalled moments?"
             response = model.invoke({"question": question, "docs": parsed_docs})
             
+            self.logger.info(f"Retrived docs: \n{parsed_docs}")
+            
             record_id = response.content
+            self.logger.info(f"LLM response: {record_id}")
+            
             if len(record_id) != 0:
                 record_id = int(eval(record_id))
                 docs = self.memory.get_by_id(record_id)
+                
+                self.logger.info(f"Record found: {docs}")
+                
                 record_found = eval(docs)
                 break
             
@@ -220,10 +234,8 @@ class Agent:
         
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])
-        query_txt = "a cup" # TODO retrieve this from current_goal
+        query_txt = current_goal.object
         
-        import pdb; pdb.set_trace()
-            
         goal_x, goal_y, goal_theta = target["position"][0], target["position"][1], target["position"][2]
         
         candidate_goals = [
@@ -232,6 +244,7 @@ class Agent:
             [goal_x, goal_y, goal_theta+radians(30)],
         ]
         for candidate_goal in candidate_goals:
+            self.logger.info(f"Finding {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})")
             if self._find_at_by_txt(candidate_goal[0], candidate_goal[1], candidate_goal[2], query_txt):
                 current_goal.found = True
                 break
@@ -251,6 +264,7 @@ class Agent:
         #         current_goal.found = True
                 
         if current_goal.found:
+            self.logger.info(f"Found {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})!")
             debug_vid(current_goal.curr_target(), "debug")
         
         return {"current_goal": current_goal}

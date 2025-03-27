@@ -374,15 +374,15 @@ if __name__ == "__main__":
     # request_get_image_at_pose_service(7.5, 60.9, radians(90.0))
     # rospy.loginfo("finish navigating to waypoint1")
     
-    # rospy.sleep(0.5)
-    # agent.run(question="Bring me a cup from a table.")
+    rospy.sleep(0.5)
+    agent.run(question="Bring me a cup from a table.")
     rospy.sleep(20)
     
-    from agent import ObjectRetrievalPlan
-    current_goal = ObjectRetrievalPlan()
-    current_goal.plan = "Bring me a cup from a table"
-    agent._recall_last_seen_from_txt(current_goal)
-    import pdb; pdb.set_trace()
+    # from agent import ObjectRetrievalPlan
+    # current_goal = ObjectRetrievalPlan()
+    # current_goal.plan = "Bring me a cup from a table"
+    # agent._recall_last_seen_from_txt(current_goal)
+    # import pdb; pdb.set_trace()
     rospy.spin()
     
     # request_get_image_at_pose_service(4, 60.8, radians(90.0))
