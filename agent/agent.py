@@ -43,11 +43,14 @@ def from_find_at_to(state):
 class ObjectRetrievalPlan:
     def __init__(self):
         self.found = False
-        self.plan = None # a description of the plan
+        self.task = None # a description of the plan
         self.query_obj_desc = None
         self.query_obj_cls = None
         self.object_obs = None # a past observation of the instance
         self.records = []
+        
+    def __str__(self):
+        return self.task
         
     def curr_target(self):
         if len(self.records) == 0:
@@ -137,11 +140,11 @@ class Agent:
         
         # TODO ask LLM to fill it in
         current_goal = ObjectRetrievalPlan()
-        current_goal.plan = f"Find {task_info['object_desc']}"
+        current_goal.task = f"Find {task_info['object_desc']}"
         current_goal.query_obj_desc = task_info['object_desc']
         current_goal.query_obj_cls = task_info['object_class']
         
-        self.logger.info(current_goal.plan)
+        self.logger.info(current_goal)
         
         return {"task": task, "current_goal": current_goal}
     
@@ -161,7 +164,7 @@ class Agent:
         return {"messages": [response]}
     
     def _recall_last_seen_from_txt(self, current_goal):
-        question = current_goal.plan
+        question = current_goal.task
         
         model = self.llm
         prompt = ChatPromptTemplate.from_messages(
@@ -171,7 +174,8 @@ class Agent:
             ]
         )
         model = prompt | model
-        question = f"User Task: Find {current_goal.query_obj_desc}"
+        # question = f"User Task: Find {current_goal.query_obj_desc}"
+        question = f"User Task: Find {current_goal.query_obj_cls}" # TODO
         response = model.invoke({"question": question})
         keywords = eval(response.content)
         
@@ -184,7 +188,14 @@ class Agent:
             if docs == '':
                 break
             
-            parsed_docs = parse_db_records_for_llm(eval(docs))
+            seen_records = set([record["id"] for record in current_goal.records])
+            filtered_records = []
+            for record in eval(docs):
+                if record["id"] not in seen_records:
+                    filtered_records.append(record)
+            parsed_docs = parse_db_records_for_llm(filtered_records)
+            
+            # parsed_docs = parse_db_records_for_llm(eval(docs))
             
             model = self.llm
             prompt = ChatPromptTemplate.from_messages(
@@ -221,7 +232,7 @@ class Agent:
         current_goal = state["current_goal"]
         # TODO need to handle the case where no record is retrieved
         record = self._recall_last_seen_from_txt(current_goal)
-        current_goal.records.append(record[0])
+        current_goal.records += record
         return {"current_goal": current_goal}
     
     def _send_getImage_request(self):
@@ -235,10 +246,11 @@ class Agent:
         return response
         
     def _find_at_by_txt(self, goal_x: float, goal_y: float, goal_theta: float, query_txt):
-        response = request_get_image_at_pose_service(goal_x, goal_y, goal_theta)
+        self.logger.info(f"Finding object {query_txt} at ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
+        response = request_get_image_at_pose_service(goal_x, goal_y, goal_theta, logger=self.logger)
         depth = np.array(response.depth.data).reshape((response.depth.height, response.depth.width))
         rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta}")
-        return is_txt_instance_observed(response.image, query_txt, depth)
+        return is_txt_instance_observed(response.image, query_txt, depth, logger=self.logger)
         
     def find_at(self, state):
         current_goal = state["current_goal"]
@@ -257,8 +269,8 @@ class Agent:
         
         candidate_goals = [
             [goal_x, goal_y, goal_theta],
-            [goal_x, goal_y, goal_theta-radians(30)],
-            [goal_x, goal_y, goal_theta+radians(30)],
+            [goal_x, goal_y, goal_theta-radians(60)],
+            [goal_x, goal_y, goal_theta+radians(60)],
         ]
         for candidate_goal in candidate_goals:
             self.logger.info(f"Finding {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})")
@@ -283,7 +295,7 @@ class Agent:
         if current_goal.found:
             self.logger.info(f"Found {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})!")
             debug_vid(current_goal.curr_target(), "debug")
-        
+            
         return {"current_goal": current_goal}
     
     def pick(self, state):

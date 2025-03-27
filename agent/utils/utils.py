@@ -161,12 +161,16 @@ def get_depth(xyxy, depth, padding:int=8):
     print("depth: ", Z.mean())
     return Z.mean()
 
-def is_txt_instance_observed(query_img, query_txt: str, depth = None):
+def is_txt_instance_observed(query_img, query_txt: str, depth = None, logger = None):
     response = request_bbox_detection_service(query_img, query_txt)
     for detection in response.bounding_boxes.bboxes:
         z = get_depth(detection.xyxy, depth)
         if (z is not np.nan) and (z < 2.5):
+            if logger:
+                logger.info(f"Observed instannce {query_txt} {z:.2f} m away.")
             return True
+        logger.info(f"Observed instannce {query_txt} {z:.2f} m away (Too far).")
+    logger.info(f"Failed to observe instannce {query_txt}")
     return False
 
 def is_viz_instance_observed(vlm, vlm_processor, obs, instance):
@@ -246,7 +250,9 @@ def request_pick_service(query_image: Image = Image(), query_txt: str = ""):
         rospy.logerr(f"Service call failed: {e}")
     return response
 
-def request_get_image_at_pose_service(goal_x:float, goal_y:float, goal_theta:float):
+def request_get_image_at_pose_service(goal_x:float, goal_y:float, goal_theta:float, logger = None):
+    if logger:
+        logger.info(f"Requesting to navgiate to ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
     rospy.wait_for_service("/Cobot/GetImageAtPose")
     try: 
         get_image_at_pose = rospy.ServiceProxy("/Cobot/GetImageAtPose", GetImageAtPoseSrv)
@@ -257,4 +263,9 @@ def request_get_image_at_pose_service(goal_x:float, goal_y:float, goal_theta:flo
         response = get_image_at_pose(request)
     except rospy.ServiceException as e:
         rospy.logerr(f"Service call failed: {e}")
+    if logger:
+        if response and response.success:
+            logger.info(f"Successfully navgiate to ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
+        else:
+            logger.info(f"Failed to navgiate to ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
     return response

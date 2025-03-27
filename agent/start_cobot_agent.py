@@ -30,7 +30,7 @@ gd_device = "cuda:2"
 
 def parse_args():
     default_query = "<video>\n You are a wandering around a household area. Please describe in detail what you see in the few seconds of the video. \
-        Focus on objects, events/activities, people and their actions, and other notable details. \
+        Focus on objects. You can also descripe events/activities, people and their actions, and other notable details. \
         Provide enough detail about objects (e.g., colors, patterns, logos, or states) to ensure they can be identified through text alone. For example, instead of just 'a box,' describe its color, any images or logos on it, and any distinguishing marks. \
         Think step by step about these details and be very specific. \
         Describe the video directly without any introductory phrases or extra commentary."
@@ -368,13 +368,18 @@ if __name__ == "__main__":
     rospy.sleep(0.5)
     rospy.loginfo("Finish loading...")
     
-    # from math import radians
-    # request_get_image_at_pose_service(12, 60.9, radians(90.0))
-    # rospy.loginfo("finish navigating to waypoint1")
-    # request_get_image_at_pose_service(7.5, 60.9, radians(90.0))
-    # rospy.loginfo("finish navigating to waypoint1")
-    
+    from math import radians
+    request_get_image_at_pose_service(12, 60.9, radians(90.0))
+    rospy.loginfo("finish navigating to waypoint1")
     rospy.sleep(0.5)
+    request_get_image_at_pose_service(10.5, 60.5, radians(180))
+    rospy.loginfo("finish navigating to waypoint2")
+    rospy.sleep(1.)
+    # request_get_image_at_pose_service(7.5, 60.9, radians(90.0))
+    request_get_image_at_pose_service(11.2, 59, radians(-45.0))
+    rospy.loginfo("finish navigating to waypoint3")
+    rospy.sleep(0.5)
+    
     agent.run(question="Bring me a cup from a table.")
     rospy.sleep(20)
     

@@ -11,10 +11,30 @@ Type I: __conversational_response. It calls a system to response to the user. Us
 [{{
     "tool": "__conversational_response", 
     "tool_input": {{ 
-        "response":  ['-keyword1-', '-keyword2-', ...]
+        "response":  "['-keyword1-', '-keyword2-', ...]"
+    }}
+}}]
+```
+
+Example 1: "find fruits"
+```json
+[{{
+    "tool": "__conversational_response", 
+    "tool_input": {{ 
+        "response":  "['fruits', 'apple', 'bananas']"
+    }}
+}}]
+```
+
+Example 2: "find cup"
+```json
+[{{
+    "tool": "__conversational_response", 
+    "tool_input": {{ 
+        "response":  "['cup', 'mug']"
     }}
 }}]
 ```
 
 Output Rules:
-1. "moment_ids" must be a list of string. It should always be a list even if it only contains 1 keyword.
+1. "moment_responseids" must be a list of string. It should always be a list even if it only contains 1 keyword.
