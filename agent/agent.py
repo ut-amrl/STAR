@@ -195,21 +195,6 @@ class Agent:
         current_goal.records.append(record[0])
         return {"current_goal": current_goal}
     
-    # Requests to robots
-    def _send_getImageAtPose_request(self, goal_x:float, goal_y:float, goal_theta:float):
-        rospy.wait_for_service("/Cobot/GetImageAtPose")
-        img_message = None
-        try: 
-            get_image_at_pose = rospy.ServiceProxy("/Cobot/GetImageAtPose", GetImageAtPoseSrv)
-            request = GetImageAtPoseSrvRequest()
-            request.x = goal_x
-            request.y = goal_y
-            request.theta = goal_theta
-            response = get_image_at_pose(request)
-        except rospy.ServiceException as e:
-            rospy.logerr(f"Service call failed: {e}")
-        return response
-        
     def _send_getImage_request(self):
         rospy.wait_for_service("/Cobot/GetImage")
         try: 
@@ -220,22 +205,11 @@ class Agent:
             rospy.logerr(f"Service call failed: {e}")
         return response
         
-    def _send_pickObject_request(self, bounding_boxes):
-        rospy.wait_for_service("/Cobot/Pick")
-        try: 
-            pick_object = rospy.ServiceProxy("/Cobot/Pick", PickObjectSrv)
-            request = PickObjectSrvRequest()
-            request.bounding_boxes = bounding_boxes
-            response = pick_object(request)
-        except rospy.ServiceException as e:
-            rospy.logerr(f"Service call failed: {e}")
-        return response
-        
     def _find_at_by_txt(self, goal_x: float, goal_y: float, goal_theta: float, query_txt):
-        obs = self._send_getImageAtPose_request(goal_x, goal_y, goal_theta)
-        depth = np.array(obs.depth.data).reshape((obs.depth.height, obs.depth.width))
+        response = request_get_image_at_pose_service(goal_x, goal_y, goal_theta)
+        depth = np.array(response.depth.data).reshape((response.depth.height, response.depth.width))
         rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta}")
-        return is_txt_instance_observed(obs.image, query_txt, depth)
+        return is_txt_instance_observed(response.image, query_txt, depth)
         
     def find_at(self, state):
         current_goal = state["current_goal"]
@@ -257,8 +231,6 @@ class Agent:
                 current_goal.found = True
                 break
             
-        import pdb; pdb.set_trace()
-        
         # rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta}")
         # if is_viz_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
         #     current_goal.found = True

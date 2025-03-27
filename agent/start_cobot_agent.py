@@ -9,7 +9,10 @@ import time
 import numpy as np
 
 from agent import Agent
-from utils.utils import ros_image_to_pil
+from utils.utils import (
+    ros_image_to_pil,
+    request_get_image_at_pose_service,
+)
 from utils.memloader import remember_from_paths
 from memory.memory import MilvusMemory, MemoryItem
 
@@ -292,7 +295,7 @@ class VILACaptioner:
         return outputs
 
 def handle_observation_request(req):
-    # rospy.loginfo(f"[Memory] Received observation request")
+    rospy.loginfo(f"[Memory] Received observation request")
     
     timestamp = req.timestamp
     position = [req.x, req.y, req.theta]
@@ -365,4 +368,9 @@ if __name__ == "__main__":
     rospy.loginfo("Finish loading...")
     
     rospy.sleep(0.5)
-    agent.run(question="Bring me a cup from a table.")
+    from math import radians
+    request_get_image_at_pose_service(10, 60.8, radians(90.0))
+    
+    # request_get_image_at_pose_service(4, 60.8, radians(90.0))
+    
+    # agent.run(question="Bring me a cup from a table.")

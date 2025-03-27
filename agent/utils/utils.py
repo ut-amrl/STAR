@@ -165,7 +165,7 @@ def is_txt_instance_observed(query_img, query_txt: str, depth = None):
     response = request_bbox_detection_service(query_img, query_txt)
     for detection in response.bounding_boxes.bboxes:
         z = get_depth(detection.xyxy, depth)
-        if (z is not np.nan) and (z < 2.0):
+        if (z is not np.nan) and (z < 2.5):
             return True
     return False
 
@@ -242,6 +242,19 @@ def request_pick_service(query_image: Image = Image(), query_txt: str = ""):
         request.query_image = query_image
         request.query_text = query_txt
         response = pick_object(request)
+    except rospy.ServiceException as e:
+        rospy.logerr(f"Service call failed: {e}")
+    return response
+
+def request_get_image_at_pose_service(goal_x:float, goal_y:float, goal_theta:float):
+    rospy.wait_for_service("/Cobot/GetImageAtPose")
+    try: 
+        get_image_at_pose = rospy.ServiceProxy("/Cobot/GetImageAtPose", GetImageAtPoseSrv)
+        request = GetImageAtPoseSrvRequest()
+        request.x = goal_x
+        request.y = goal_y
+        request.theta = goal_theta
+        response = get_image_at_pose(request)
     except rospy.ServiceException as e:
         rospy.logerr(f"Service call failed: {e}")
     return response
