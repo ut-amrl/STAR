@@ -119,7 +119,7 @@ class Agent:
             raise ValueError("Unsupported VLM type!")
         return model, processor
     
-    def initialize(self, state):
+    def initialize_object_search(self, state):
         messages = state["messages"]
         task = messages[0].content
         
@@ -305,7 +305,7 @@ class Agent:
         
         workflow = StateGraph(AgentState)
         
-        workflow.add_node("initialize", lambda state: self.initialize(state))
+        workflow.add_node("initialize_object_search", lambda state: self.initialize_object_search(state))
         workflow.add_node("terminate", lambda state: self.terminate(state))
         
         # workflow.add_node("recall_any_node", lambda state: try_except_continue(state, self.recall_any))
@@ -317,7 +317,7 @@ class Agent:
         workflow.add_node("recall_last_seen", lambda state: try_except_continue(state, self.recall_last_seen))
         workflow.add_node("find_at", lambda state: self.find_at(state))
         workflow.add_node("pick", lambda state: self.pick(state))
-        workflow.add_edge("initialize", "recall_last_seen")
+        workflow.add_edge("initialize_object_search", "recall_last_seen")
         workflow.add_edge("recall_last_seen", "find_at")
         workflow.add_conditional_edges(
             "find_at",
@@ -330,7 +330,7 @@ class Agent:
         workflow.add_edge("pick", "terminate")
         workflow.add_edge("terminate", END)
         
-        workflow.set_entry_point("initialize")
+        workflow.set_entry_point("initialize_object_search")
         self.graph = workflow.compile()
         
     def run(self, question: str):
