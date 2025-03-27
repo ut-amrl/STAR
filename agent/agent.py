@@ -67,11 +67,11 @@ class Agent:
         self.llm = self._llm_selector(self.llm_type)
         self.vlm, self.vlm_processor = self._vlm_selector(self.vlm_type)
     
-        if "qwen" in self.vlm_type:
-            self.local_vlm = self.vlm
-            self.local_vlm_processor = self.vlm_processor
-        else:
-            self.local_vlm, self.local_vlm_processor =  self._vlm_selector("qwen")
+        # if "qwen" in self.vlm_type:
+        #     self.local_vlm = self.vlm
+        #     self.local_vlm_processor = self.vlm_processor
+        # else:
+        #     self.local_vlm, self.local_vlm_processor =  self._vlm_selector("qwen")
         
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
@@ -157,8 +157,8 @@ class Agent:
         
         query = ', or '.join(keywords)
         record_found = None
-        for _ in range(5):
-            docs = self.memory.search_last_k_by_text(is_first_time=True, query=query)
+        for i in range(5):
+            docs = self.memory.search_last_k_by_text(is_first_time=(i==0), query=query)
             if docs == '':
                 break
             
@@ -177,11 +177,11 @@ class Agent:
             response = model.invoke({"question": question, "docs": parsed_docs})
             
             record_id = response.content
-            if len(record_id) == 0:
-                continue
-            record_id = int(eval(record_id))
-            docs = self.memory.get_by_id(record_id)
-            record_found = eval(docs)
+            if len(record_id) != 0:
+                record_id = int(eval(record_id))
+                docs = self.memory.get_by_id(record_id)
+                record_found = eval(docs)
+                break
             
         return record_found
     
@@ -215,9 +215,14 @@ class Agent:
         current_goal = state["current_goal"]
         current_goal.found = False
         target = current_goal.curr_target()
+        
+        rospy.loginfo(f"current target: \n{target}")
+        
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])
         query_txt = "a cup" # TODO retrieve this from current_goal
+        
+        import pdb; pdb.set_trace()
             
         goal_x, goal_y, goal_theta = target["position"][0], target["position"][1], target["position"][2]
         

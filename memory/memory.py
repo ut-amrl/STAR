@@ -101,8 +101,10 @@ class MilvusWrapper:
         res = self.collection.insert(data_list)
         return res
     
-    def search_by_expr(self, expr, k:int):
+    def reload(self):
         self.collection.load()
+    
+    def search_by_expr(self, expr, k:int):
         res = self.collection.query(
             limit=k, 
             expr=expr, 
@@ -113,7 +115,6 @@ class MilvusWrapper:
         return res
         
     def search(self, query_embedding, k:int, expr:str="timestamp >= 0"):
-        self.collection.load()
         param = {
                 "metric_type": "L2",
                 "params": {
@@ -196,23 +197,25 @@ class MilvusMemory(Memory):
                 frame.save(savepath)
                 
     def search_by_text(self, query: str, k:int = 8) -> str:
+        self.milv_wrapper.reload()
         query_embedding = self.embedder.embed_query(query)
         results = self.milv_wrapper.search(query_embedding, k = k)
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
         return docs
     
-    def search_last_k_by_text(self, is_first_time: bool, query: str, k: int = 30) -> str:
+    def search_last_k_by_text(self, is_first_time: bool, query: str, k: int = 10) -> str:
         if self.last_seen_id is not None and self.last_seen_id == 0:
             self.last_seen_id = None
             return ''
         
         query_embedding = self.embedder.embed_query(query)
         if is_first_time:
+            self.milv_wrapper.reload()
             start_id, end_id = max(self.last_id-k, 0), self.last_id
         else:
             start_id, end_id = max(self.last_seen_id-k, 0), self.last_seen_id
-        n_retrieval = max((k // 4), 6)
+        n_retrieval = max((k // 4), 5)
         results = self.milv_wrapper.search(query_embedding=query_embedding, k=n_retrieval, expr=f"id >= {start_id} and id < {end_id}")
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)

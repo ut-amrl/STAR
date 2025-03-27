@@ -30,8 +30,8 @@ gd_device = "cuda:2"
 
 def parse_args():
     default_query = "<video>\n You are a wandering around a household area. Please describe in detail what you see in the few seconds of the video. \
-        Focus on foreground objects, events/activities, people and their actions, and other notable details. You can ignore anything that appeared to be further away from the camera (in the background). \
-        Provide enough detail about objects (e.g., colors, patterns, logos, or states) to ensure they can be identified through text alone. For example,  Instead of just 'a box,' describe its color, any images or logos on it, and any distinguishing marks. \
+        Focus on objects, events/activities, people and their actions, and other notable details. \
+        Provide enough detail about objects (e.g., colors, patterns, logos, or states) to ensure they can be identified through text alone. For example, instead of just 'a box,' describe its color, any images or logos on it, and any distinguishing marks. \
         Think step by step about these details and be very specific. \
         Describe the video directly without any introductory phrases or extra commentary."
     parser = argparse.ArgumentParser()
@@ -295,7 +295,7 @@ class VILACaptioner:
         return outputs
 
 def handle_observation_request(req):
-    rospy.loginfo(f"[Memory] Received observation request")
+    # rospy.loginfo(f"[Memory] Received observation request")
     
     timestamp = req.timestamp
     position = [req.x, req.y, req.theta]
@@ -365,12 +365,25 @@ if __name__ == "__main__":
     agent = Agent()
     agent.set_memory(MEMORY)
     
+    rospy.sleep(0.5)
     rospy.loginfo("Finish loading...")
     
-    rospy.sleep(0.5)
-    from math import radians
-    request_get_image_at_pose_service(10, 60.8, radians(90.0))
+    # from math import radians
+    # request_get_image_at_pose_service(12, 60.9, radians(90.0))
+    # rospy.loginfo("finish navigating to waypoint1")
+    # request_get_image_at_pose_service(7.5, 60.9, radians(90.0))
+    # rospy.loginfo("finish navigating to waypoint1")
+    
+    # rospy.sleep(0.5)
+    # agent.run(question="Bring me a cup from a table.")
+    rospy.sleep(20)
+    
+    from agent import ObjectRetrievalPlan
+    current_goal = ObjectRetrievalPlan()
+    current_goal.plan = "Bring me a cup from a table"
+    agent._recall_last_seen_from_txt(current_goal)
+    import pdb; pdb.set_trace()
+    rospy.spin()
     
     # request_get_image_at_pose_service(4, 60.8, radians(90.0))
     
-    # agent.run(question="Bring me a cup from a table.")
