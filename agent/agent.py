@@ -44,7 +44,8 @@ class ObjectRetrievalPlan:
     def __init__(self):
         self.found = False
         self.plan = None # a description of the plan
-        self.object = None # a semantic class label for object detection
+        self.query_obj_desc = None
+        self.query_obj_cls = None
         self.object_obs = None # a past observation of the instance
         self.records = []
         
@@ -84,6 +85,7 @@ class Agent:
         self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.recall_tools]
         
         prompt_dir = os.path.join(str(os.path.dirname(__file__)), "prompts", "agent")
+        self.object_search_prompt = file_to_string(os.path.join(prompt_dir, 'object_search_prompt.txt'))
         self.recall_any_prompt = file_to_string(os.path.join(prompt_dir, 'recall_any_prompt.txt'))
         # Recall last seen prompts
         self.get_param_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'get_param_from_txt_prompt.txt'))
@@ -121,10 +123,23 @@ class Agent:
         messages = state["messages"]
         task = messages[0].content
         
+        model = self.llm
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("ai", self.object_search_prompt),
+                ("human", "{question}"),
+            ]
+        )
+        model = prompt | model
+        question = f"User Task: {task}"
+        response = model.invoke({"question": question})
+        task_info = eval(response.content)
+        
         # TODO ask LLM to fill it in
         current_goal = ObjectRetrievalPlan()
-        current_goal.plan = "bring me a cup from a table"
-        current_goal.object = "cup"
+        current_goal.plan = f"Find {task_info['object_desc']}"
+        current_goal.query_obj_desc = task_info['object_desc']
+        current_goal.query_obj_cls = task_info['object_class']
         
         self.logger.info(current_goal.plan)
         
@@ -156,7 +171,7 @@ class Agent:
             ]
         )
         model = prompt | model
-        question = f"User Task: {question}"
+        question = f"User Task: Find {current_goal.query_obj_desc}"
         response = model.invoke({"question": question})
         keywords = eval(response.content)
         
@@ -183,7 +198,7 @@ class Agent:
             question = f"User Task: {question}. Have you seen the instance user needs in your recalled moments?"
             response = model.invoke({"question": question, "docs": parsed_docs})
             
-            self.logger.info(f"Retrived docs: \n{parsed_docs}")
+            self.logger.info(f"Retrived docs: {parsed_docs}")
             
             record_id = response.content
             self.logger.info(f"LLM response: {record_id}")
@@ -234,7 +249,9 @@ class Agent:
         
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])
-        query_txt = current_goal.object
+        query_txt = current_goal.query_obj_cls
+        
+        import pdb; pdb.set_trace()
         
         goal_x, goal_y, goal_theta = target["position"][0], target["position"][1], target["position"][2]
         
@@ -270,7 +287,7 @@ class Agent:
         return {"current_goal": current_goal}
     
     def pick(self, state):
-        object_text = state["current_goal"].object
+        object_text = state["current_goal"].query_obj_cls
         curr_target = state["current_goal"].curr_target()
         import pdb; pdb.set_trace()
         response = request_pick_service(query_txt=object_text)
