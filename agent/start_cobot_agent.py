@@ -12,6 +12,8 @@ from agent import Agent
 from utils.utils import (
     ros_image_to_pil,
     request_get_image_at_pose_service,
+    get_vlm_img_message,
+    ask_qwen,
 )
 from utils.memloader import remember_from_paths
 from memory.memory import MilvusMemory, MemoryItem
@@ -24,6 +26,7 @@ from amrl_msgs.srv import RememberSrv, SemanticObjectDetectionSrv, SemanticObjec
 
 OBJECT_DETECTOR = None
 CAPTIONER = None
+VLM_MODEL, VLM_PROCESSOR = None, None
 MEMORY = None
 
 gd_device = "cuda:2"
@@ -293,9 +296,9 @@ class VILACaptioner:
             outputs = outputs[: -len(stop_str)]
         outputs = outputs.strip()
         return outputs
-
-def handle_observation_request(req):
-    # rospy.loginfo(f"[Memory] Received observation request")
+    
+def handle_observation_request(req, use_vila: bool = True, use_qwen: bool = False):
+    rospy.loginfo(f"[Memory] Received observation request")
     
     timestamp = req.timestamp
     position = [req.x, req.y, req.theta]
@@ -305,7 +308,25 @@ def handle_observation_request(req):
     for imgmsg in req.video:
         pil_image = ros_image_to_pil(imgmsg)
         pil_images.append(pil_image)
-    caption = CAPTIONER.caption(pil_images, PROMPT)
+        
+    captions = []
+    if use_vila:
+        caption = CAPTIONER.caption(pil_images, PROMPT)
+        captions.append(caption)
+    
+    if use_qwen:
+        import io; import base64
+        buffer = io.BytesIO()
+        pil_images[0].save(buffer, format="PNG")
+        img_bytes = buffer.getvalue()
+        img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+        img = get_vlm_img_message(img_base64)
+        caption = ask_qwen(VLM_MODEL, 
+                            VLM_PROCESSOR, 
+                            "Caption the same image. Make sure you capture all objects in great details. Respond in a single paragraph.",
+                            img, 
+                            "What do you see in the image?")
+    caption = "\n".join(captions)
     
     filenames = sorted(os.listdir(SAVEPATH))
     frame = 0
@@ -343,6 +364,13 @@ if __name__ == "__main__":
     PROMPT = args.query
     CAPTIONER = VILACaptioner(args)
     
+    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+    from qwen_vl_utils import process_vision_info
+    VLM_MODEL = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        "Qwen/Qwen2.5-VL-7B-Instruct", torch_dtype="auto", device_map={"": 1}
+    )
+    VLM_PROCESSOR = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+    
     # memory
     inpaths = [
         "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-01-55_VILA1.5-8b_3_secs.json",
@@ -368,20 +396,19 @@ if __name__ == "__main__":
     rospy.sleep(0.5)
     rospy.loginfo("Finish loading...")
     
-    from math import radians
-    request_get_image_at_pose_service(12, 60.9, radians(90.0))
-    rospy.loginfo("finish navigating to waypoint1")
-    rospy.sleep(0.5)
-    request_get_image_at_pose_service(10.5, 60.5, radians(180))
-    rospy.loginfo("finish navigating to waypoint2")
-    rospy.sleep(1.)
-    # request_get_image_at_pose_service(7.5, 60.9, radians(90.0))
-    request_get_image_at_pose_service(11.2, 59, radians(-45.0))
-    rospy.loginfo("finish navigating to waypoint3")
-    rospy.sleep(0.5)
+    # from math import radians
+    # request_get_image_at_pose_service(11.5, 60, radians(135))
+    # rospy.loginfo("finish navigating to waypoint1")
+    # rospy.sleep(0.5)
+    # request_get_image_at_pose_service(7.5, 60.9, radians(90))
+    # rospy.loginfo("finish navigating to waypoint2")
+    # rospy.sleep(0.5)
+    # request_get_image_at_pose_service(11.5, 60.5, radians(0))
+    # rospy.loginfo("finish navigating to waypoint3")
+    # rospy.sleep(0.5)
     
-    agent.run(question="Bring me a cup from a table.")
-    rospy.sleep(20)
+    # agent.run(question="Bring me a cup from a table.")
+    # rospy.sleep(20)
     
     # from agent import ObjectRetrievalPlan
     # current_goal = ObjectRetrievalPlan()

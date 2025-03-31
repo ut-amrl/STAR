@@ -5,3 +5,4 @@ data
 *.pyc
 *.png
 debug
+tests

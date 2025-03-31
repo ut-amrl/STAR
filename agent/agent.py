@@ -317,7 +317,7 @@ class Agent:
         
         workflow = StateGraph(AgentState)
         
-        workflow.add_node("initialize_object_search", lambda state: self.initialize_object_search(state))
+        workflow.add_node("initialize_object_search", lambda state: try_except_continue(state, self.initialize_object_search))
         workflow.add_node("terminate", lambda state: self.terminate(state))
         
         # workflow.add_node("recall_any_node", lambda state: try_except_continue(state, self.recall_any))

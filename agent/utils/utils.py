@@ -72,7 +72,7 @@ def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "openc
         with open(imgpath, "rb") as imgfile:
             data = imgfile.read()
             data = base64.b64encode(data)
-            img = copy.copy(img.decode("utf-8"))
+            img = base64.b64encode(data).decode("utf-8")
     else:
         ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
     return img
@@ -88,8 +88,7 @@ def get_images(vidpath: str, start_frame: str, end_frame: str, type: str = "open
         elif type.lower() == "utf-8":
             with open(imgpath, "rb") as imgfile:
                 data = imgfile.read()
-                data = base64.b64encode(data)
-                img = copy.copy(img.decode("utf-8"))
+                img = base64.b64encode(data).decode("utf-8")
         else:
             ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
         images.append(img)
@@ -269,3 +268,37 @@ def request_get_image_at_pose_service(goal_x:float, goal_y:float, goal_theta:flo
         else:
             logger.info(f"Failed to navgiate to ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
     return response
+
+def ask_qwen(vlm_model, vlm_processor, prompt: str, image, question: str):
+    messages = [
+        {"role": "system", "content": prompt},
+        {
+            "role": "user",
+            "content": [
+                image,
+                {"type": "text", "text": question},
+            ],
+        },
+    ]
+
+    # Process inputs
+    text = vlm_processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    image_inputs, video_inputs = process_vision_info(messages)
+    inputs = vlm_processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+    inputs = inputs.to(vlm_model.device)
+    
+    generated_ids = vlm_model.generate(**inputs, max_new_tokens=128)
+    generated_ids_trimmed = [
+        out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    output_text = vlm_processor.batch_decode(
+        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
+    return output_text[0]
+    
