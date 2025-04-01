@@ -316,5 +316,4 @@ def ask_chatgpt(model, prompt: str, images, question: str):
             
     model = prompt | model
     response = model.invoke({"question": question})
-    response_content = eval(response.content)
-    return response_content
+    return response.content

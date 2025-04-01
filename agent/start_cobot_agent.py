@@ -7,6 +7,7 @@ import os
 import threading
 import time
 import numpy as np
+import json
 
 from agent import Agent
 from utils.utils import (
@@ -16,7 +17,8 @@ from utils.utils import (
     ask_qwen,
     ask_chatgpt
 )
-from utils.memloader import remember_from_paths
+from utils.memloader import remember_from_paths, update_from_paths
+from utils.function_wrapper import FunctionsWrapper
 from memory.memory import MilvusMemory, MemoryItem
 
 import rospy
@@ -28,7 +30,11 @@ from amrl_msgs.srv import RememberSrv, SemanticObjectDetectionSrv, SemanticObjec
 OBJECT_DETECTOR = None
 CAPTIONER = None
 VLM_MODEL, VLM_PROCESSOR = None, None
+GPT = None
 MEMORY = None
+SAVEPATH = None
+OBS_SAVEPATH = None
+FILE = None
 
 gd_device = "cuda:2"
 
@@ -40,6 +46,7 @@ def parse_args():
         Describe the video directly without any introductory phrases or extra commentary."
     parser = argparse.ArgumentParser()
     # VILA
+    parser.add_argument("--replay", action="store_true")
     parser.add_argument("--model-path", type=str, default="Efficient-Large-Model/Llama-3-VILA1.5-8B")
     parser.add_argument("--model-base", type=str, default=None)
     parser.add_argument("--bagname", type=str, default="")
@@ -298,7 +305,7 @@ class VILACaptioner:
         outputs = outputs.strip()
         return outputs
     
-def handle_observation_request(req, use_vila: bool = True, use_qwen: bool = False, use_gpt: bool = False):
+def handle_observation_request(req, use_vila: bool = False, use_qwen: bool = False, use_gpt: bool = True):
     timestamp = req.timestamp
     position = [req.x, req.y, req.theta]
     theta = req.theta
@@ -327,13 +334,19 @@ def handle_observation_request(req, use_vila: bool = True, use_qwen: bool = Fals
                             "Caption the same image. Make sure you capture all objects in great details. Respond in a single paragraph.",
                             img, 
                             "What do you see in the image?")
+        captions.append(caption)
         
     if use_gpt:
         img = get_vlm_img_message(img_base64, type="chat-gpt")
+        caption = ask_chatgpt(GPT, 
+                             "Caption the same image. Make sure you capture all objects in great details. Respond in a single paragraph.",
+                             [img], 
+                             "What do you see in the image?")
+        captions.append(caption)
     
     caption = "\n".join(captions)
     
-    filenames = sorted(os.listdir(SAVEPATH))
+    filenames = sorted(os.listdir(OBS_SAVEPATH))
     frame = 0
     if len(filenames) != 0:
         frame = int(filenames[-1][:-4])
@@ -345,11 +358,23 @@ def handle_observation_request(req, use_vila: bool = True, use_qwen: bool = Fals
         time=timestamp,
         position=position,
         theta=theta,
-        vidpath=SAVEPATH,
+        vidpath=OBS_SAVEPATH,
         start_frame=start_frame,
         end_frame=end_frame
     )
     MEMORY.insert(item, images=pil_images)
+    
+    data = {
+        "time": timestamp,
+        "caption": caption,
+        "position": position,
+        "theta": theta,
+        "vidpath": OBS_SAVEPATH,
+        "start_frame": start_frame,
+        "end_frame": end_frame
+    }
+    FILE.write(json.dumps(data) + "\n")
+    FILE.flush()
     
     return True
 
@@ -364,14 +389,24 @@ if __name__ == "__main__":
     args = parse_args()
     VERBOSE = args.verbose
     
-    # captioner
-    SAVEPATH = args.obs_savepath; 
-    os.makedirs(SAVEPATH, exist_ok=True)
-    from datetime import datetime
-    SAVEPATH = os.path.join(SAVEPATH, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
-    os.makedirs(SAVEPATH, exist_ok=True)
-    PROMPT = args.query
-    CAPTIONER = VILACaptioner(args)
+    if not args.replay:
+        # captioner
+        SAVEPATH = args.obs_savepath; 
+        os.makedirs(SAVEPATH, exist_ok=True)
+        from datetime import datetime
+        SAVEPATH = os.path.join(SAVEPATH, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+        os.makedirs(SAVEPATH, exist_ok=True)
+        
+        OBS_SAVEPATH = os.path.join(SAVEPATH, "images")
+        os.makedirs(OBS_SAVEPATH, exist_ok=True)
+        filepath = os.path.join(SAVEPATH, f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.jsonl")
+        FILE = open(filepath, "a")
+        
+        from langchain_openai import ChatOpenAI
+        GPT = ChatOpenAI(model='gpt-4o', api_key=os.environ.get("OPENAI_API_KEY"))
+        
+        PROMPT = args.query
+        # CAPTIONER = VILACaptioner(args)
     
     # from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
     # from qwen_vl_utils import process_vision_info
@@ -385,10 +420,16 @@ if __name__ == "__main__":
         "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-01-55_VILA1.5-8b_3_secs.json",
         "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-00-15_VILA1.5-8b_3_secs.json",
     ]
-    MEMORY = MilvusMemory("test2", obs_savepth=SAVEPATH, db_ip='127.0.0.1')
+    MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
     MEMORY.reset()
     t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
     remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
+    
+    if args.replay:
+        inpaths = [
+            "/robodata/taijing/ros_perception/data/cobot/cobot_test_1/2025-04-01_13-53-08/2025-04-01_13-53-08.jsonl"
+        ]
+        update_from_paths(MEMORY, inpaths)
     
     # grounding dino
     # GD_BOX_THRESHOLD = args.gd_box_threshold
@@ -405,29 +446,23 @@ if __name__ == "__main__":
     rospy.sleep(0.5)
     rospy.loginfo("Finish loading...")
     
-    from math import radians
-    request_get_image_at_pose_service(11.5, 60, radians(135))
-    rospy.loginfo("finish navigating to waypoint1")
-    rospy.sleep(0.5)
-    request_get_image_at_pose_service(7.5, 60.9, radians(90))
-    rospy.loginfo("finish navigating to waypoint2")
-    rospy.sleep(0.5)
-    request_get_image_at_pose_service(11.7, 60, radians(45))
-    rospy.loginfo("finish navigating to waypoint3")
-    rospy.sleep(0.5)
-    # request_get_image_at_pose_service(7.59, 61.12, 1.19)
-    # rospy.loginfo("finish navigating to waypoint3")
-    # rospy.sleep(0.5)
-    
-    agent.run(question="Bring me a cup")
-    rospy.sleep(20)
-    
-    # from agent import ObjectRetrievalPlan
-    # current_goal = ObjectRetrievalPlan()
-    # current_goal.plan = "Bring me a cup from a table"
-    # agent._recall_last_seen_from_txt(current_goal)
-    # import pdb; pdb.set_trace()
-    rospy.spin()
-    
-    # request_get_image_at_pose_service(4, 60.8, radians(90.0))
+    if not args.replay:
+        from math import radians
+        request_get_image_at_pose_service(11.5, 60, radians(135))
+        rospy.loginfo("finish navigating to waypoint1")
+        rospy.sleep(0.5)
+        request_get_image_at_pose_service(7.5, 60.9, radians(90))
+        rospy.loginfo("finish navigating to waypoint2")
+        rospy.sleep(0.5)
+        request_get_image_at_pose_service(11.7, 60, radians(45))
+        rospy.loginfo("finish navigating to waypoint3")
+        rospy.sleep(0.5)
+        
+        agent.run(question="Bring me a cup")
+        rospy.sleep(20)
+        rospy.spin()
+    else:
+        agent.run(question="Bring me a cup")
+        # 7.987890243530273, 61.08519744873047, -0.10746081173419952
+        
     

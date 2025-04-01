@@ -7,6 +7,22 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from memory.memory import MilvusMemory
 from memory.memory import MemoryItem
 
+def update_from_paths(memory: MilvusMemory, inpaths: list):
+    for i, inpath in enumerate(inpaths):
+        with open(inpath, 'r') as f:
+            for data in [json.loads(line) for line in f]:
+                memory_item = MemoryItem(
+                    caption=data["caption"],
+                    time=data["time"],
+                    position=data["position"],
+                    theta=data["theta"],
+                    vidpath=data["vidpath"],
+                    start_frame=data["start_frame"],
+                    end_frame=data["end_frame"],
+                )
+                memory.insert(memory_item)
+            
+
 def remember_from_paths(memory: MilvusMemory, inpaths: list, time_offset: float, viddir: str):
     for i, inpath in enumerate(inpaths):
         start_time = None
