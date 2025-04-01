@@ -14,6 +14,7 @@ from utils.utils import (
     request_get_image_at_pose_service,
     get_vlm_img_message,
     ask_qwen,
+    ask_chatgpt
 )
 from utils.memloader import remember_from_paths
 from memory.memory import MilvusMemory, MemoryItem
@@ -165,7 +166,7 @@ def get_grounding_output(model, image, caption, box_threshold, text_threshold=No
     return boxes_filt, pred_phrases, labels, confs
 
 def handle_object_detection_request(req):
-    rospy.loginfo(f"Received request with query: {req.query_text}")
+    # rospy.loginfo(f"Received request with query: {req.query_text}")
     
     query_pil_img = ros_image_to_pil(req.query_image)
     query_txt = req.query_text
@@ -297,9 +298,7 @@ class VILACaptioner:
         outputs = outputs.strip()
         return outputs
     
-def handle_observation_request(req, use_vila: bool = True, use_qwen: bool = False):
-    rospy.loginfo(f"[Memory] Received observation request")
-    
+def handle_observation_request(req, use_vila: bool = True, use_qwen: bool = False, use_gpt: bool = False):
     timestamp = req.timestamp
     position = [req.x, req.y, req.theta]
     theta = req.theta
@@ -314,18 +313,24 @@ def handle_observation_request(req, use_vila: bool = True, use_qwen: bool = Fals
         caption = CAPTIONER.caption(pil_images, PROMPT)
         captions.append(caption)
     
-    if use_qwen:
+    if use_qwen or use_gpt:
         import io; import base64
         buffer = io.BytesIO()
         pil_images[0].save(buffer, format="PNG")
         img_bytes = buffer.getvalue()
         img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+        
+    if use_qwen:
         img = get_vlm_img_message(img_base64)
         caption = ask_qwen(VLM_MODEL, 
                             VLM_PROCESSOR, 
                             "Caption the same image. Make sure you capture all objects in great details. Respond in a single paragraph.",
                             img, 
                             "What do you see in the image?")
+        
+    if use_gpt:
+        img = get_vlm_img_message(img_base64, type="chat-gpt")
+    
     caption = "\n".join(captions)
     
     filenames = sorted(os.listdir(SAVEPATH))
@@ -360,16 +365,20 @@ if __name__ == "__main__":
     VERBOSE = args.verbose
     
     # captioner
-    SAVEPATH = args.obs_savepath; os.makedirs(SAVEPATH, exist_ok=True)
+    SAVEPATH = args.obs_savepath; 
+    os.makedirs(SAVEPATH, exist_ok=True)
+    from datetime import datetime
+    SAVEPATH = os.path.join(SAVEPATH, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    os.makedirs(SAVEPATH, exist_ok=True)
     PROMPT = args.query
     CAPTIONER = VILACaptioner(args)
     
-    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
-    from qwen_vl_utils import process_vision_info
-    VLM_MODEL = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        "Qwen/Qwen2.5-VL-7B-Instruct", torch_dtype="auto", device_map={"": 1}
-    )
-    VLM_PROCESSOR = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+    # from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+    # from qwen_vl_utils import process_vision_info
+    # VLM_MODEL = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+    #     "Qwen/Qwen2.5-VL-7B-Instruct", torch_dtype="auto", device_map={"": 1}
+    # )
+    # VLM_PROCESSOR = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
     
     # memory
     inpaths = [
@@ -396,19 +405,22 @@ if __name__ == "__main__":
     rospy.sleep(0.5)
     rospy.loginfo("Finish loading...")
     
-    # from math import radians
-    # request_get_image_at_pose_service(11.5, 60, radians(135))
-    # rospy.loginfo("finish navigating to waypoint1")
-    # rospy.sleep(0.5)
-    # request_get_image_at_pose_service(7.5, 60.9, radians(90))
-    # rospy.loginfo("finish navigating to waypoint2")
-    # rospy.sleep(0.5)
-    # request_get_image_at_pose_service(11.5, 60.5, radians(0))
+    from math import radians
+    request_get_image_at_pose_service(11.5, 60, radians(135))
+    rospy.loginfo("finish navigating to waypoint1")
+    rospy.sleep(0.5)
+    request_get_image_at_pose_service(7.5, 60.9, radians(90))
+    rospy.loginfo("finish navigating to waypoint2")
+    rospy.sleep(0.5)
+    request_get_image_at_pose_service(11.7, 60, radians(45))
+    rospy.loginfo("finish navigating to waypoint3")
+    rospy.sleep(0.5)
+    # request_get_image_at_pose_service(7.59, 61.12, 1.19)
     # rospy.loginfo("finish navigating to waypoint3")
     # rospy.sleep(0.5)
     
-    # agent.run(question="Bring me a cup from a table.")
-    # rospy.sleep(20)
+    agent.run(question="Bring me a cup")
+    rospy.sleep(20)
     
     # from agent import ObjectRetrievalPlan
     # current_goal = ObjectRetrievalPlan()

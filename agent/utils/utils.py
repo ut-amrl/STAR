@@ -250,6 +250,7 @@ def request_pick_service(query_image: Image = Image(), query_txt: str = ""):
     return response
 
 def request_get_image_at_pose_service(goal_x:float, goal_y:float, goal_theta:float, logger = None):
+    response = None
     if logger:
         logger.info(f"Requesting to navgiate to ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
     rospy.wait_for_service("/Cobot/GetImageAtPose")
@@ -301,4 +302,19 @@ def ask_qwen(vlm_model, vlm_processor, prompt: str, image, question: str):
         generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )
     return output_text[0]
-    
+
+def ask_chatgpt(model, prompt: str, images, question: str):
+    from langchain.prompts import ChatPromptTemplate
+    from langchain_core.messages import HumanMessage
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("ai", prompt),
+            HumanMessage(content=images),
+            ("human", "{question}")
+        ]
+    )
+            
+    model = prompt | model
+    response = model.invoke({"question": question})
+    response_content = eval(response.content)
+    return response_content
