@@ -184,15 +184,30 @@ class Agent:
         query = ', or '.join(keywords)
         record_found = None
         for i in range(5):
-            docs = self.memory.search_last_k_by_text(is_first_time=(i==0), query=query)
-            if docs == '':
+            docs = self.memory.search_last_k_by_text(is_first_time=(i==0), query=query, k=10)
+            if docs == '' or docs == None: # End of search
                 break
             
             seen_records = set([record["id"] for record in current_goal.records])
+            seen_positions = [eval(record["position"]) for record in current_goal.records]
+            
             filtered_records = []
             for record in eval(docs):
                 if record["id"] not in seen_records:
                     filtered_records.append(record)
+            filtered_records2 = []
+            for record in filtered_records:
+                target_pos = eval(record["position"])
+                discard = False
+                for seen_pos in seen_positions:
+                    if np.fabs(target_pos[0]-seen_pos[0]) < 0.4 and np.fabs(target_pos[1]-seen_pos[1]) < 0.4 and np.fabs(target_pos[2]-seen_pos[2]) < radians(45):
+                        discard = True; break
+                if not discard:
+                    filtered_records2.append(record)
+            filtered_records = filtered_records2
+            if len(filtered_records) == 0:
+                continue
+            
             parsed_docs = parse_db_records_for_llm(filtered_records)
             
             # parsed_docs = parse_db_records_for_llm(eval(docs))

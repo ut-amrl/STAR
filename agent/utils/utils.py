@@ -9,8 +9,16 @@ import cv2
 from PIL import Image as PILImage
 from langchain_core.messages import ToolMessage
 import numpy as np
+import math
 
 from sensor_msgs.msg import Image
+
+def angle_diff(a0: float, a1: float) -> float:
+    """Compute minimal signed difference between two angles in radians."""
+    two_pi = 2 * math.pi
+    angle = a0 - a1
+    angle -= two_pi * round(angle / two_pi)
+    return angle
 
 def file_to_string(filename):
     with open(filename, "r", encoding="utf-8") as file:
@@ -168,8 +176,10 @@ def is_txt_instance_observed(query_img, query_txt: str, depth = None, logger = N
             if logger:
                 logger.info(f"Observed instannce {query_txt} {z:.2f} m away.")
             return True
-        logger.info(f"Observed instannce {query_txt} {z:.2f} m away (Too far).")
-    logger.info(f"Failed to observe instannce {query_txt}")
+        if logger:
+            logger.info(f"Observed instannce {query_txt} {z:.2f} m away (Too far).")
+    if logger:
+        logger.info(f"Failed to observe instannce {query_txt}")
     return False
 
 def is_viz_instance_observed(vlm, vlm_processor, obs, instance):

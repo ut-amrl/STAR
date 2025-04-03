@@ -417,8 +417,10 @@ if __name__ == "__main__":
     
     # memory
     inpaths = [
-        "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-01-55_VILA1.5-8b_3_secs.json",
-        "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-00-15_VILA1.5-8b_3_secs.json",
+        # "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-01-55_VILA1.5-8b_3_secs.json",
+        # "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-00-15_VILA1.5-8b_3_secs.json",
+        "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-02-20-28-22_VILA1.5-8b_3_secs.json",
+        "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-02-20-30-36_VILA1.5-8b_3_secs.json",
     ]
     MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
     MEMORY.reset()
@@ -446,23 +448,40 @@ if __name__ == "__main__":
     rospy.sleep(0.5)
     rospy.loginfo("Finish loading...")
     
-    if not args.replay:
+    agent.run(question="Bring me a cup")
+    exit(0)
+    
+    if args.replay:
+        agent.run(question="Bring me a cup")
+    else:
         from math import radians
-        request_get_image_at_pose_service(11.5, 60, radians(135))
+        # request_get_image_at_pose_service(11.5, 60, radians(135))
+        # rospy.loginfo("finish navigating to waypoint1")
+        # rospy.sleep(0.5)
+        # request_get_image_at_pose_service(7.5, 60.9, radians(90))
+        # rospy.loginfo("finish navigating to waypoint2")
+        # rospy.sleep(0.5)
+        # request_get_image_at_pose_service(11.7, 60, radians(45))
+        # rospy.loginfo("finish navigating to waypoint3")
+        # rospy.sleep(0.5)
+        
+        # COBOT.navigate(11.5, 59, radians(135))
+        # COBOT.navigate(7.5, 60.9, radians(90)) 
+        # COBOT.navigate(11.5, 60, radians(0))
+        
+        request_get_image_at_pose_service(11.5, 59, radians(135))
         rospy.loginfo("finish navigating to waypoint1")
         rospy.sleep(0.5)
         request_get_image_at_pose_service(7.5, 60.9, radians(90))
         rospy.loginfo("finish navigating to waypoint2")
         rospy.sleep(0.5)
-        request_get_image_at_pose_service(11.7, 60, radians(45))
+        request_get_image_at_pose_service(11.7, 60.5, radians(0))
         rospy.loginfo("finish navigating to waypoint3")
         rospy.sleep(0.5)
         
         agent.run(question="Bring me a cup")
         rospy.sleep(20)
         rospy.spin()
-    else:
-        agent.run(question="Bring me a cup")
         # 7.987890243530273, 61.08519744873047, -0.10746081173419952
         
     

@@ -215,6 +215,8 @@ class MilvusMemory(Memory):
             start_id, end_id = max(self.last_id-k, 0), self.last_id
         else:
             start_id, end_id = max(self.last_seen_id-k, 0), self.last_seen_id
+        if end_id <= 1: # end of search
+            return None
         n_retrieval = max((k // 4), 5)
         results = self.milv_wrapper.search(query_embedding=query_embedding, k=n_retrieval, expr=f"id >= {start_id} and id < {end_id}")
         docs = self._parse_query_results(results)
