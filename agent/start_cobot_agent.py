@@ -448,8 +448,17 @@ if __name__ == "__main__":
     rospy.sleep(0.5)
     rospy.loginfo("Finish loading...")
     
-    # agent.run(question="Bring me a cup")
-    # exit(0)
+    tasks = [
+        "Bring me a cup",
+        "Bring me the cup that was on the coffee table yesterday",
+        "Bring me the cup that was using with a plate yesterday",
+        "Bring me the object that was on shelf yesterday",
+        "Bring me the cup that is usually on the table",
+    ]
+    for task in tasks:
+        agent.run(question=task)
+    time.sleep(1)
+    exit(0)
     
     if args.replay:
         agent.run(question="Bring me a cup")

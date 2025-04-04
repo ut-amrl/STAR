@@ -44,13 +44,14 @@ class ObjectRetrievalPlan:
     def __init__(self):
         self.found = False
         self.task = None # a description of the plan
+        self.task_type = None
         self.query_obj_desc = None
         self.query_obj_cls = None
-        self.object_obs = None # a past observation of the instance
+        self.query_img = None # a past observation of the instance
         self.records = []
         
     def __str__(self):
-        return self.task
+        return str(self.__dict__)
         
     def curr_target(self):
         if len(self.records) == 0:
@@ -142,10 +143,11 @@ class Agent:
         # TODO ask LLM to fill it in
         current_goal = ObjectRetrievalPlan()
         current_goal.task = f"Find {task_info['object_desc']}"
+        current_goal.task_type = task_info['task_type']
         current_goal.query_obj_desc = task_info['object_desc']
         current_goal.query_obj_cls = task_info['object_class']
         
-        self.logger.info(current_goal)
+        self.logger.info(current_goal.__str__())
         
         return {"task": task, "current_goal": current_goal}
     
