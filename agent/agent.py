@@ -55,15 +55,19 @@ class ObjectRetrievalPlan:
         self.query_obj_desc = None
         self.query_obj_cls = None
         self.query_img = None # a past observation of the instance
-        self.records = []
+        self.annotated_query_img = None
+
+        self.candidate_records_in_mem = []
+        self.candidate_records_in_world = []
+        self.attempted_records_in_world = []
         
     def __str__(self):
         return str(self.__dict__)
         
     def curr_target(self):
-        if len(self.records) == 0:
+        if len(self.candidate_records_in_world) == 0:
             return None
-        return copy.copy(self.records[-1])
+        return copy.copy(self.candidate_records_in_world[-1])
     
 
 class AgentState(TypedDict):
@@ -160,7 +164,7 @@ class Agent:
         
         return {"task": task, "current_goal": current_goal}
     
-    def _recall_last_seen_from_txt(self, current_goal):
+    def _recall_last_seen_from_txt(self, current_goal: ObjectRetrievalPlan):
         question = current_goal.task
         
         model = self.llm
@@ -185,19 +189,20 @@ class Agent:
             if docs == '' or docs == None: # End of search
                 break
             
-            seen_records = set([record["id"] for record in current_goal.records])
-            seen_positions = [eval(record["position"]) for record in current_goal.records]
+            # TODO verify this logic
+            attempted_record_ids = set([record["id"] for record in current_goal.attempted_records_in_world])
+            attempted_positions = [eval(record["position"]) for record in current_goal.attempted_records_in_world]
             
             filtered_records = []
             for record in eval(docs):
-                if record["id"] not in seen_records:
+                if record["id"] not in attempted_record_ids:
                     filtered_records.append(record)
             filtered_records2 = []
             for record in filtered_records:
                 target_pos = eval(record["position"])
                 discard = False
-                for seen_pos in seen_positions:
-                    if np.fabs(target_pos[0]-seen_pos[0]) < 0.4 and np.fabs(target_pos[1]-seen_pos[1]) < 0.4 and np.fabs(target_pos[2]-seen_pos[2]) < radians(45):
+                for attempted_pos in attempted_positions:
+                    if np.fabs(target_pos[0]-attempted_pos[0]) < 0.4 and np.fabs(target_pos[1]-attempted_pos[1]) < 0.4 and np.fabs(target_pos[2]-attempted_pos[2]) < radians(45):
                         discard = True; break
                 if not discard:
                     filtered_records2.append(record)
@@ -246,7 +251,8 @@ class Agent:
         # TODO need to handle the case where no record is retrieved
         record = self._recall_last_seen_from_txt(current_goal)
         if record:
-            current_goal.records += record
+            current_goal.candidate_records_in_mem += record
+            current_goal.candidate_records_in_world += record
             current_goal.found_in_mem = True
         else:
             current_goal.found_in_mem = False
@@ -258,7 +264,7 @@ class Agent:
             records = eval(last_message.content)
             current_goal = state["current_goal"]
             current_goal.found_in_mem = True
-            current_goal.records += records
+            current_goal.candidate_records_in_mem += records
             return {"current_goal": current_goal}
         else:
             state["current_goal"].found_in_mem = False
