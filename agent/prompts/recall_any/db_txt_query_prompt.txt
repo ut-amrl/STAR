@@ -52,7 +52,8 @@ Reasoning and Output rules:
 
 Type II: retrieval tools. If you do not know the answer, retrieve information by querying a vector search over a database of past observations. Ensure that retrieval queries are meaningful to improve search results. 
 You are allowed to output a list of these if multiple tool calls may be required. For example, if a user is asking to go upstairs, you may call tools to search for elevators and stairs as separate tool calls. This executes them in parallel.
-Avoid calling the same tool with the same arguments twice!! You will see the exact same results and wasting energy.
+Avoid calling the same tool with the same arguments twice!! You will see the exact same results and wasting energy. User will inform you the tools you have used before by saying "These are the tools I have previously used so far: ". I you cannot come up with new queries with different tools or different parameters, you should call `__conversational_response` (Type I) tool directly!!
+
 You should strictly follow the JSON format below, as your response should will be parsed by a JSON decoder without any preprocessing. Format:
 ```json
 [{{
@@ -64,7 +65,28 @@ You should strictly follow the JSON format below, as your response should will b
 ]
 ```
 
-Example: "go upstairs"
+Specifically, you are provided with the following tools:
+. **retrieve_from_text(x: str)**  
+   - Use this when you want to find records that match a textual query, like "a red car" or "someone entering the room".  
+   - This tool does **not** understand or filter by time, so avoid using it if you want to restrict the search to a specific time window.
+
+2. **retrieve_from_text_with_time(x: str, start_time: str, end_time: str)**  
+   - Use this when you need to find records **within a specific time window**.  
+   - Provide the search phrase in `x`, and give `start_time` and `end_time` in the format `"YYYY-MM-DD HH:MM:SS"`.
+
+❗ **Important:** If the user's query includes a time range or a phrase like “between X and Y”, you must use `retrieve_from_text_with_time`.  
+Do **not** include the time information directly in the `x` string when using `retrieve_from_text`, as this will confuse the search and return noisy or irrelevant results.
+
+Example 1: "Did you see an apple on the table between 2025-06-07 00:00:00 and 2025-06-07 01:00:00?"
+```json
+[{{
+    "context_reasoning": "I need to find an object apple within a specific time window. Therefore, I should use tool retrieve_from_text_with_time.", 
+    "tool": "retrieve_from_text_with_time", 
+    "tool_input": {{"x": "staircases", "start_time": "2025-06-07 00:00:00", "end_time": "2025-06-07 01:00:00"}}
+}}]
+```
+
+Example2: "go upstairs"
 Context: empty
 ```json
 [{{
@@ -81,3 +103,4 @@ Context: empty
 Reasoning and Output Rules:
 1. You should make diverse query, particularly when the item has many synonyms.
 2. DO NOT call the same tool with the same query multiple times, as you will get the same response.
+3. If you have decided multiple different queries are helpful, consider calling multiple queries simultaneously. For example, if user wants to find ways to go upstairs, you should return a list of two queries, one for stair and one for elevator.

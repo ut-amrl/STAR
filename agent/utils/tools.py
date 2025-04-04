@@ -25,14 +25,35 @@ def create_db_txt_search_tool(memory):
                                 This query argument should be a phrase such as 'a crowd gathering' or 'a green car driving down the road'.\
                                 The query will then search your memories for you.")
 
-    retriever_tool = StructuredTool.from_function(
+    txt_retriever_tool = StructuredTool.from_function(
         func=lambda x: memory.search_by_text(x),
         name="retrieve_from_text",
         description="Search and return information from your video memory in the form of captions",
         args_schema=TextRetrieverInput
         # coroutine= ... <- you can specify an async method if desired as well
     )
-    return retriever_tool
+
+    class TextRetrieverInputWithTime(BaseModel):
+        x: str = Field(
+            description="The query that will be searched by the vector similarity-based retriever. "
+                        "Text embeddings of this description are used. There should always be text in here as a response! "
+                        "Based on the question and your context, decide what text to search for in the database. "
+                        "This query argument should be a phrase such as 'a crowd gathering' or 'a green car driving down the road'."
+        )
+        start_time: str = Field(
+            description="Start search time in YYYY-MM-DD HH:MM:SS format. Only search for observations made after this timestamp."
+        )
+        end_time: str = Field(
+            description="End search time in YYYY-MM-DD HH:MM:SS format. Only search for observations made before this timestamp."
+        )
+
+    txt_time_retriever_tool = StructuredTool.from_function(
+        func=lambda x, start_time, end_time: memory.search_by_txt_and_time(x, start_time, end_time),
+        name="retrieve_from_text_with_time",
+        description="Search and return information from your video memory in the form of captions, filtered by time range.",
+        args_schema=TextRetrieverInputWithTime
+    )
+    return [txt_retriever_tool, txt_time_retriever_tool]
 
 
 def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
@@ -57,7 +78,7 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
             self.llm = llm
             self.vlm = vlm
 
-            self.db_retriever_tools = [create_db_txt_search_tool(memory)]
+            self.db_retriever_tools = create_db_txt_search_tool(memory)
             self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.db_retriever_tools]
             
             prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/recall_any/'
@@ -73,7 +94,7 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
             messages = state["messages"]
 
             model = self.llm
-            if self.agent_call_count < 3:
+            if self.agent_call_count < 2:
                 model = model.bind_tools(tools=self.recall_tool_definitions)
                 prompt = self.agent_prompt
             else:
@@ -81,10 +102,9 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
                 
             agent_prompt = ChatPromptTemplate.from_messages(
                 [
-                    # ("system", prompt),
                     MessagesPlaceholder("chat_history"),
-                    (("human"), self.previous_tool_requests),
                     ("ai", prompt),
+                    (("human"), self.previous_tool_requests),
                     ("human", "{question}"),
                 ]
             )
@@ -102,7 +122,7 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
                 for tool_call in response.tool_calls:
                     if tool_call['name'] != "__conversational_response":
                         args = re.sub(r'^\{(.*)\}$', r'(\1)', str(tool_call['args'])) # remove curly braces
-                        self.previous_tool_requests += f"I previously used the {tool_call['name']} tool with the arguments: {args}.\n"
+                        self.previous_tool_requests += f" {tool_call['name']} tool with the arguments: {args}.\n"
 
             self.agent_call_count += 1
             return {"messages": [response], "retrieved_messages": db_messages}
@@ -110,8 +130,11 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
         def generate(self, state):
             messages = state["messages"]
             
-            last_response = eval(messages[-1].content)
-            if "moment_ids" not in last_response:
+            try:
+                last_response = eval(messages[-1].content)
+                if "moment_ids" not in last_response:
+                    raise ValueError("Missing required field 'moment_ids'")
+            except:
                 prompt = self.agent_gen_only_prompt
                 agent_prompt = ChatPromptTemplate.from_messages(
                     [
@@ -137,7 +160,9 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
             retrieved_messages = state["retrieved_messages"]
             retrieved_messages = {r["id"]: r for r in retrieved_messages}
             
-            records = [retrieved_messages[id] for id in record_ids]
+            records = []
+            for id in record_ids:
+                records.append(retrieved_messages[id])
             
             return {"output": records}
                 
@@ -146,7 +171,7 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
             
             workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
             workflow.add_node("action", ToolNode(self.db_retriever_tools))
-            workflow.add_node("generate", lambda state: self.generate(state))
+            workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
             
             workflow.add_conditional_edges(
                 "agent",

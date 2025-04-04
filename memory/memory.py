@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass, asdict
 import inspect 
+from datetime import datetime
 import re
 
 from langchain_community.vectorstores import Milvus
@@ -204,6 +205,18 @@ class MilvusMemory(Memory):
         docs = self._memory_to_json(docs)
         return docs
     
+    def search_by_txt_and_time(self, query: str, start_time: str, end_time: str, k:int = 8) -> str:
+        self.milv_wrapper.reload()
+        query_embedding = self.embedder.embed_query(query)
+        # TODO need to verify start_time and end_time str before calling this function
+        start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp()
+        end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").timestamp()
+        expr=f"timestamp >= {start_dt} and timestamp <= {end_dt}"
+        results = self.milv_wrapper.search(query_embedding=query_embedding, k=k, expr=expr)
+        docs = self._parse_query_results(results)
+        docs = self._memory_to_json(docs)
+        return docs
+
     def search_last_k_by_text(self, is_first_time: bool, query: str, k: int = 10) -> str:
         if self.last_seen_id is not None and self.last_seen_id == 0:
             self.last_seen_id = None

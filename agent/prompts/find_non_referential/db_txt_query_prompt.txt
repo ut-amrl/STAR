@@ -16,17 +16,17 @@ You can only respond by calling the two following tools. You should NEVER respon
 1. `__conversational_response`
 2. `retrieve_from_text`
 
-Type I: __conversational_response. It calls a system to response to the user. Use this if you believe you have relevant information to answer the question. You should strictly follow the JSON format below, as your response should will be parsed by a JSON decoder without any preprocessing. Make sure you fill in each field with the exact key and the specified format.
+Type I: __conversational_response. It calls a system to response to the user. Use this if you believe you have relevant information to answer the question. You should strictly follow the JSON format below, as your response should will be parsed by a JSON decoder without any preprocessing. Make sure you fill in each field with the exact key and the specified format, and wrap your answer with ```json ```!
 ```json
-[{{
+{{
     "tool": "__conversational_response", 
     "tool_input": {{ 
-        "response":  {{
+        "response":  '{{
             "summary": "--summarize all your findings and the reason of your answers--",
             "moment_ids": "['-id1-', '-id2-', '-id3-', '-all ids relevant to the referred instance, ranked by their relevancy-']"
-        }}
+        }}'
     }}
-}}]
+}}
 ```
 Example:
 Context: User asks me to find a book on the shelf. I have seen empty shelf at moments 1, 2, 3, and shelf with books at moments 11, 12, 13. 
@@ -34,10 +34,10 @@ Context: User asks me to find a book on the shelf. I have seen empty shelf at mo
 [{{
     "tool": "__conversational_response", 
     "tool_input": {{ 
-        "response":  {{
+        "response":  '{{
             "summary": "User wants me to find a book on the shelf, and I have seen books at moments 11, 12, 13.",
-            "moment_ids": ['12', '11', '13']
-        }}
+            "moment_ids": "['12', '11', '13']"
+        }}'
     }}
 }}]
 ```

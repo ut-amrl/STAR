@@ -29,11 +29,17 @@ Context: User asks me to find a book on the shelf. I have seen empty shelf at mo
     "tool_input": {{ 
         "response":  {{
             "summary": "User wants me to find a book on the shelf, and I have seen books at moments 11, 12, 13.",
-            "moment_ids": ['12', '11', '13']
+            "moment_ids": "['12', '11', '13']"
         }}
     }}
 }}]
 ```
+
+❌ Examples of INVALID outputs:
+- A string instead of JSON
+- A response wrapped in triple backticks
+- Missing a required key like "moment_ids"
+- Returning a Python list instead of JSON list
 
 Reasoning and Output rules:
 1. Users may request a very specific item (e.g., "a red book that was on a brown shelf last Friday"), or may ask for any object within a semantic class (e.g., "book"):

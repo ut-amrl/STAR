@@ -449,12 +449,13 @@ if __name__ == "__main__":
     rospy.loginfo("Finish loading...")
     
     tasks = [
-        "Bring me a cup",
-        "Bring me the cup that was on the coffee table yesterday",
-        "Bring me the cup that was using with a plate yesterday",
-        "Bring me the object that was on shelf yesterday",
-        "Bring me the cup that is usually on the table",
+        "Bring me a cup.",
+        "Today is Feb 08, 2025. Bring me the cup that was on the table yesterday.",
+        "Today is Feb 08, 2025. Bring me the cup that was using with a plate yesterday.",
+        "Today is Feb 08, 2025. Bring me the object that was on shelf yesterday.",
+        "Bring me the cup that is usually on the table.",
     ]
+    agent.run(question = tasks[1])
     for task in tasks:
         agent.run(question=task)
     time.sleep(1)

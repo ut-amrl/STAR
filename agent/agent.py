@@ -36,15 +36,20 @@ from amrl_msgs.srv import (
 def from_initialize_object_search_to(state):
     return state["current_goal"].task_type 
 
-def from_find_at_to(state):
-    if state["current_goal"].found:
+def from_find_specific_past_instance_to(state):
+    if state["current_goal"].found_in_mem:
         return "next"
-    return "try_again"
+    return "retry" # TODO Fix the naming; We should default to common sense instead
 
+def from_find_at_to(state):
+    if state["current_goal"].found_in_world:
+        return "next"
+    return "retry"
 
 class ObjectRetrievalPlan:
     def __init__(self):
-        self.found = False
+        self.found_in_world = False
+        self.found_in_mem = False
         self.task = None # a description of the plan
         self.task_type = None
         self.query_obj_desc = None
@@ -252,13 +257,41 @@ class Agent:
     
     def find_non_referential(self, state):
         current_goal = state["current_goal"]
+        current_goal.found_in_mem = False
         # TODO need to handle the case where no record is retrieved
         record = self._recall_last_seen_from_txt(current_goal)
-        current_goal.records += record
+        if record:
+            current_goal.records += record
+            current_goal.found_in_mem = True
+        else:
+            current_goal.found_in_mem = False
         return {"current_goal": current_goal}
     
     def find_specific_past_instance(self, state):
-        pass
+        last_message = state["messages"][-1]
+        if type(last_message) == ToolMessage:
+            records = eval(last_message.content)
+            current_goal = state["current_goal"]
+            current_goal.found_in_mem = True
+            current_goal.records += records
+            return {"current_goal": current_goal}
+        else:
+            state["current_goal"].found_in_mem = False
+            
+            model = self.llm
+            model = model.bind_tools(tools=self.recall_tool_definitions)
+            
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("ai", self.recall_any_prompt),
+                    ("human", "{question}"),
+                ]
+            )
+            model = prompt | model
+            question = f"User Task: {state['task']}"
+            response = model.invoke({"question": question})
+            state["current_goal"].found_in_mem = False # TODO
+            return {"messages": response}
     
     def find_by_frequency(self, state):
         pass
@@ -272,8 +305,10 @@ class Agent:
         
     def find_at(self, state):
         current_goal = state["current_goal"]
-        current_goal.found = False
+        current_goal.found_in_world = False
         target = current_goal.curr_target()
+        
+        import pdb; pdb.set_trace()
         
         rospy.loginfo(f"current target: \n{target}")
         
@@ -293,7 +328,7 @@ class Agent:
         for candidate_goal in candidate_goals:
             self.logger.info(f"Finding {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})")
             if self._find_at_by_txt(candidate_goal[0], candidate_goal[1], candidate_goal[2], query_txt):
-                current_goal.found = True
+                current_goal.found_in_world = True
                 break
             
         # rospy.loginfo(f"Checking instance at {goal_x}, {goal_y}, {goal_theta}")
@@ -310,7 +345,7 @@ class Agent:
         #     if is_viz_instance_observed(self.local_vlm, self.local_vlm_processor, img_message, object_desc):
         #         current_goal.found = True
                 
-        if current_goal.found:
+        if current_goal.found_in_world:
             self.logger.info(f"Found {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})!")
             debug_vid(current_goal.curr_target(), "debug")
             
@@ -340,6 +375,7 @@ class Agent:
         
         workflow.add_node("find_non_referential", lambda state: try_except_continue(state, self.find_non_referential))
         workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
+        workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
         workflow.add_node("find_by_frequency", lambda state: try_except_continue(state, self.find_by_frequency))
         workflow.add_node("find_at", lambda state: self.find_at(state))
         workflow.add_node("pick", lambda state: self.pick(state))
@@ -354,14 +390,22 @@ class Agent:
             }
         )
         workflow.add_edge("find_non_referential", "find_at")
-        workflow.add_edge("find_specific_past_instance", "find_at")
+        workflow.add_edge("find_specific_past_instance_action_node", "find_specific_past_instance")
+        workflow.add_conditional_edges( # TODO this condition is incorrect
+            "find_specific_past_instance",
+            from_find_specific_past_instance_to,
+            {
+                "next": "find_at",
+                "retry": "find_specific_past_instance_action_node",
+            }
+        )
         workflow.add_edge("find_by_frequency", "find_at")
         workflow.add_conditional_edges(
             "find_at",
             from_find_at_to,
             {
                 "next": "pick",
-                "try_again": "find_non_referential", # TODO
+                "retry": "find_non_referential", # TODO
             },
         )
         workflow.add_edge("pick", "terminate")

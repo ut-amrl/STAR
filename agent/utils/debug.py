@@ -5,6 +5,10 @@ from datetime import datetime
 def get_logger(name="agent", log_dir="debug/agent"):
     os.makedirs(log_dir, exist_ok=True)
     
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    log_dir = os.path.join(log_dir, date_str)
+    os.makedirs(log_dir, exist_ok=True)
+    
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_file = os.path.join(log_dir, f"{timestamp}.log")
 
