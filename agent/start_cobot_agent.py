@@ -448,8 +448,8 @@ if __name__ == "__main__":
     rospy.sleep(0.5)
     rospy.loginfo("Finish loading...")
     
-    agent.run(question="Bring me a cup")
-    exit(0)
+    # agent.run(question="Bring me a cup")
+    # exit(0)
     
     if args.replay:
         agent.run(question="Bring me a cup")
