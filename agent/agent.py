@@ -253,16 +253,6 @@ class Agent:
         current_goal.records += record
         return {"current_goal": current_goal}
     
-    def _send_getImage_request(self):
-        rospy.wait_for_service("/Cobot/GetImage")
-        try: 
-            get_image = rospy.ServiceProxy("/Cobot/GetImage", GetImageSrv)
-            request = GetImageSrvRequest()
-            response = get_image(request)
-        except rospy.ServiceException as e:
-            rospy.logerr(f"Service call failed: {e}")
-        return response
-        
     def _find_at_by_txt(self, goal_x: float, goal_y: float, goal_theta: float, query_txt):
         self.logger.info(f"Finding object {query_txt} at ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
         response = request_get_image_at_pose_service(goal_x, goal_y, goal_theta, logger=self.logger)
