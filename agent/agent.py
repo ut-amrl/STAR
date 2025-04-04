@@ -13,7 +13,7 @@ from utils.debug import get_logger
 from utils.function_wrapper import FunctionsWrapper
 from utils.utils import *
 from utils.tools import (
-    create_recall_any_tool, 
+    create_find_specific_past_instance_tool, 
     create_recall_last_tool, 
     create_find_any_at_tool, 
 )
@@ -92,13 +92,13 @@ class Agent:
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
         
-        recall_any_tool = create_recall_any_tool(self.memory, self.llm, self.vlm)
-        self.recall_tools = [recall_any_tool]
+        recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm)
+        self.recall_tools = [recall_tool]
         self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.recall_tools]
         
         prompt_dir = os.path.join(str(os.path.dirname(__file__)), "prompts", "agent")
         self.object_search_prompt = file_to_string(os.path.join(prompt_dir, 'object_search_prompt.txt'))
-        self.recall_any_prompt = file_to_string(os.path.join(prompt_dir, 'recall_any_prompt.txt'))
+        self.find_specific_past_instance_prompt = file_to_string(os.path.join(prompt_dir, 'find_specific_past_instance_prompt.txt'))
         # Recall last seen prompts
         self.get_param_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'get_param_from_txt_prompt.txt'))
         self.find_instance_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'find_instance_from_txt_prompt.txt'))
@@ -159,21 +159,6 @@ class Agent:
         self.logger.info(current_goal.__str__())
         
         return {"task": task, "current_goal": current_goal}
-    
-    def recall_any(self, state):
-        model = self.llm
-        model = model.bind_tools(tools=self.recall_tool_definitions)
-        
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("ai", self.recall_any_prompt),
-                ("human", "{question}"),
-            ]
-        )
-        model = prompt | model
-        question = f"User Task: {state['task']}"
-        response = model.invoke({"question": question})
-        return {"messages": [response]}
     
     def _recall_last_seen_from_txt(self, current_goal):
         question = current_goal.task
@@ -283,7 +268,7 @@ class Agent:
             
             prompt = ChatPromptTemplate.from_messages(
                 [
-                    ("ai", self.recall_any_prompt),
+                    ("ai", self.find_specific_past_instance_prompt),
                     ("human", "{question}"),
                 ]
             )
@@ -292,6 +277,9 @@ class Agent:
             response = model.invoke({"question": question})
             state["current_goal"].found_in_mem = False # TODO
             return {"messages": response}
+        
+    def _prepare_find(self, current_goal: ObjectRetrievalPlan):
+        pass
     
     def find_by_frequency(self, state):
         pass

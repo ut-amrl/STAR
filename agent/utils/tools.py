@@ -56,7 +56,7 @@ def create_db_txt_search_tool(memory):
     return [txt_retriever_tool, txt_time_retriever_tool]
 
 
-def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
+def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
         retrieved_messages: Annotated[Sequence, replace_messages]
@@ -81,7 +81,7 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
             self.db_retriever_tools = create_db_txt_search_tool(memory)
             self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.db_retriever_tools]
             
-            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/recall_any/'
+            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/find_non_referential/'
             self.agent_prompt = file_to_string(prompt_dir+'db_txt_query_prompt.txt')
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'db_txt_query_terminate_prompt.txt')
             
@@ -135,6 +135,8 @@ def create_recall_any_tool(memory: MilvusMemory, llm, vlm):
                 if "moment_ids" not in last_response:
                     raise ValueError("Missing required field 'moment_ids'")
             except:
+                model = self.llm
+
                 prompt = self.agent_gen_only_prompt
                 agent_prompt = ChatPromptTemplate.from_messages(
                     [
