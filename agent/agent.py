@@ -67,7 +67,6 @@ class AgentState(TypedDict):
 class Agent:
     def __init__(self, llm_type: str = "gpt-4", vlm_type: str = "gpt-4o", verbose: bool = False):
         
-        self.second_time = False
         self.logger = get_logger()
         
         self.verbose = verbose
@@ -166,13 +165,6 @@ class Agent:
         return {"messages": [response]}
     
     def _recall_last_seen_from_txt(self, current_goal):
-        if self.second_time:
-            from utils.memloader import update_from_paths
-            inpaths = [
-                "/robodata/taijing/ros_perception/data/cobot/cobot_test_1/2025-04-01_13-53-08/2025-04-01_13-53-08.jsonl"
-            ]
-            update_from_paths(self.memory, inpaths)
-        
         question = current_goal.task
         
         model = self.llm
@@ -298,10 +290,6 @@ class Agent:
         ]
         for candidate_goal in candidate_goals:
             self.logger.info(f"Finding {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})")
-            if self.second_time:
-                current_goal.found = True
-                break
-            continue
             if self._find_at_by_txt(candidate_goal[0], candidate_goal[1], candidate_goal[2], query_txt):
                 current_goal.found = True
                 break
@@ -323,7 +311,6 @@ class Agent:
         if current_goal.found:
             self.logger.info(f"Found {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})!")
             debug_vid(current_goal.curr_target(), "debug")
-        self.second_time = True
             
         return {"current_goal": current_goal}
     
