@@ -33,6 +33,8 @@ from amrl_msgs.srv import (
     PickObjectSrvRequest,
 )
 
+def from_initialize_object_search_to(state):
+    return state["current_goal"].task_type 
 
 def from_find_at_to(state):
     if state["current_goal"].found:
@@ -144,6 +146,8 @@ class Agent:
         current_goal = ObjectRetrievalPlan()
         current_goal.task = f"Find {task_info['object_desc']}"
         current_goal.task_type = task_info['task_type']
+        if current_goal.task_type not in ["find_non_referential" , "find_specific_past_instance", "find_by_frequency"]:
+            raise ValueError(f"LLM failed to respond valid task type. LLM response: {current_goal.task_type}")
         current_goal.query_obj_desc = task_info['object_desc']
         current_goal.query_obj_cls = task_info['object_class']
         
@@ -253,6 +257,12 @@ class Agent:
         current_goal.records += record
         return {"current_goal": current_goal}
     
+    def find_specific_past_instance(self, state):
+        pass
+    
+    def find_by_frequency(self, state):
+        pass
+    
     def _find_at_by_txt(self, goal_x: float, goal_y: float, goal_theta: float, query_txt):
         self.logger.info(f"Finding object {query_txt} at ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
         response = request_get_image_at_pose_service(goal_x, goal_y, goal_theta, logger=self.logger)
@@ -328,23 +338,30 @@ class Agent:
         workflow.add_node("initialize_object_search", lambda state: try_except_continue(state, self.initialize_object_search))
         workflow.add_node("terminate", lambda state: self.terminate(state))
         
-        # workflow.add_node("recall_any_node", lambda state: try_except_continue(state, self.recall_any))
-        # workflow.add_node("recall_any_action_node", ToolNode(self.recall_tools))
-        # workflow.add_edge("initialize", "recall_any_node")
-        # workflow.add_edge("recall_any_node", "recall_any_action_node")
-        # workflow.add_edge("recall_any_action_node", "terminate")
-        
         workflow.add_node("find_non_referential", lambda state: try_except_continue(state, self.find_non_referential))
+        workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
+        workflow.add_node("find_by_frequency", lambda state: try_except_continue(state, self.find_by_frequency))
         workflow.add_node("find_at", lambda state: self.find_at(state))
         workflow.add_node("pick", lambda state: self.pick(state))
-        workflow.add_edge("initialize_object_search", "find_non_referential")
+        
+        workflow.add_conditional_edges(
+            "initialize_object_search",
+            from_initialize_object_search_to,
+            {
+                "find_non_referential": "find_non_referential",
+                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_frequency": "find_by_frequency",
+            }
+        )
         workflow.add_edge("find_non_referential", "find_at")
+        workflow.add_edge("find_specific_past_instance", "find_at")
+        workflow.add_edge("find_by_frequency", "find_at")
         workflow.add_conditional_edges(
             "find_at",
             from_find_at_to,
             {
                 "next": "pick",
-                "try_again": "find_non_referential",
+                "try_again": "find_non_referential", # TODO
             },
         )
         workflow.add_edge("pick", "terminate")
