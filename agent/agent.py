@@ -246,7 +246,7 @@ class Agent:
     def _recall_last_seen_from_obs(self, obs):
         pass
     
-    def recall_last_seen(self, state):
+    def find_non_referential(self, state):
         current_goal = state["current_goal"]
         # TODO need to handle the case where no record is retrieved
         record = self._recall_last_seen_from_txt(current_goal)
@@ -344,17 +344,17 @@ class Agent:
         # workflow.add_edge("recall_any_node", "recall_any_action_node")
         # workflow.add_edge("recall_any_action_node", "terminate")
         
-        workflow.add_node("recall_last_seen", lambda state: try_except_continue(state, self.recall_last_seen))
+        workflow.add_node("find_non_referential", lambda state: try_except_continue(state, self.find_non_referential))
         workflow.add_node("find_at", lambda state: self.find_at(state))
         workflow.add_node("pick", lambda state: self.pick(state))
-        workflow.add_edge("initialize_object_search", "recall_last_seen")
-        workflow.add_edge("recall_last_seen", "find_at")
+        workflow.add_edge("initialize_object_search", "find_non_referential")
+        workflow.add_edge("find_non_referential", "find_at")
         workflow.add_conditional_edges(
             "find_at",
             from_find_at_to,
             {
                 "next": "pick",
-                "try_again": "recall_last_seen",
+                "try_again": "find_non_referential",
             },
         )
         workflow.add_edge("pick", "terminate")
