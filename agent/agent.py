@@ -8,6 +8,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage
 
 from utils.debug import get_logger
 from utils.function_wrapper import FunctionsWrapper
@@ -58,8 +59,9 @@ class ObjectRetrievalPlan:
         self.annotated_query_img = None
 
         self.candidate_records_in_mem = []
+        self.explored_records_in_mem = []
         self.candidate_records_in_world = []
-        self.attempted_records_in_world = []
+        self.explored_records_in_world = []
         
     def __str__(self):
         return str(self.__dict__)
@@ -102,7 +104,11 @@ class Agent:
         
         prompt_dir = os.path.join(str(os.path.dirname(__file__)), "prompts", "agent")
         self.object_search_prompt = file_to_string(os.path.join(prompt_dir, 'object_search_prompt.txt'))
+
+        # Find specific past instance prompt        
         self.find_specific_past_instance_prompt = file_to_string(os.path.join(prompt_dir, 'find_specific_past_instance_prompt.txt'))
+        self.prepare_find_from_specific_instance_prompt = file_to_string(os.path.join(prompt_dir, 'prepare_find_from_specific_instance_prompt.txt'))
+
         # Recall last seen prompts
         self.get_param_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'get_param_from_txt_prompt.txt'))
         self.find_instance_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'find_instance_from_txt_prompt.txt'))
@@ -160,6 +166,10 @@ class Agent:
         current_goal.query_obj_desc = task_info['object_desc']
         current_goal.query_obj_cls = task_info['object_class']
         
+        # record = self.memory.get_by_id(84)
+        # current_goal.candidate_records_in_mem += eval(record)
+        # self._prepare_find_from_specific_instance(current_goal)
+        
         self.logger.info(current_goal.__str__())
         
         return {"task": task, "current_goal": current_goal}
@@ -190,18 +200,18 @@ class Agent:
                 break
             
             # TODO verify this logic
-            attempted_record_ids = set([record["id"] for record in current_goal.attempted_records_in_world])
-            attempted_positions = [eval(record["position"]) for record in current_goal.attempted_records_in_world]
+            explored_record_ids = set([record["id"] for record in current_goal.explored_records_in_world])
+            explored_positions = [eval(record["position"]) for record in current_goal.explored_records_in_world]
             
             filtered_records = []
             for record in eval(docs):
-                if record["id"] not in attempted_record_ids:
+                if record["id"] not in explored_record_ids:
                     filtered_records.append(record)
             filtered_records2 = []
             for record in filtered_records:
                 target_pos = eval(record["position"])
                 discard = False
-                for attempted_pos in attempted_positions:
+                for attempted_pos in explored_positions:
                     if np.fabs(target_pos[0]-attempted_pos[0]) < 0.4 and np.fabs(target_pos[1]-attempted_pos[1]) < 0.4 and np.fabs(target_pos[2]-attempted_pos[2]) < radians(45):
                         discard = True; break
                 if not discard:
@@ -245,8 +255,7 @@ class Agent:
     def _recall_last_seen_from_obs(self, obs):
         pass
     
-    def find_non_referential(self, state):
-        current_goal = state["current_goal"]
+    def _recall_last_seen(self, current_goal):
         current_goal.found_in_mem = False
         # TODO need to handle the case where no record is retrieved
         record = self._recall_last_seen_from_txt(current_goal)
@@ -258,6 +267,10 @@ class Agent:
             current_goal.found_in_mem = False
         return {"current_goal": current_goal}
     
+    def find_non_referential(self, state):
+        current_goal = state["current_goal"]
+        return self._recall_last_seen(current_goal)
+    
     def find_specific_past_instance(self, state):
         last_message = state["messages"][-1]
         if type(last_message) == ToolMessage:
@@ -265,6 +278,7 @@ class Agent:
             current_goal = state["current_goal"]
             current_goal.found_in_mem = True
             current_goal.candidate_records_in_mem += records
+            self._prepare_find_from_specific_instance(current_goal)
             return {"current_goal": current_goal}
         else:
             state["current_goal"].found_in_mem = False
@@ -284,8 +298,32 @@ class Agent:
             state["current_goal"].found_in_mem = False # TODO
             return {"messages": response}
         
-    def _prepare_find(self, current_goal: ObjectRetrievalPlan):
-        pass
+    def _prepare_find_from_specific_instance(self, current_goal: ObjectRetrievalPlan):
+        for record in copy.copy(current_goal.candidate_records_in_mem):
+            current_goal.candidate_records_in_mem = current_goal.candidate_records_in_mem[1:]
+            current_goal.explored_records_in_mem.append(record)
+            
+            image = get_image_from_record(record, type="utf-8")
+            image_message = [get_vlm_img_message(image, type="gpt-4o")]
+            
+            model = self.vlm
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("ai", self.prepare_find_from_specific_instance_prompt),
+                    HumanMessage(content=image_message),
+                    ("human", "{question}")
+                ]
+            )
+            
+            model = prompt | model
+            question = f"User task: {current_goal.task}. Are you seeing this instance in the image? If so, please describe the instance user is looking for."
+            response = model.invoke({"question": question})
+            parsed_response = eval(response.content)
+            if "yes" in parsed_response["is_instance_observed"].lower():
+                current_goal.query_obj_desc = parsed_response["instance_desc"]
+                break
+        return {"messages": response, "current_goal": current_goal}
+    
     
     def find_by_frequency(self, state):
         pass
@@ -367,10 +405,16 @@ class Agent:
         workflow.add_node("initialize_object_search", lambda state: try_except_continue(state, self.initialize_object_search))
         workflow.add_node("terminate", lambda state: self.terminate(state))
         
+        # Task and the corresponding action nodes
         workflow.add_node("find_non_referential", lambda state: try_except_continue(state, self.find_non_referential))
         workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
-        workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
         workflow.add_node("find_by_frequency", lambda state: try_except_continue(state, self.find_by_frequency))
+        
+        # Memory tool nodes
+        workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
+        
+        
+        # Robot tool nodes
         workflow.add_node("find_at", lambda state: self.find_at(state))
         workflow.add_node("pick", lambda state: self.pick(state))
         

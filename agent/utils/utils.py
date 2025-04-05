@@ -36,6 +36,30 @@ def try_except_continue(state, func):
             traceback.print_exception(*sys.exc_info())
             continue
         
+def opencv_to_ros_image(np_image):
+    ros_image = Image()
+    ros_image.height = np_image.shape[0]
+    ros_image.width = np_image.shape[1]
+    ros_image.encoding = "bgr8"
+    ros_image.is_bigendian = 0
+    ros_image.step = np_image.shape[1] * np_image.shape[2]  # width * channels
+    ros_image.data = np_image.tobytes()
+    return ros_image
+
+def pil_to_ros_image(pil_image):
+    if pil_image.mode != "RGB":
+        raise ValueError(f"PIL image must be in RGB mode, got {pil_image.mode}")
+    np_image = np.array(pil_image)
+
+    ros_image = Image()
+    ros_image.height = np_image.shape[0]
+    ros_image.width = np_image.shape[1]
+    ros_image.encoding = "rgb8"
+    ros_image.is_bigendian = 0
+    ros_image.step = np_image.shape[1] * np_image.shape[2]  # width * channels
+    ros_image.data = np_image.tobytes()
+    return ros_image
+        
 def ros_image_to_pil(ros_image):
     # Convert raw image data to numpy array
     np_arr = np.frombuffer(ros_image.data, dtype=np.uint8)
@@ -67,7 +91,7 @@ def numpy_to_ros_image(np_image, encoding="rgb8"):
     ros_image.step = np_image.shape[1] * np_image.shape[2]  # width * channels
     ros_image.data = np_image.tobytes()
     return ros_image
-        
+
 def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv"):
     start_frame, end_frame = int(start_frame), int(end_frame)
     frame = (start_frame + end_frame) // 2
@@ -79,15 +103,18 @@ def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "openc
     elif type.lower() == "utf-8":
         with open(imgpath, "rb") as imgfile:
             data = imgfile.read()
-            data = base64.b64encode(data)
-            img = base64.b64encode(data).decode("utf-8")
+            img = base64.b64encode(data)
+            img = copy.copy(img.decode("utf-8"))
     else:
         ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
     return img
 
-def get_images(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv"):
+def get_image_from_record(record, type: str = "opencv"):
+    return get_image(record["vidpath"], record["start_frame"], record["end_frame"], type=type)
+
+def get_images(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv", step: int = 1):
     images = []
-    for frame in range(start_frame, end_frame+1):
+    for frame in range(start_frame, end_frame+1, step):
         imgpath = os.path.join(vidpath, f"{frame:06d}.png")
         if type.lower() == "opencv":
             img = cv2.imread(imgpath)
@@ -101,6 +128,9 @@ def get_images(vidpath: str, start_frame: str, end_frame: str, type: str = "open
             ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
         images.append(img)
     return images
+
+def get_images_from_record(record, type: str = "opencv", step: int = 1):
+    return get_images(record["vidpath"], record["start_frame"], record["end_frame"], type=type, step=step)
 
 def debug_vid(vid, debugdir: str):
     os.makedirs(debugdir, exist_ok=True)
