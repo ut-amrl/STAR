@@ -269,7 +269,7 @@ class Agent:
         records = self._recall_last_seen_retriever(current_goal, self.get_param_from_txt_prompt, self.find_instance_from_txt_prompt)
         if len(records) == 0:
             return None
-        return records[0]
+        return records[:1]
     
     def _recall_last_seen_from_obs(self, current_goal: ObjectRetrievalPlan):
         records = self._recall_last_seen_retriever(current_goal, self.get_param_from_txt_prompt, self.find_instance_from_obs_prompt)
@@ -317,6 +317,7 @@ class Agent:
     def find_specific_past_instance(self, state):
         last_message = state["messages"][-1]
         if type(last_message) == ToolMessage:
+            # TODO need to handle empty case
             records = eval(last_message.content)
             current_goal = state["current_goal"]
             current_goal.found_in_mem = True
@@ -421,9 +422,8 @@ class Agent:
         current_goal.found_in_world = False
         target = current_goal.curr_target()
         
+        self.logger.info(f"current target: {target}")
         import pdb; pdb.set_trace()
-        
-        rospy.loginfo(f"current target: \n{target}")
         
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])

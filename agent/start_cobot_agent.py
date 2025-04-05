@@ -78,6 +78,8 @@ def parse_args():
                         ")
     parser.add_argument("--verbose", "-v", action="store_true", help="debug mode, default=False")
     
+    parser.add_argument("--case", type=str)
+    
     args = parser.parse_args()
     return args
 
@@ -415,6 +417,66 @@ if __name__ == "__main__":
     # )
     # VLM_PROCESSOR = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
     
+    if args.case:
+        if args.case == "case1":
+            # Bring me a cup (last seen)
+            inpaths = [
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-24-49_VILA1.5-8b_3_secs.json",
+            ]
+            MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
+            MEMORY.reset()
+            t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
+            remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
+            task = "Bring me a cup."
+            # debug/agent/2025-04-05/2025-04-05_18-45-27.log
+            # [8.3, 54.3, 3.1]
+            
+        elif args.case == "case2":
+            # TODO
+            inpaths = [
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-07-31_VILA1.5-8b_3_secs.json",
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-41-23_VILA1.5-8b_3_secs.json"
+            ]
+            MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
+            MEMORY.reset()
+            t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
+            remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
+            task = "Today is Feb 08, 2025. Bring me the cup that was on the table yesterday."
+            
+        elif args.case == "case3":
+            inpaths = [
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-24-49_VILA1.5-8b_3_secs.json",
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-41-23_VILA1.5-8b_3_secs.json"
+            ]
+            MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
+            MEMORY.reset()
+            t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
+            remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
+            task = "Today is Feb 07, 2025. Bring me the cup that was next to the plate yesterday."
+            # debug/agent/2025-04-05/2025-04-05_18-35-29.log
+            # [10.4, 60.2, 2.8]
+            
+        elif args.case == "case4":
+            inpaths = [
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-07-31_VILA1.5-8b_3_secs.json",
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-41-23_VILA1.5-8b_3_secs.json"
+            ]
+            MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
+            MEMORY.reset()
+            t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
+            remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
+            task = "Today is Feb 07, 2025. Bring me the object that was on the shelf yesterday."
+            # debug/agent/2025-04-05/2025-04-05_18-39-23.log
+            # [10.4, 60.2, 2.8]
+            
+        
+        agent = Agent()
+        agent.set_memory(MEMORY)
+        agent.run(question = task)
+    
+    exit(0)
+    
+    
     # memory
     inpaths = [
         # "/robodata/taijing/RobotMem/data/captions/cobot/2025-03-10-17-01-55_VILA1.5-8b_3_secs.json",
@@ -450,7 +512,7 @@ if __name__ == "__main__":
     
     tasks = [
         "Bring me a cup.",
-        "Bring me a white paper cup with a green Starbucks logo, featuring a plastic lid and handwritten text on the side.",
+        # "Bring me a white paper cup with a green Starbucks logo, featuring a plastic lid and handwritten text on the side.",
         "Today is Feb 08, 2025. Bring me the cup that was on the table yesterday.",
         "Today is Feb 08, 2025. Bring me the cup that was using with a plate yesterday.",
         "Today is Feb 08, 2025. Bring me the object that was on shelf yesterday.",
