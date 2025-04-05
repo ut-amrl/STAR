@@ -112,6 +112,7 @@ class Agent:
         # Recall last seen prompts
         self.get_param_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'get_param_from_txt_prompt.txt'))
         self.find_instance_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'find_instance_from_txt_prompt.txt'))
+        self.find_instance_from_obs_prompt = file_to_string(os.path.join(prompt_dir, 'find_instance_from_obs_prompt.txt'))
         
         self._build_graph()
     
@@ -174,7 +175,7 @@ class Agent:
         
         return {"task": task, "current_goal": current_goal}
     
-    def _recall_last_seen_from_txt(self, current_goal: ObjectRetrievalPlan):
+    def _recall_last_seen_retriever(self, current_goal: ObjectRetrievalPlan, prompt: str):
         question = current_goal.task
         
         model = self.llm
@@ -185,15 +186,16 @@ class Agent:
             ]
         )
         model = prompt | model
-        # question = f"User Task: Find {current_goal.query_obj_desc}"
-        question = f"User Task: Find {current_goal.query_obj_cls}" # TODO
+        question = f"User Task: Find {current_goal.query_obj_desc}"
+        # question = f"User Task: Find {current_goal.query_obj_cls}" 
         response = model.invoke({"question": question})
         keywords = eval(response.content)
         
         self.logger.info(f"Searching vector db for keywords: {keywords}")
         
         query = ', or '.join(keywords)
-        record_found = None
+        
+        record_found = []
         for i in range(5):
             docs = self.memory.search_last_k_by_text(is_first_time=(i==0), query=query, k=10)
             if docs == '' or docs == None: # End of search
@@ -222,8 +224,6 @@ class Agent:
             
             parsed_docs = parse_db_records_for_llm(filtered_records)
             
-            # parsed_docs = parse_db_records_for_llm(eval(docs))
-            
             model = self.llm
             prompt = ChatPromptTemplate.from_messages(
                 [
@@ -238,19 +238,26 @@ class Agent:
             
             self.logger.info(f"Retrived docs: {parsed_docs}")
             
-            record_id = response.content
-            self.logger.info(f"LLM response: {record_id}")
+            record_ids = response.content
+            self.logger.info(f"LLM response: {record_ids}")
             
-            if len(record_id) != 0:
-                record_id = int(eval(record_id))
+            if len(record_ids) == 0:
+                continue
+            record_ids = eval(record_ids)
+            if type(record_ids) is int:
+                record_ids = [record_ids]
+            record_ids = [int(i) for i in record_ids]
+            for record_id in record_ids:
                 docs = self.memory.get_by_id(record_id)
-                
-                self.logger.info(f"Record found: {docs}")
-                
-                record_found = eval(docs)
-                break
-            
+                record_found.append(eval(docs))
+            break
         return record_found
+    
+    def _recall_last_seen_from_txt(self, current_goal: ObjectRetrievalPlan):
+        records = self._recall_last_seen_retriever(current_goal, self.get_param_from_txt_prompt)
+        if len(records) == 0:
+            return None
+        return records[0]
     
     def _recall_last_seen_from_obs(self, obs):
         pass
@@ -259,7 +266,8 @@ class Agent:
         current_goal.found_in_mem = False
         
         if current_goal.query_img:
-            pass
+            record = self._recall_last_seen_from_txt(current_goal)
+            
         else:
             record = self._recall_last_seen_from_txt(current_goal)
             if record:
