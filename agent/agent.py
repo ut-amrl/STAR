@@ -115,6 +115,9 @@ class Agent:
         self.find_instance_from_obs_prompt = file_to_string(os.path.join(prompt_dir, 'find_instance_from_obs_prompt.txt'))
         self.same_instance_prompt = file_to_string(os.path.join(prompt_dir, 'same_instance_prompt.txt'))
         
+        # Frequency
+        self.recall_all_prompt = file_to_string(os.path.join(prompt_dir, 'recall_all_prompt.txt'))
+        
         self._build_graph()
     
     def _llm_selector(self, llm_type):
@@ -371,10 +374,41 @@ class Agent:
     ##############################
     # Frequency Reasoning
     ##############################
-    
+    def _recall_all(self, current_goal: ObjectRetrievalPlan):
+        docs = self.memory.search_all(current_goal.query_obj_desc)
+        records = eval(docs)
+        records = sorted(records, key=lambda x: x["id"])
+        parsed_llm_records = parse_db_records_for_llm(records)
+        
+        model = self.llm
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                MessagesPlaceholder("chat_history"),
+                ("ai", self.recall_all_prompt),
+                ("human", "{question}"),
+            ]
+        )
+        model = prompt | model
+        question = f"User wants you to help find {current_goal.query_obj_desc}. To identify the instance user is referring to, you need to first recall all momented where you saw objects matching this description. Can you list all record ids for me?"
+        
+        response = model.invoke({"question": question, "chat_history": parsed_llm_records})
+        
+        parsed_response = eval(response.content)
+        record_ids = [int(record_id) for record_id in parsed_response["selected_ids"]]
+        
+        records_found = []
+        for record in records:
+            if record["id"] in record_ids:
+                records_found.append(record)
+        return records_found
+        
     def find_by_frequency(self, state):
-        pass
-    
+        current_goal = state["current_goal"]
+        records = self._recall_all(current_goal)
+        
+        print()
+        
+        
     def _find_at_by_txt(self, goal_x: float, goal_y: float, goal_theta: float, query_txt):
         self.logger.info(f"Finding object {query_txt} at ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
         response = request_get_image_at_pose_service(goal_x, goal_y, goal_theta, logger=self.logger)
@@ -484,7 +518,7 @@ class Agent:
                 "retry": "find_specific_past_instance_action_node",
             }
         )
-        workflow.add_edge("find_by_frequency", "find_at")
+        workflow.add_edge("find_by_frequency", "find_by_description")
         workflow.add_conditional_edges(
             "find_at",
             from_find_at_to,
