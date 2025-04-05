@@ -64,7 +64,7 @@ class ObjectRetrievalPlan:
         self.explored_records_in_world = []
         
     def __str__(self):
-        return f"Find {self.query_obj_desc}"
+        return f"Find {self.query_obj_desc}; Task Type: {self.task_type}."
         
     def curr_target(self):
         if len(self.candidate_records_in_world) == 0:
@@ -143,6 +143,10 @@ class Agent:
             raise ValueError("Unsupported VLM type!")
         return model, processor
     
+    ##############################
+    # Task-Level Search Initialization
+    ##############################
+    
     def initialize_object_search(self, state):
         messages = state["messages"]
         task = messages[0].content
@@ -168,13 +172,13 @@ class Agent:
         current_goal.query_obj_desc = task_info['object_desc']
         current_goal.query_obj_cls = task_info['object_class']
         
-        # record = self.memory.get_by_id(84)
-        # current_goal.candidate_records_in_mem += eval(record)
-        # self._prepare_find_from_specific_instance(current_goal)
-        
         self.logger.info(current_goal.__str__())
         
         return {"task": task, "current_goal": current_goal}
+    
+    ##############################
+    # Recall Last Seen (find_by_description)
+    ##############################
     
     def _recall_last_seen_retriever(self, current_goal: ObjectRetrievalPlan, keyword_prompt: str, identification_prompt: str):
         model = self.llm
@@ -268,6 +272,7 @@ class Agent:
         records = self._recall_last_seen_retriever(current_goal, self.get_param_from_txt_prompt, self.find_instance_from_obs_prompt)
         if len(records) == 0:
             return None
+        self.logger.info(f"Verifying visual charateristics of between the query instance and candidate instances")
         image_messages = [get_vlm_img_message(current_goal.query_img, type=self.vlm_type)]
         for record in records:
             image = get_image_from_record(record, type="utf-8", resize=True)
@@ -277,10 +282,11 @@ class Agent:
             question = f"I am looking for an instance that is likely matching the following description: {current_goal.query_obj_desc}. Did you see this instance on both images I sent you?"
             response = ask_chatgpt(self.vlm, self.same_instance_prompt, image_messages, question)
             if 'yes' in eval(response.content)["same_instance"]:
+                self.logger.info(f"Found instance in record: {record}")
                 return [record]
+        self.logger.info(f"Failed to find this instance in memory!")
         return None
         
-    
     def _recall_last_seen(self, current_goal: ObjectRetrievalPlan):
         current_goal.found_in_mem = False
         
@@ -301,6 +307,10 @@ class Agent:
         current_goal = state["current_goal"]
         return self._recall_last_seen(current_goal)
     
+    ##############################
+    # Recall Specific Episode (find_specific_past_instance)
+    ##############################
+    
     def find_specific_past_instance(self, state):
         last_message = state["messages"][-1]
         if type(last_message) == ToolMessage:
@@ -308,8 +318,8 @@ class Agent:
             current_goal = state["current_goal"]
             current_goal.found_in_mem = True
             current_goal.candidate_records_in_mem += records
-            self._prepare_find_from_specific_instance(current_goal)
-            return {"current_goal": current_goal}
+            self.logger.info(f"Find {len(current_goal.candidate_records_in_mem)} record(s): {current_goal.candidate_records_in_mem}")
+            return self._prepare_find_from_specific_instance(current_goal)
         else:
             state["current_goal"].found_in_mem = False
             
@@ -325,7 +335,8 @@ class Agent:
             model = prompt | model
             question = f"User Task: {state['task']}"
             response = model.invoke({"question": question})
-            state["current_goal"].found_in_mem = False # TODO
+            
+            self.logger.info(f"Tool Call: {response.tool_calls}")
             return {"messages": response}
         
     def _prepare_find_from_specific_instance(self, current_goal: ObjectRetrievalPlan):
@@ -353,7 +364,13 @@ class Agent:
                 current_goal.query_obj_desc = parsed_response["instance_desc"]
                 current_goal.query_img = image
                 break
+        # TODO need to handle the case where there's no record available
+        self.logger.info(f"Based on past observations - New goal: Find {current_goal.query_obj_desc}")
         return {"messages": response, "current_goal": current_goal}
+    
+    ##############################
+    # Frequency Reasoning
+    ##############################
     
     def find_by_frequency(self, state):
         pass
