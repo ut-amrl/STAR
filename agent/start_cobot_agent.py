@@ -450,12 +450,13 @@ if __name__ == "__main__":
     
     tasks = [
         "Bring me a cup.",
+        "Bring me a white paper cup with a green Starbucks logo, featuring a plastic lid and handwritten text on the side.",
         "Today is Feb 08, 2025. Bring me the cup that was on the table yesterday.",
         "Today is Feb 08, 2025. Bring me the cup that was using with a plate yesterday.",
         "Today is Feb 08, 2025. Bring me the object that was on shelf yesterday.",
         "Bring me the cup that is usually on the table.",
     ]
-    agent.run(question = tasks[0])
+    agent.run(question = tasks[2])
     for task in tasks:
         agent.run(question=task)
     time.sleep(1)

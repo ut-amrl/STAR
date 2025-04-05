@@ -27,23 +27,26 @@ Wrap your output in ```json ```.
 {{
     "tool": "__conversational_response",
     "tool_input": {{
-        "response": "{{
-            'is_instance_observed': 'yes',
-            'instance_desc': 'a red hardcover book with a white spine label and slightly frayed top edges'
-        }}"
+        "response": {{
+            "is_instance_observed": "yes",
+            "instance_desc": "a red hardcover book with a white spine label and slightly frayed top edges"
+        }}
     }}
 }}
+```
 
 ### Example 2 (instance not observable in the image):
 **Image**:  [Only shows a blue book on the shelf]
 **User Command**: “Bring me the book that was on the table”
 
+``json
 {{
     "tool": "__conversational_response",
     "tool_input": {{
-        "response": "{{
-            'is_instance_observed': 'no',
-            'instance_desc': ''
-        }}"
+        "response": {{
+            "is_instance_observed": "no",
+            "instance_desc": ""
+        }}
     }}
 }}
+```

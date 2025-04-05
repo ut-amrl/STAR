@@ -18,16 +18,17 @@ You must return:
    - Prefer records with **distinct phrasing or contexts** (to reduce near-duplicate sightings).
    - If all records are ambiguous or weak matches, return **at most your top 1-2 best guesses**.
    - If none seem to match, return an empty list.
+   - Since the observations are very noisy, you are encouraged to make one best guess if class description match.
 
 You MUST respond using the following JSON format. Remember to wrap your answer with ```json ```!
 ```json
-[{
+[{{
     "tool": "__conversational_response",
-    "tool_input": {
-        "response": {
+    "tool_input": {{
+        "response": {{
             "reasoning": "-your concise reasoning here-",
             "ids": [id_1, id_2]
-        }
-    }
-}]
+        }}
+    }}
+}}]
 ```

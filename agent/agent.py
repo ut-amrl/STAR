@@ -113,6 +113,7 @@ class Agent:
         self.get_param_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'get_param_from_txt_prompt.txt'))
         self.find_instance_from_txt_prompt = file_to_string(os.path.join(prompt_dir, 'find_instance_from_txt_prompt.txt'))
         self.find_instance_from_obs_prompt = file_to_string(os.path.join(prompt_dir, 'find_instance_from_obs_prompt.txt'))
+        self.same_instance_prompt = file_to_string(os.path.join(prompt_dir, 'same_instance_prompt.txt'))
         
         self._build_graph()
     
@@ -162,7 +163,7 @@ class Agent:
         current_goal = ObjectRetrievalPlan()
         current_goal.task = f"Find {task_info['object_desc']}"
         current_goal.task_type = task_info['task_type']
-        if current_goal.task_type not in ["find_non_referential" , "find_specific_past_instance", "find_by_frequency"]:
+        if current_goal.task_type not in ["find_by_description" , "find_specific_past_instance", "find_by_frequency"]:
             raise ValueError(f"LLM failed to respond valid task type. LLM response: {current_goal.task_type}")
         current_goal.query_obj_desc = task_info['object_desc']
         current_goal.query_obj_cls = task_info['object_class']
@@ -175,13 +176,11 @@ class Agent:
         
         return {"task": task, "current_goal": current_goal}
     
-    def _recall_last_seen_retriever(self, current_goal: ObjectRetrievalPlan, prompt: str):
-        question = current_goal.task
-        
+    def _recall_last_seen_retriever(self, current_goal: ObjectRetrievalPlan, keyword_prompt: str, identification_prompt: str):
         model = self.llm
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("ai", self.get_param_from_txt_prompt),
+                ("ai", keyword_prompt),
                 ("human", "{question}"),
             ]
         )
@@ -228,61 +227,79 @@ class Agent:
             prompt = ChatPromptTemplate.from_messages(
                 [
                     ("system", "{docs}"),
-                    ("ai", self.find_instance_from_txt_prompt),
+                    ("ai", identification_prompt),
                     ("human", "{question}"),
                 ]
             )
             model = prompt | model
             question = f"User Task: {question}. Have you seen the instance user needs in your recalled moments?"
             response = model.invoke({"question": question, "docs": parsed_docs})
-            
             self.logger.info(f"Retrived docs: {parsed_docs}")
             
-            record_ids = response.content
+            if len(response.content) == 0:
+                continue
+            if len(response.content) < 5: # TODO Fix me
+                record_ids = response.content
+                record_ids = [int(record_ids)]
+            else:
+                parsed_response = eval(response.content)
+                record_ids = parsed_response["ids"]
+                if type(record_ids) == str:
+                    record_ids = eval(record_ids)
+                record_ids = [int(i) for i in record_ids]
+            
             self.logger.info(f"LLM response: {record_ids}")
             
             if len(record_ids) == 0:
                 continue
-            record_ids = eval(record_ids)
-            if type(record_ids) is int:
-                record_ids = [record_ids]
-            record_ids = [int(i) for i in record_ids]
             for record_id in record_ids:
                 docs = self.memory.get_by_id(record_id)
-                record_found.append(eval(docs))
+                record_found += eval(docs)
             break
         return record_found
     
     def _recall_last_seen_from_txt(self, current_goal: ObjectRetrievalPlan):
-        records = self._recall_last_seen_retriever(current_goal, self.get_param_from_txt_prompt)
+        records = self._recall_last_seen_retriever(current_goal, self.get_param_from_txt_prompt, self.find_instance_from_txt_prompt)
         if len(records) == 0:
             return None
         return records[0]
     
-    def _recall_last_seen_from_obs(self, obs):
-        pass
+    def _recall_last_seen_from_obs(self, current_goal: ObjectRetrievalPlan):
+        records = self._recall_last_seen_retriever(current_goal, self.get_param_from_txt_prompt, self.find_instance_from_obs_prompt)
+        if len(records) == 0:
+            return None
+        image_messages = [get_vlm_img_message(current_goal.query_img, type=self.vlm_type)]
+        for record in records:
+            image = get_image_from_record(record, type="utf-8", resize=True)
+            image_message = get_vlm_img_message(image, type=self.vlm_type)
+            image_messages.append(image_message)
+        
+            question = f"I am looking for an instance that is likely matching the following description: {current_goal.query_obj_desc}. Did you see this instance on both images I sent you?"
+            response = ask_chatgpt(self.vlm, self.same_instance_prompt, image_messages, question)
+            if 'yes' in eval(response.content)["same_instance"]:
+                return [record]
+        return None
+        
     
     def _recall_last_seen(self, current_goal: ObjectRetrievalPlan):
         current_goal.found_in_mem = False
         
         if current_goal.query_img:
-            record = self._recall_last_seen_from_txt(current_goal)
-            
+            record = self._recall_last_seen_from_obs(current_goal)
         else:
             record = self._recall_last_seen_from_txt(current_goal)
-            if record:
-                current_goal.candidate_records_in_mem += record
-                current_goal.candidate_records_in_world += record
-                current_goal.found_in_mem = True
-            else:
-                current_goal.found_in_mem = False
+        if record:
+            current_goal.candidate_records_in_mem += record
+            current_goal.candidate_records_in_world += record
+            current_goal.found_in_mem = True
+        else:
+            current_goal.found_in_mem = False
                 
         return {"current_goal": current_goal}
     
-    def find_non_referential(self, state):
+    def find_by_description(self, state):
         current_goal = state["current_goal"]
         return self._recall_last_seen(current_goal)
-        
     
     def find_specific_past_instance(self, state):
         last_message = state["messages"][-1]
@@ -337,7 +354,6 @@ class Agent:
                 current_goal.query_img = image
                 break
         return {"messages": response, "current_goal": current_goal}
-    
     
     def find_by_frequency(self, state):
         pass
@@ -420,7 +436,7 @@ class Agent:
         workflow.add_node("terminate", lambda state: self.terminate(state))
         
         # Task and the corresponding action nodes
-        workflow.add_node("find_non_referential", lambda state: try_except_continue(state, self.find_non_referential))
+        workflow.add_node("find_by_description", lambda state: try_except_continue(state, self.find_by_description))
         workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
         workflow.add_node("find_by_frequency", lambda state: try_except_continue(state, self.find_by_frequency))
         
@@ -436,18 +452,18 @@ class Agent:
             "initialize_object_search",
             from_initialize_object_search_to,
             {
-                "find_non_referential": "find_non_referential",
+                "find_by_description": "find_by_description",
                 "find_specific_past_instance": "find_specific_past_instance",
                 "find_by_frequency": "find_by_frequency",
             }
         )
-        workflow.add_edge("find_non_referential", "find_at")
+        workflow.add_edge("find_by_description", "find_at")
         workflow.add_edge("find_specific_past_instance_action_node", "find_specific_past_instance")
         workflow.add_conditional_edges( # TODO this condition is incorrect
             "find_specific_past_instance",
             from_find_specific_past_instance_to,
             {
-                "next": "find_non_referential",
+                "next": "find_by_description",
                 "retry": "find_specific_past_instance_action_node",
             }
         )
@@ -457,7 +473,7 @@ class Agent:
             from_find_at_to,
             {
                 "next": "pick",
-                "retry": "find_non_referential", # TODO
+                "retry": "find_by_description", # TODO
             },
         )
         workflow.add_edge("pick", "terminate")

@@ -10,63 +10,63 @@ Given a natural language user command, extract two pieces of information:
    – This will be used by an object detector for visual grounding.
 
 3. `task_type`:
-    - "find_non_referential" – The query describes an object using class, location, or attributes, but does not reference a specific past instance. (Example: "Bring me a book.", "Bring me a book from the shelf")
-    - "find_specific_past_instance" – The query refers to a specific instance, identified via past spatial or temporal context. (Examples: "Bring me the cup that was on the table yesterday." / "Bring me the object that was on the shelf last night.")
-    - "find_by_frequency" – The query asks for an object based on its statistical pattern or habitual presence over time. (Example: "Bring me the cup that’s usually on the table.")
+    - "find_by_description" – The query describes what the object is (category, attributes, etc.) but does not reference a specific past moment or context. (Examples: "Bring me a book from the shelf.", "Bring me a red book titled 'Machine Learning'.", "Bring me a new cup.")
+    - "find_specific_past_instance" – The query refers to a specific previously observed object, using spatial, temporal, or activity-based context to disambiguate. (Examples: "Bring me the cup that was on the table yesterday.", "Bring me the object that I used during breakfast.", "Bring me the charger I left by the bed last night.")
+    - "find_by_frequency" – The query asks for an object based on statistical patterns across time, such as habitual use or frequent locations. (Examples: "Bring me my favorite cup.", "Bring me the book I read the most last week.", "Bring me the jacket I wear most often.")
 
 You MUST use the following tool to respond. You should strictly follow the JSON format below, as your response should will be parsed by a JSON decoder without any preprocessing. Remember to wrap around your answer with ```json ```!
 Make sure you fill in each field with the exact key and the specified format. If you cannot make a response, put empty strings for `object_desc` and `object_desc`.
 ```json
-{{
+[{{
     "tool": "__conversational_response", 
     "tool_input": {{ 
-        "response":  "{{
-            'object_desc': '-exact description with all constraints-',
-            'object_class': '-semantic object class label-',
-            'task_type': '-find_non_referential, find_specific_past_instance, or find_by_frequency'
-        }}"
+        "response":  {{
+            "object_desc": "-exact description with all constraints-",
+            "object_class": "-semantic object class label-",
+            "task_type": "find_by_description, find_specific_past_instance, or find_by_frequency"
+        }}
     }}
-}}
+}}]
 ```
 
 Example 1: "Bring me a book from the shelf"
 ```json
-{{
+[{{
     "tool": "__conversational_response", 
     "tool_input": {{ 
-        "response":  "{{
-            'object_desc': 'a book from the shelf',
-            'object_class': 'book',
-            'task_type': 'find_by_category'
-        }}"
+        "response":  {{
+            "object_desc": "a book from the shelf",
+            "object_class": "book",
+            "task_type": "find_by_category"
+        }}
     }}
-}}
+}}]
 ```
 
 Example 2: "Today is March 04, 2025. Bring me a book that was on the shelf yesterday."
 ```json
-{{
+[{{
     "tool": "__conversational_response", 
     "tool_input": {{ 
-        "response":  "{{
-            'object_desc': 'a book that was on the shelf on March 03, 2025',
-            'object_class': 'book',
-            'task_type': 'find_specific_past_instance'
-        }}"
+        "response":  {{
+            "object_desc": "a book that was on the shelf on March 03, 2025",
+            "object_class": "book",
+            "task_type": "find_specific_past_instance"
+        }}
     }}
-}}
+}}]
 ```
 
 Example 3: "Bring me my favorite book."
 ```json
-{{
+[{{
     "tool": "__conversational_response", 
     "tool_input": {{ 
-        "response":  "{{
-            'object_desc': 'user's favorite book',
-            'object_class': 'book',
-            'task_type': 'find_by_frequency'
-        }}"
+        "response":  {{
+            "object_desc': "user's favorite book",
+            "object_class': "book",
+            "task_type': "find_by_frequency"
+        }}
     }}
-}}
+}}]
 ```

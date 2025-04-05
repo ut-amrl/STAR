@@ -92,7 +92,7 @@ def numpy_to_ros_image(np_image, encoding="rgb8"):
     ros_image.data = np_image.tobytes()
     return ros_image
 
-def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv"):
+def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv", resize: bool = False):
     start_frame, end_frame = int(start_frame), int(end_frame)
     frame = (start_frame + end_frame) // 2
     imgpath = os.path.join(vidpath, f"{frame:06d}.png")
@@ -101,16 +101,23 @@ def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "openc
     elif type.lower() == "pil":
         img = PILImage.open(imgpath)
     elif type.lower() == "utf-8":
-        with open(imgpath, "rb") as imgfile:
-            data = imgfile.read()
-            img = base64.b64encode(data)
-            img = copy.copy(img.decode("utf-8"))
+        if resize:
+            img = PILImage.open(imgpath).convert("RGB")  # RGBA to preserve color + alpha
+            img = img.resize((512, 512), PILImage.BILINEAR)
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+            img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        else:
+            with open(imgpath, "rb") as imgfile:
+                data = imgfile.read()
+                img = base64.b64encode(data)
+                img = copy.copy(img.decode("utf-8"))
     else:
         ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
     return img
 
-def get_image_from_record(record, type: str = "opencv"):
-    return get_image(record["vidpath"], record["start_frame"], record["end_frame"], type=type)
+def get_image_from_record(record, type: str = "opencv", resize: bool = False):
+    return get_image(record["vidpath"], record["start_frame"], record["end_frame"], type=type, resize=resize)
 
 def get_images(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv", step: int = 1):
     images = []
@@ -349,15 +356,13 @@ def ask_qwen(vlm_model, vlm_processor, prompt: str, image, question: str):
 
 def ask_chatgpt(model, prompt: str, images, question: str):
     from langchain.prompts import ChatPromptTemplate
-    from langchain_core.messages import HumanMessage
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("ai", prompt),
-            HumanMessage(content=images),
-            ("human", "{question}")
-        ]
-    )
-            
-    model = prompt | model
-    response = model.invoke({"question": question})
-    return response.content
+    from langchain_core.messages import HumanMessage, AIMessage
+    
+    content_blocks = images + [{"type": "text", "text": question}]
+    messages = [
+        AIMessage(content=prompt),
+        HumanMessage(content=content_blocks),
+    ]
+    
+    response = model.invoke(messages)
+    return response
