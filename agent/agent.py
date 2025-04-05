@@ -64,7 +64,7 @@ class ObjectRetrievalPlan:
         self.explored_records_in_world = []
         
     def __str__(self):
-        return str(self.__dict__)
+        return f"Find {self.query_obj_desc}"
         
     def curr_target(self):
         if len(self.candidate_records_in_world) == 0:
@@ -255,21 +255,26 @@ class Agent:
     def _recall_last_seen_from_obs(self, obs):
         pass
     
-    def _recall_last_seen(self, current_goal):
+    def _recall_last_seen(self, current_goal: ObjectRetrievalPlan):
         current_goal.found_in_mem = False
-        # TODO need to handle the case where no record is retrieved
-        record = self._recall_last_seen_from_txt(current_goal)
-        if record:
-            current_goal.candidate_records_in_mem += record
-            current_goal.candidate_records_in_world += record
-            current_goal.found_in_mem = True
+        
+        if current_goal.query_img:
+            pass
         else:
-            current_goal.found_in_mem = False
+            record = self._recall_last_seen_from_txt(current_goal)
+            if record:
+                current_goal.candidate_records_in_mem += record
+                current_goal.candidate_records_in_world += record
+                current_goal.found_in_mem = True
+            else:
+                current_goal.found_in_mem = False
+                
         return {"current_goal": current_goal}
     
     def find_non_referential(self, state):
         current_goal = state["current_goal"]
         return self._recall_last_seen(current_goal)
+        
     
     def find_specific_past_instance(self, state):
         last_message = state["messages"][-1]
@@ -321,6 +326,7 @@ class Agent:
             parsed_response = eval(response.content)
             if "yes" in parsed_response["is_instance_observed"].lower():
                 current_goal.query_obj_desc = parsed_response["instance_desc"]
+                current_goal.query_img = image
                 break
         return {"messages": response, "current_goal": current_goal}
     
@@ -433,7 +439,7 @@ class Agent:
             "find_specific_past_instance",
             from_find_specific_past_instance_to,
             {
-                "next": "find_at",
+                "next": "find_non_referential",
                 "retry": "find_specific_past_instance_action_node",
             }
         )
