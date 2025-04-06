@@ -421,19 +421,20 @@ if __name__ == "__main__":
         if args.case == "case1":
             # Bring me a cup (last seen)
             inpaths = [
-                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-24-49_VILA1.5-8b_3_secs.json",
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-41-23_VILA1.5-8b_3_secs.json",
             ]
             MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
             MEMORY.reset()
             t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
             remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
             task = "Bring me a cup."
-            # debug/agent/2025-04-05/2025-04-05_18-45-27.log
-            # [8.3, 54.3, 3.1]
+            # debug/agent/2025-04-05/2025-04-05_20-29-43.log
+            # [11.8, 58.6, -0.8]
             
         elif args.case == "case2":
             # TODO
             inpaths = [
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-19-02-32_VILA1.5-8b_3_secs.json",
                 "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-07-31_VILA1.5-8b_3_secs.json",
                 "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-41-23_VILA1.5-8b_3_secs.json"
             ]
@@ -441,7 +442,9 @@ if __name__ == "__main__":
             MEMORY.reset()
             t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
             remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
-            task = "Today is Feb 08, 2025. Bring me the cup that was on the table yesterday."
+            task = "Today is Feb 07, 2025. Bring me the cup that was on the table the day before yesterday."
+            # debug/agent/2025-04-05/2025-04-05_20-38-20.log
+            # [10.4, 60.2, 2.8]
             
         elif args.case == "case3":
             inpaths = [
