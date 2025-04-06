@@ -13,6 +13,72 @@ import math
 
 from sensor_msgs.msg import Image
 
+class UnionFind:
+    def __init__(self, size):
+        self.parent = list(range(size))
+        self.rank = [0] * size 
+
+    def find(self, x):
+        if self.parent[x] != x:
+            # Path compression
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+
+    def union(self, x, y):
+        # Find roots
+        root_x = self.find(x)
+        root_y = self.find(y)
+
+        if root_x == root_y:
+            return False  # Already in the same set
+
+        # Union by rank
+        if self.rank[root_x] < self.rank[root_y]:
+            self.parent[root_x] = root_y
+        elif self.rank[root_x] > self.rank[root_y]:
+            self.parent[root_y] = root_x
+        else:
+            self.parent[root_y] = root_x
+            self.rank[root_x] += 1
+
+        return True  # Successfully merged
+
+    def connected(self, x, y):
+        return self.find(x) == self.find(y)
+
+    def get_groups(self):
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for i in range(len(self.parent)):
+            root = self.find(i)
+            groups[root].append(i)
+        return list(groups.values())
+
+def downsample_consecutive_ids(ids, rate):
+    if not ids:
+        return []
+
+    result = []
+    chunk = [ids[0]]
+
+    for i in range(1, len(ids)):
+        if ids[i] == ids[i - 1] + 1:
+            chunk.append(ids[i])
+        else:
+            # Process the current chunk
+            result.extend(chunk[::rate])
+            chunk = [ids[i]]
+
+    # Don't forget the last chunk
+    result.extend(chunk[::rate])
+    return result
+
+def last_multi_group_index(grouped_ids):
+    for i, group in enumerate(grouped_ids):
+        if len(group) == 1:
+            return i - 1 if i > 0 else -1
+    return len(grouped_ids) - 1  # All groups have size > 1
+
 def angle_diff(a0: float, a1: float) -> float:
     """Compute minimal signed difference between two angles in radians."""
     two_pi = 2 * math.pi

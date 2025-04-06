@@ -2,6 +2,7 @@ import os
 import json
 from typing import Annotated, Sequence, TypedDict
 from math import radians
+from collections import defaultdict
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage
@@ -367,7 +368,7 @@ class Agent:
                 current_goal.query_img = image
                 break
         # TODO need to handle the case where there's no record available
-        self.logger.info(f"Based on past observations - New goal: Find {current_goal.query_obj_desc}")
+        self.logger.info(f"Based on past observation {current_goal.explored_records_in_mem[-1]["id"]} - New goal: Find {current_goal.query_obj_desc}")
         return {"messages": response, "current_goal": current_goal}
     
     ##############################
@@ -400,10 +401,67 @@ class Agent:
             if record["id"] in record_ids:
                 records_found.append(record)
         return records_found
-        
+    
     def find_by_frequency(self, state):
         current_goal = state["current_goal"]
-        records = self._recall_all(current_goal)
+        # records = self._recall_all(current_goal)
+        # record_ids = [record["id"] for record in records]
+        
+        # record_ids = [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58]
+        # selected_record_ids = downsample_consecutive_ids(record_ids, rate=3)
+        selected_record_ids = [3, 30, 45]
+        records = []
+        for record_id in selected_record_ids:
+            records += eval(self.memory.get_by_id(record_id))
+        
+        selected_records = {}
+        for record in records:
+            if record["id"] in selected_record_ids:
+                selected_records[record["id"]] = record
+                
+        question = f"I am looking for an instance that is likely matching the following description: {current_goal.query_obj_desc}. Did you see this instance on both images I sent you?"
+        
+        n = len(selected_record_ids)
+        uf = UnionFind(n)
+        for i in range(n):
+            for j in range(i+1, n):
+                if uf.connected(i, j):
+                    continue
+                record_id_i, record_id_j = selected_record_ids[i], selected_record_ids[j]
+                record_i, record_j = selected_records[record_id_i], selected_records[record_id_j]
+                image_i, image_j = get_image_from_record(record_i, type="utf-8"), get_image_from_record(record_j, type="utf-8")
+                image_message_i, image_message_j = get_vlm_img_message(image_i, self.vlm_type), get_vlm_img_message(image_j, self.vlm_type)
+                image_messages = [image_message_i, image_message_j]
+                response = ask_chatgpt(self.vlm, self.same_instance_prompt, image_messages, question)
+                if 'yes' in eval(response.content)["same_instance"]:
+                    uf.union(i, j)
+        
+        groups = uf.get_groups()
+        grouped_record_ids = [[selected_record_ids[i] for i in group] for group in groups]
+        grouped_record_ids.sort(key=len, reverse=True)
+        self.logger.info(f"All moments when I observed {current_goal.query_obj_cls}: grouped_record_ids")
+        
+        last_idx = last_multi_group_index(grouped_record_ids)
+        
+        if last_idx == -1:
+            self.logger.info(f"I cannot meaningfullly answer this question as I only saw each {current_goal.query_obj_cls} once. Therefore, I can only help you find an arbitrary {current_goal.query_obj_cls}.")
+            current_goal.find_in_mem = False
+            return {"current_goal": current_goal}
+        
+        if last_idx == 0:
+            current_goal.find_in_mem = True
+            for record_id in grouped_record_ids[0]:
+                current_goal.candidate_records_in_mem.append(selected_records[record_id])
+            self.logger.info(f"Found instance in memory: {current_goal.candidate_records_in_mem}")
+            return self._prepare_find_from_specific_instance(current_goal)
+        
+        grouped_record_ids[:last_idx+1]
+        grouped_records = defaultdict(str)
+        for i, record_ids in enumerate(grouped_record_ids):
+            for record_id in record_ids:
+                grouped_records[i] += (selected_records[record_id]["text"] + "\n")
+        
+        
         
         print()
         

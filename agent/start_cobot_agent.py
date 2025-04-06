@@ -483,6 +483,15 @@ if __name__ == "__main__":
             # debug/agent/2025-04-05/2025-04-05_18-39-23.log
             # [10.4, 60.2, 2.8]
             
+        elif args.case == "case5":
+            inpaths = [
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-02-20-30-36_VILA1.5-8b_3_secs.json",
+            ]
+            MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
+            MEMORY.reset()
+            t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
+            remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
+            task = "Bring me the cup that is usually on the table."
         
         agent = Agent()
         agent.set_memory(MEMORY)
