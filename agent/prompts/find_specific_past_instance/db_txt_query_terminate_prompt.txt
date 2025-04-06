@@ -15,7 +15,7 @@ Type I: __conversational_response. It calls a system to response to the user. Us
     "tool": "__conversational_response", 
     "tool_input": {{ 
         "response":  {{
-            "summary": "--summarize all your findings and the reason of your answers--",
+            "reasoning": "--summarize all your findings and the reason of your answers--",
             "moment_ids": "-id1-, -id2-, -id3-, -all ids relevant to the referred instance, ranked by their relevancy-]
         }}
     }}
@@ -28,7 +28,7 @@ Context: User asks me to find a book on the shelf. I have seen empty shelf at mo
     "tool": "__conversational_response", 
     "tool_input": {{ 
         "response":  {{
-            "summary": "User wants me to find a book on the shelf, and I have seen books at moments 11, 12, 13.",
+            "reasoning": "User wants me to find a book on the shelf, and I have seen books at moments 11, 12, 13.",
             "moment_ids": [12, 11, 13]
         }}
     }}

@@ -55,7 +55,6 @@ def create_db_txt_search_tool(memory):
     )
     return [txt_retriever_tool, txt_time_retriever_tool]
 
-
 def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -229,6 +228,130 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
     )
     return retriever_tool
 
+def create_best_guess_tool(memory: MilvusMemory, llm, vlm):
+    class AgentState(TypedDict):
+        messages: Annotated[Sequence[BaseMessage], add_messages]
+        retrieved_messages: Annotated[Sequence, replace_messages]
+        output: Annotated[Sequence, replace_messages]
+        
+    def should_continue(state: AgentState):
+        messages = state["messages"]
+
+        last_message = messages[-1]
+        # If there is no function call, then we finish
+        if not last_message.tool_calls:
+            return "end"
+        else:
+            return "continue"
+    
+    class DBRetriever:
+        def __init__(self, memory, llm, vlm):
+            self.memory = memory
+            self.llm = llm
+            self.vlm = vlm
+
+            self.db_retriever_tools = create_db_txt_search_tool(memory)
+            self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.db_retriever_tools]
+            
+            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/find_best_guess/'
+            self.agent_prompt = file_to_string(prompt_dir+'db_txt_query_prompt.txt')
+            self.agent_gen_only_prompt = file_to_string(prompt_dir+'db_txt_query_terminate_prompt.txt')
+            
+            self.previous_tool_requests = "These are the tools I have previously used so far: \n"
+            self.agent_call_count = 0
+            
+            self._build_graph()
+                
+        def agent(self, state):
+            messages = state["messages"]
+
+            model = self.llm
+            if self.agent_call_count < 2:
+                model = model.bind_tools(tools=self.recall_tool_definitions)
+                prompt = self.agent_prompt
+            else:
+                prompt = self.agent_gen_only_prompt
+                
+            agent_prompt = ChatPromptTemplate.from_messages(
+                [
+                    MessagesPlaceholder("chat_history"),
+                    ("ai", prompt),
+                    (("human"), self.previous_tool_requests),
+                    ("human", "{question}"),
+                ]
+            )
+            
+            model = agent_prompt | model
+            
+            db_messages = filter_retrieved_record(messages[:])
+            parsed_db_messages = parse_db_records_for_llm(db_messages)
+
+            question = f"The object user wants to find is: {messages[0].content}"
+            
+            response = model.invoke({"question": question, "chat_history": parsed_db_messages})
+
+            if response.tool_calls:
+                for tool_call in response.tool_calls:
+                    if tool_call['name'] != "__conversational_response":
+                        args = re.sub(r'^\{(.*)\}$', r'(\1)', str(tool_call['args'])) # remove curly braces
+                        self.previous_tool_requests += f" {tool_call['name']} tool with the arguments: {args}.\n"
+
+            self.agent_call_count += 1
+            return {"messages": [response], "retrieved_messages": db_messages}
+        
+        def generate(self, state):
+            return 
+            
+        def _build_graph(self):
+            workflow = StateGraph(AgentState)
+            
+            workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
+            workflow.add_node("action", ToolNode(self.db_retriever_tools))
+            workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
+            
+            workflow.add_conditional_edges(
+                "agent",
+                # Assess agent decision
+                should_continue,
+                {
+                    # Translate the condition outputs to nodes in our graph
+                    "continue": "action",
+                    "end": "generate",
+                },
+            )
+            workflow.add_edge('action', 'agent')
+            workflow.add_edge("generate", END)
+            
+            workflow.set_entry_point("agent")
+            self.graph = workflow.compile()
+            
+        def run(self, instance_description):
+            inputs = { "messages": [
+                    (("user", f"Where can I find {instance_description}?")),
+                ]
+            }
+            self.instance_description = instance_description
+            
+            state = self.graph.invoke(inputs)
+            return state["messages"][-1]
+
+    tool = DBRetriever(memory, llm, vlm)
+    class BestGuessInput(BaseModel):
+        instance_description: str = Field(description="You are a robot agent with extensive past observations. This tool helps you infer where to find the instance matching the given description based on your past observations. \
+                            This query argument should be a phrase such as 'a book', 'the book that was on a table', or 'an apple that was in kitchen yesterday'. \
+                            The query will then search your memories for you.")
+        
+    retriever_tool = StructuredTool.from_function(
+        func=lambda instance_description: tool.run(
+            instance_description
+        ),
+        name="get_location_of_instance",
+        description="Search memory to infer the location where you are most likely to find an instance matching the given description",
+        args_schema=BestGuessInput
+        # coroutine= ... <- you can specify an async method if desired as well
+    )
+    return retriever_tool
+
 def create_recall_last_tool(memory: MilvusMemory, llm, vlm):
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -347,6 +470,3 @@ def create_recall_last_tool(memory: MilvusMemory, llm, vlm):
         # coroutine= ... <- you can specify an async method if desired as well
     )
     return retriever_tool
-    
-def create_find_any_at_tool(vlm, x: float, y: float, theta: float):
-    pass

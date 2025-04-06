@@ -15,24 +15,13 @@ from utils.function_wrapper import FunctionsWrapper
 from utils.utils import *
 from utils.tools import (
     create_find_specific_past_instance_tool, 
-    create_recall_last_tool, 
-    create_find_any_at_tool, 
+    create_best_guess_tool
 )
 
 from memory.memory import MilvusMemory
 
 import rospy
 import roslib; roslib.load_manifest('amrl_msgs')
-from amrl_msgs.srv import (
-    GetImageSrv,
-    GetImageSrvRequest,
-    GetImageAtPoseSrv, 
-    GetImageAtPoseSrvRequest, 
-    SemanticObjectDetectionSrv, 
-    SemanticObjectDetectionSrvRequest,
-    PickObjectSrv,
-    PickObjectSrvRequest,
-)
 
 def from_initialize_object_search_to(state):
     return state["current_goal"].task_type 
@@ -41,6 +30,11 @@ def from_find_specific_past_instance_to(state):
     if state["current_goal"].found_in_mem:
         return "next"
     return "retry" # TODO Fix the naming; We should default to common sense instead
+
+def from_find_by_description_to(state):
+    if state["current_goal"].found_in_mem:
+        return "next"
+    return "find_by_best_guess"
 
 def from_find_at_to(state):
     if state["current_goal"].found_in_world:
@@ -101,6 +95,10 @@ class Agent:
         recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm)
         self.recall_tools = [recall_tool]
         self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.recall_tools]
+        
+        best_guess_tool = create_best_guess_tool(self.memory, self.llm, self.vlm)
+        self.best_guess_tools = [best_guess_tool]
+        self.best_guess_tool_definitions = [convert_to_openai_function(t) for t in self.best_guess_tools]
         
         prompt_dir = os.path.join(str(os.path.dirname(__file__)), "prompts", "agent")
         self.object_search_prompt = file_to_string(os.path.join(prompt_dir, 'object_search_prompt.txt'))
@@ -409,7 +407,26 @@ class Agent:
         
         print()
         
+    def find_by_best_guess(self, state):
+        current_goal = state["current_goal"]
+        response = self.best_guess_tools[0].func(instance_description=current_goal.query_obj_desc)
+        parsed_response = eval(response.content)
+        reason = parsed_response["reasoning"]
+        pos = parsed_response["position"]
+        self.logger.info(f"LLM thinks we can find {current_goal.query_obj_desc} at ({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}). Reason: {reason}")
         
+        dummy_record = {
+            "id": -1,
+            "position": pos
+        }
+        
+        current_goal.candidate_records_in_world.append(dummy_record)
+        
+        return {"messages": response}
+        
+    ##############################
+    # Robot Tools
+    ##############################
     def _find_at_by_txt(self, goal_x: float, goal_y: float, goal_theta: float, query_txt):
         self.logger.info(f"Finding object {query_txt} at ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
         response = request_get_image_at_pose_service(goal_x, goal_y, goal_theta, logger=self.logger)
@@ -460,7 +477,7 @@ class Agent:
                 
         if current_goal.found_in_world:
             self.logger.info(f"Found {query_txt} at ({candidate_goal[0]:.2f}, {candidate_goal[1]:.2f}, {candidate_goal[2]:.2f})!")
-            debug_vid(current_goal.curr_target(), "debug")
+            # debug_vid(current_goal.curr_target(), "debug")
             
         return {"current_goal": current_goal}
     
@@ -490,6 +507,7 @@ class Agent:
         workflow.add_node("find_by_description", lambda state: try_except_continue(state, self.find_by_description))
         workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
         workflow.add_node("find_by_frequency", lambda state: try_except_continue(state, self.find_by_frequency))
+        workflow.add_node("find_by_best_guess", lambda state: try_except_continue(state, self.find_by_best_guess))
         
         # Memory tool nodes
         workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
@@ -508,7 +526,16 @@ class Agent:
                 "find_by_frequency": "find_by_frequency",
             }
         )
-        workflow.add_edge("find_by_description", "find_at")
+        workflow.add_conditional_edges(
+            "find_by_description",
+            from_find_by_description_to,
+            {
+                "next": "find_at",
+                "find_by_best_guess": "find_by_best_guess"
+            }
+        )
+        workflow.add_edge("find_by_best_guess", "find_at")
+        
         workflow.add_edge("find_specific_past_instance_action_node", "find_specific_past_instance")
         workflow.add_conditional_edges( # TODO this condition is incorrect
             "find_specific_past_instance",
@@ -518,7 +545,9 @@ class Agent:
                 "retry": "find_specific_past_instance_action_node",
             }
         )
+        
         workflow.add_edge("find_by_frequency", "find_by_description")
+        
         workflow.add_conditional_edges(
             "find_at",
             from_find_at_to,
