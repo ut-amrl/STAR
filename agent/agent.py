@@ -92,11 +92,11 @@ class Agent:
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
         
-        recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm)
+        recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm, self.logger)
         self.recall_tools = [recall_tool]
         self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.recall_tools]
         
-        best_guess_tool = create_best_guess_tool(self.memory, self.llm, self.vlm)
+        best_guess_tool = create_best_guess_tool(self.memory, self.llm, self.vlm, self.logger)
         self.best_guess_tools = [best_guess_tool]
         self.best_guess_tool_definitions = [convert_to_openai_function(t) for t in self.best_guess_tools]
         
@@ -407,6 +407,9 @@ class Agent:
         
         print()
         
+    ##############################
+    # Common Sense Reasoning
+    ##############################
     def find_by_best_guess(self, state):
         current_goal = state["current_goal"]
         response = self.best_guess_tools[0].func(instance_description=current_goal.query_obj_desc)

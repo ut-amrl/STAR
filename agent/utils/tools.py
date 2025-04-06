@@ -55,7 +55,7 @@ def create_db_txt_search_tool(memory):
     )
     return [txt_retriever_tool, txt_time_retriever_tool]
 
-def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
+def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logger=None):
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
         retrieved_messages: Annotated[Sequence, replace_messages]
@@ -72,10 +72,11 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
             return "continue"
     
     class DBRetriever:
-        def __init__(self, memory, llm, vlm):
+        def __init__(self, memory, llm, vlm, logger=None):
             self.memory = memory
             self.llm = llm
             self.vlm = vlm
+            self.logger = logger
 
             self.db_retriever_tools = create_db_txt_search_tool(memory)
             self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.db_retriever_tools]
@@ -116,7 +117,10 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
             question = f"The object user wants to find is: {messages[0].content}"
             
             response = model.invoke({"question": question, "chat_history": parsed_db_messages})
-
+            
+            if response.tool_calls and self.logger:
+                self.logger.info(f"Calling tools: {response.tool_calls}")
+                
             if response.tool_calls:
                 for tool_call in response.tool_calls:
                     if tool_call['name'] != "__conversational_response":
@@ -166,6 +170,9 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
             records = []
             for id in record_ids:
                 records.append(retrieved_messages[id])
+                
+            if self.logger:
+                self.logger.info(f"Makeing decisions based on: {retrieved_messages}")
             
             return {"output": records}
                 
@@ -205,7 +212,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
             output = state['output']
             return output
 
-    tool = DBRetriever(memory, llm, vlm)
+    tool = DBRetriever(memory, llm, vlm, logger)
     class RecallAnyInput(BaseModel):
         instance_description: str = Field(description="You are a robot agent with extensive past observations. This tool helps you recall the specific moment when you observed an instance matching the given description. \
                             This query argument should be a phrase such as 'a book', 'the book that was on a table', or 'an apple that was in kitchen yesterday'. \
@@ -228,7 +235,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm):
     )
     return retriever_tool
 
-def create_best_guess_tool(memory: MilvusMemory, llm, vlm):
+def create_best_guess_tool(memory: MilvusMemory, llm, vlm, logger=None):
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
         retrieved_messages: Annotated[Sequence, replace_messages]
@@ -245,10 +252,11 @@ def create_best_guess_tool(memory: MilvusMemory, llm, vlm):
             return "continue"
     
     class DBRetriever:
-        def __init__(self, memory, llm, vlm):
+        def __init__(self, memory, llm, vlm, logger=None):
             self.memory = memory
             self.llm = llm
             self.vlm = vlm
+            self.logger = logger
 
             self.db_retriever_tools = create_db_txt_search_tool(memory)
             self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.db_retriever_tools]
@@ -289,6 +297,9 @@ def create_best_guess_tool(memory: MilvusMemory, llm, vlm):
             question = f"The object user wants to find is: {messages[0].content}"
             
             response = model.invoke({"question": question, "chat_history": parsed_db_messages})
+            
+            if response.tool_calls and self.logger:
+                self.logger.info(f"Calling tools: {response.tool_calls}")
 
             if response.tool_calls:
                 for tool_call in response.tool_calls:
@@ -300,6 +311,9 @@ def create_best_guess_tool(memory: MilvusMemory, llm, vlm):
             return {"messages": [response], "retrieved_messages": db_messages}
         
         def generate(self, state):
+            if self.logger:
+                self.logger.info(f"Makeing decisions based on: {state['retrieved_messages']}")
+                
             return 
             
         def _build_graph(self):
@@ -335,7 +349,7 @@ def create_best_guess_tool(memory: MilvusMemory, llm, vlm):
             state = self.graph.invoke(inputs)
             return state["messages"][-1]
 
-    tool = DBRetriever(memory, llm, vlm)
+    tool = DBRetriever(memory, llm, vlm, logger)
     class BestGuessInput(BaseModel):
         instance_description: str = Field(description="You are a robot agent with extensive past observations. This tool helps you infer where to find the instance matching the given description based on your past observations. \
                             This query argument should be a phrase such as 'a book', 'the book that was on a table', or 'an apple that was in kitchen yesterday'. \
