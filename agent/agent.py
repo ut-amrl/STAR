@@ -122,6 +122,8 @@ class Agent:
         # Frequency
         self.recall_all_prompt = file_to_string(os.path.join(prompt_dir, 'recall_all_prompt.txt'))
         
+        self.contain_instance_prompt = file_to_string(os.path.join(prompt_dir, 'contain_instance_prompt.txt'))
+        
         self._build_graph()
     
     def _llm_selector(self, llm_type):
@@ -405,18 +407,45 @@ class Agent:
             
             parsed_response = eval(response.content)
             record_ids += [int(record_id) for record_id in parsed_response["selected_ids"]]
+        record_ids = downsample_consecutive_ids(record_ids, rate=2)
         
         records_found = []
         for record in records:
             if record["id"] in record_ids:
                 records_found.append(record)
-        return records_found
+        
+        # debug
+        # debugdir = "debug/recall_all"
+        # os.makedirs(debugdir, exist_ok=True)
+        # from pathlib import Path
+        # for file in Path(debugdir).glob("*.png"):
+        #     file.unlink()
+        # for record in records_found:
+        #     img = get_image_from_record(record)
+        #     imgpath = os.path.join(debugdir, f"{record['id']}.png")
+        #     cv2.imwrite(imgpath, img)
+            
+        import pdb; pdb.set_trace()
+        
+        verified_records_found = []
+        for record in records_found:
+            image = get_image_from_record(record, type="utf-8")
+            image_messages = [get_vlm_img_message(image, self.vlm_type)]
+            
+            question = f"User is looking for item: {current_goal.query_obj_desc}. Does this object appear on this image?"
+            response = ask_chatgpt(self.vlm, self.contain_instance_prompt, image_messages, question)
+            if "yes" in response.content:
+                verified_records_found.append(record)
+                
+        self.logger.info(f"All records about '{current_goal.query_obj_desc}' found: {verified_records_found}")
+            
+        return verified_records_found
     
     def find_by_frequency(self, state):
         current_goal = state["current_goal"]
         records = self._recall_all(current_goal)
         record_ids = [record["id"] for record in records]
-        selected_record_ids = downsample_consecutive_ids(record_ids, rate=3)
+        selected_record_ids = record_ids # downsample_consecutive_ids(record_ids, rate=3)
         import pdb; pdb.set_trace()
         
         records = []
@@ -470,7 +499,7 @@ class Agent:
             for record_id in record_ids:
                 grouped_records[i] += (selected_records[record_id]["text"] + "\n")
         
-        
+        import pdb; pdb.set_trace()
         
         print()
         
