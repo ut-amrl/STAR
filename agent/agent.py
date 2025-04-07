@@ -37,6 +37,11 @@ def from_find_by_description_to(state):
         return "next"
     return "find_by_best_guess"
 
+def from_find_by_frequency_to(state):
+    if state["current_goal"].found_in_mem:
+        return "find_specifici_past_instance"
+    return "find_by_description"
+
 def from_find_at_to(state):
     if state["current_goal"].found_in_world:
         return "next"
@@ -368,33 +373,38 @@ class Agent:
                 current_goal.query_img = image
                 break
         # TODO need to handle the case where there's no record available
-        self.logger.info(f"Based on past observation {current_goal.explored_records_in_mem[-1]["id"]} - New goal: Find {current_goal.query_obj_desc}")
+        self.logger.info(f"Based on past observation {current_goal.explored_records_in_mem[-1]['id']} - New goal: Find {current_goal.query_obj_desc}")
         return {"messages": response, "current_goal": current_goal}
     
     ##############################
     # Frequency Reasoning
     ##############################
+    
     def _recall_all(self, current_goal: ObjectRetrievalPlan):
         docs = self.memory.search_all(current_goal.query_obj_desc)
         records = eval(docs)
         records = sorted(records, key=lambda x: x["id"])
-        parsed_llm_records = parse_db_records_for_llm(records)
         
-        model = self.llm
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                MessagesPlaceholder("chat_history"),
-                ("ai", self.recall_all_prompt),
-                ("human", "{question}"),
-            ]
-        )
-        model = prompt | model
-        question = f"User wants you to help find {current_goal.query_obj_desc}. To identify the instance user is referring to, you need to first recall all momented where you saw objects matching this description. Can you list all record ids for me?"
-        
-        response = model.invoke({"question": question, "chat_history": parsed_llm_records})
-        
-        parsed_response = eval(response.content)
-        record_ids = [int(record_id) for record_id in parsed_response["selected_ids"]]
+        batch_size = 30 # Note: LLM can only takes in about 30-40 records
+        record_ids = []
+        for i in range(0, len(records), batch_size):
+            parsed_llm_records = parse_db_records_for_llm(records[i:i+batch_size])
+            
+            model = self.llm
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    MessagesPlaceholder("chat_history"),
+                    ("ai", self.recall_all_prompt),
+                    ("human", "{question}"),
+                ]
+            )
+            model = prompt | model
+            question = f"User wants you to help find {current_goal.query_obj_desc}. To identify the instance user is referring to, you need to first recall all momented where you saw objects matching this description. Can you list all record ids for me?"
+            
+            response = model.invoke({"question": question, "chat_history": parsed_llm_records})
+            
+            parsed_response = eval(response.content)
+            record_ids += [int(record_id) for record_id in parsed_response["selected_ids"]]
         
         records_found = []
         for record in records:
@@ -404,12 +414,11 @@ class Agent:
     
     def find_by_frequency(self, state):
         current_goal = state["current_goal"]
-        # records = self._recall_all(current_goal)
-        # record_ids = [record["id"] for record in records]
+        records = self._recall_all(current_goal)
+        record_ids = [record["id"] for record in records]
+        selected_record_ids = downsample_consecutive_ids(record_ids, rate=3)
+        import pdb; pdb.set_trace()
         
-        # record_ids = [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58]
-        # selected_record_ids = downsample_consecutive_ids(record_ids, rate=3)
-        selected_record_ids = [3, 30, 45]
         records = []
         for record_id in selected_record_ids:
             records += eval(self.memory.get_by_id(record_id))
@@ -439,7 +448,7 @@ class Agent:
         groups = uf.get_groups()
         grouped_record_ids = [[selected_record_ids[i] for i in group] for group in groups]
         grouped_record_ids.sort(key=len, reverse=True)
-        self.logger.info(f"All moments when I observed {current_goal.query_obj_cls}: grouped_record_ids")
+        self.logger.info(f"All moments when I observed {current_goal.query_obj_cls}: {grouped_record_ids}")
         
         last_idx = last_multi_group_index(grouped_record_ids)
         
@@ -608,6 +617,14 @@ class Agent:
         )
         
         workflow.add_edge("find_by_frequency", "find_by_description")
+        workflow.add_conditional_edges(
+            "find_by_frequency",
+            from_find_by_frequency_to,
+            {
+                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_description": "find_by_description",
+            }
+        )
         
         workflow.add_conditional_edges(
             "find_at",

@@ -485,7 +485,8 @@ if __name__ == "__main__":
             
         elif args.case == "case5":
             inpaths = [
-                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-02-20-30-36_VILA1.5-8b_3_secs.json",
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-19-02-32_VILA1.5-8b_3_secs.json",
+               "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-41-23_VILA1.5-8b_3_secs.json",
             ]
             MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
             MEMORY.reset()

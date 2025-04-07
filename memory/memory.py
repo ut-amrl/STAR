@@ -246,7 +246,7 @@ class MilvusMemory(Memory):
     def search_all(self, query: str) -> str:
         self.milv_wrapper.reload()
         query_embedding = self.embedder.embed_query(query)
-        results = self.milv_wrapper.search(query_embedding=query_embedding, k=40)
+        results = self.milv_wrapper.search(query_embedding=query_embedding, k=100)
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
         return docs

@@ -24,8 +24,15 @@ You should return the **list of record IDs** that have a **reasonable chance** o
 
 3. Use **common-sense synonym expansion**: e.g., "mug", "cup", "tumbler", "bottle" might refer to the same category. Use context to reason about which ones are relevant.
 
+⚠️ You MUST NOT include any record unless ALL required object and context constraints are **explicitly present** in the caption. Do NOT infer or guess missing information.
+
+For example, if the user asks for "a cup on a table":
+   - Records must mention both a cup-like object AND a table or table-like surface.
+   - Records that only mention a table or only a cup MUST be excluded.
+   - Do not assume "counter", or "shelf" mean "table" unless the user allows it.
+
 ### Output format:
-Return your final answer using the following format, wrapped in a JSON block:
+Return your final answer using the following format, wrapped in a JSON block. You must strictly follow the following format, and DO NOT add any additional contents outside the block. Your response will be directly parsed to a JSON decoder for downstream tasks.
 ```json
 {{
     "tool": "__conversational_response",
@@ -37,6 +44,15 @@ Return your final answer using the following format, wrapped in a JSON block:
     }}
 }}
 ```
+
+## 🚨 How You Must Respond:
+You MUST respond using the tool format below. Do NOT generate explanations, markdown, or free text outside of this structure.
+
+Your response must be wrapped in a single ```json code block, and include exactly these two fields:
+- `reasoning`: (1–2 sentence justification)
+- `selected_ids`: (a list of integer record IDs that likely contain the object)
+
+If you do not follow this structure, your output will fail.
 
 Only include IDs where you believe the object is plausibly visible. Return an empty list if nothing seems relevant.
 
