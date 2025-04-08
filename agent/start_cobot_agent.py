@@ -427,7 +427,7 @@ if __name__ == "__main__":
             t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
             remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
             task = "Bring me a cup."
-            # debug/agent/2025-04-06/2025-04-06_14-30-29.log
+            # debug/agent/2025-04-06/2025-04-06_14-46-46.log
             # [9.7, 61.2, 1.7]
         elif args.case == "case1":
             # Bring me a cup (last seen)
@@ -485,8 +485,9 @@ if __name__ == "__main__":
             
         elif args.case == "case5":
             inpaths = [
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-16-48-54_VILA1.5-8b_3_secs.json",
                 "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-19-02-32_VILA1.5-8b_3_secs.json",
-               "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-41-23_VILA1.5-8b_3_secs.json",
+                "/robodata/taijing/RobotMem/data/captions/cobot/2025-04-05-17-41-23_VILA1.5-8b_3_secs.json",
             ]
             MEMORY = MilvusMemory("test2", obs_savepth=OBS_SAVEPATH, db_ip='127.0.0.1')
             MEMORY.reset()

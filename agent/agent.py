@@ -121,6 +121,7 @@ class Agent:
         
         # Frequency
         self.recall_all_prompt = file_to_string(os.path.join(prompt_dir, 'recall_all_prompt.txt'))
+        self.find_by_frequency_prompt = file_to_string(os.path.join(prompt_dir, 'find_by_frequency_prompt.txt'))
         
         self.contain_instance_prompt = file_to_string(os.path.join(prompt_dir, 'contain_instance_prompt.txt'))
         
@@ -387,7 +388,7 @@ class Agent:
         records = eval(docs)
         records = sorted(records, key=lambda x: x["id"])
         
-        batch_size = 30 # Note: LLM can only takes in about 30-40 records
+        batch_size = 25 # Note: LLM can only takes in about 30-40 records
         record_ids = []
         for i in range(0, len(records), batch_size):
             parsed_llm_records = parse_db_records_for_llm(records[i:i+batch_size])
@@ -401,7 +402,7 @@ class Agent:
                 ]
             )
             model = prompt | model
-            question = f"User wants you to help find {current_goal.query_obj_desc}. To identify the instance user is referring to, you need to first recall all momented where you saw objects matching this description. Can you list all record ids for me?"
+            question = f"User wants you to help find {current_goal.query_obj_desc}. To identify the instance user is referring to, you need to first recall all momented where you saw objects matching this description. Can you list ALL record ids for me?"
             
             response = model.invoke({"question": question, "chat_history": parsed_llm_records})
             
@@ -413,31 +414,40 @@ class Agent:
         for record in records:
             if record["id"] in record_ids:
                 records_found.append(record)
-        
-        # debug
-        # debugdir = "debug/recall_all"
-        # os.makedirs(debugdir, exist_ok=True)
-        # from pathlib import Path
-        # for file in Path(debugdir).glob("*.png"):
-        #     file.unlink()
-        # for record in records_found:
-        #     img = get_image_from_record(record)
-        #     imgpath = os.path.join(debugdir, f"{record['id']}.png")
-        #     cv2.imwrite(imgpath, img)
-            
-        import pdb; pdb.set_trace()
-        
+                
         verified_records_found = []
         for record in records_found:
-            image = get_image_from_record(record, type="utf-8")
-            image_messages = [get_vlm_img_message(image, self.vlm_type)]
-            
-            question = f"User is looking for item: {current_goal.query_obj_desc}. Does this object appear on this image?"
-            response = ask_chatgpt(self.vlm, self.contain_instance_prompt, image_messages, question)
-            if "yes" in response.content:
+            image = get_image_from_record(record)
+            ros_image = opencv_to_ros_image(image)
+            response = request_bbox_detection_service(ros_image, current_goal.query_obj_cls)
+            if len(response.bounding_boxes.bboxes) > 0:
                 verified_records_found.append(record)
+        records_found = verified_records_found
+        
+        # debug
+        debugdir = "debug/recall_all"
+        os.makedirs(debugdir, exist_ok=True)
+        from pathlib import Path
+        for file in Path(debugdir).glob("*.png"):
+            file.unlink()
+        for record in records_found:
+            img = get_image_from_record(record)
+            imgpath = os.path.join(debugdir, f"{record['id']}.png")
+            cv2.imwrite(imgpath, img)
+            
+        # import pdb; pdb.set_trace()
+            
+        # verified_records_found = []
+        # for record in records_found:
+        #     image = get_image_from_record(record, type="utf-8")
+        #     image_messages = [get_vlm_img_message(image, self.vlm_type)]
+            
+        #     question = f"User is looking for item: {current_goal.query_obj_desc}. Does this object appear on this image?"
+        #     response = ask_chatgpt(self.vlm, self.contain_instance_prompt, image_messages, question)
+        #     if "yes" in response.content:
+        #         verified_records_found.append(record)
                 
-        self.logger.info(f"All records about '{current_goal.query_obj_desc}' found: {verified_records_found}")
+        self.logger.info(f"Found {len(verified_records_found)} record(s) about '{current_goal.query_obj_desc}': {verified_records_found}")
             
         return verified_records_found
     
@@ -446,7 +456,6 @@ class Agent:
         records = self._recall_all(current_goal)
         record_ids = [record["id"] for record in records]
         selected_record_ids = record_ids # downsample_consecutive_ids(record_ids, rate=3)
-        import pdb; pdb.set_trace()
         
         records = []
         for record_id in selected_record_ids:
@@ -497,11 +506,32 @@ class Agent:
         grouped_records = defaultdict(str)
         for i, record_ids in enumerate(grouped_record_ids):
             for record_id in record_ids:
-                grouped_records[i] += (selected_records[record_id]["text"] + "\n")
+                grouped_records[i] += ("- " + selected_records[record_id]["text"] + "\n")
+        
+        model = self.llm
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("human", "{chat_history}"),
+                ("ai", self.find_by_frequency_prompt),
+                ("human", "{question}"),
+            ]
+        )
+        model = prompt | model
+        question = f"User wants you to help find {current_goal.query_obj_desc}. Your job now is to identify which instance is user referring to based on the past observations of each instance. Do you know the answer?"
+        chat_history = "\n\n\n\n".join(f"id: {k}\n{v}" for k, v in grouped_records.items()) # json.dumps(grouped_records) 
         
         import pdb; pdb.set_trace()
+        response = model.invoke({"question": question, "chat_history": chat_history})
         
-        print()
+        parsed_response = eval(response.content)
+        
+        object_id = int(parsed_response["id"])
+        record_ids = grouped_record_ids[object_id]
+        current_goal.find_in_mem = True
+        for record_id in record_ids:
+            current_goal.candidate_records_in_mem.append(selected_records[record_id]) 
+        
+        return {"messages": response, "current_goal": current_goal}
         
     ##############################
     # Common Sense Reasoning
@@ -521,7 +551,7 @@ class Agent:
         
         current_goal.candidate_records_in_world.append(dummy_record)
         
-        return {"messages": response}
+        return self._prepare_find_from_specific_instance(current_goal)
         
     ##############################
     # Robot Tools

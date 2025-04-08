@@ -83,3 +83,17 @@ Example 2: "Find the tall cup with a plastic lid and my name on it."
     }}
 }}
 ```
+
+Example 3: "Find the tall cup that's usually next to a plate."
+(The system should include examples presenting both a cup AND a plate.)
+```json
+{{
+    "tool": "__conversational_response",
+    "tool_input": {{
+        "response": {{
+            "reasoning": "The user's description contains spatial constraints. Therefore, I should only return records where both a cup and a plate are present.",
+            "selected_ids": [7, 14, 29]
+        }}
+    }}
+}}
+```
