@@ -210,7 +210,7 @@ class Agent:
         
         record_found = []
         for i in range(5):
-            docs = self.memory.search_last_k_by_text(is_first_time=(i==0), query=query, k=10)
+            docs = self.memory.search_last_k_by_text(is_first_time=(i==0), query=query, k=15)
             if docs == '' or docs == None: # End of search
                 break
             
@@ -422,6 +422,7 @@ class Agent:
             response = request_bbox_detection_service(ros_image, current_goal.query_obj_cls)
             if len(response.bounding_boxes.bboxes) > 0:
                 verified_records_found.append(record)
+        import pdb; pdb.set_trace()
         records_found = verified_records_found
         
         # debug
@@ -502,7 +503,7 @@ class Agent:
             self.logger.info(f"Found instance in memory: {current_goal.candidate_records_in_mem}")
             return self._prepare_find_from_specific_instance(current_goal)
         
-        grouped_record_ids[:last_idx+1]
+        grouped_record_ids[:last_idx]
         grouped_records = defaultdict(str)
         for i, record_ids in enumerate(grouped_record_ids):
             for record_id in record_ids:
@@ -520,8 +521,8 @@ class Agent:
         question = f"User wants you to help find {current_goal.query_obj_desc}. Your job now is to identify which instance is user referring to based on the past observations of each instance. Do you know the answer?"
         chat_history = "\n\n\n\n".join(f"id: {k}\n{v}" for k, v in grouped_records.items()) # json.dumps(grouped_records) 
         
-        import pdb; pdb.set_trace()
         response = model.invoke({"question": question, "chat_history": chat_history})
+        import pdb; pdb.set_trace()
         
         parsed_response = eval(response.content)
         
@@ -530,8 +531,7 @@ class Agent:
         current_goal.find_in_mem = True
         for record_id in record_ids:
             current_goal.candidate_records_in_mem.append(selected_records[record_id]) 
-        
-        return {"messages": response, "current_goal": current_goal}
+        return self._prepare_find_from_specific_instance(current_goal)
         
     ##############################
     # Common Sense Reasoning

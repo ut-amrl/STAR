@@ -8,7 +8,7 @@ You are given a dictionary where:
 Your task is to:
 1. Analyze the **temporal spread** of each object’s observations.  
    - Objects that are seen many times **across different times or days** are likely to be frequently used.
-   - Objects seen **many times close together** in time should count as only one usage episode.
+   - Objects seen **many times close together** in time should count as only one usage episode. (If two records are within seconds of each other, treat them as ONE.)
 
 2. Pick the **most frequently used object instance**, based on:
    - Number of distinct sightings
@@ -27,7 +27,7 @@ Return your answer using the following format, wrapped in a `json` block. You mu
     "tool": "__conversational_response",
     "tool_input": {{{{
         "response": {{{{
-            "reasoning": "-Brief explanation of why this instance was selected based on frequency and time spread-",
+            "reasoning": "-Explanation of why this instance was selected based on frequency and time spread. Briefly explain why you think other instances are unlikely.-",
             "id": -instance_id_as_integer-
         }}}}
     }}}}

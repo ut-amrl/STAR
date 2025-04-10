@@ -494,6 +494,7 @@ if __name__ == "__main__":
             t_offset = 1738952666.5530548-len(inpaths)*86400 + 86400
             remember_from_paths(MEMORY, inpaths, t_offset, viddir="/robodata/taijing/RobotMem/data/images")
             task = "Bring me the cup that is usually on the table."
+            # debug/agent/2025-04-08/2025-04-08_19-55-01.log
         
         agent = Agent()
         agent.set_memory(MEMORY)
