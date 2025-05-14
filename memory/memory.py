@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, asdict
+from typing import List
 import inspect 
 from datetime import datetime
 import re
@@ -13,6 +14,7 @@ from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Colle
 @dataclass
 class MemoryItem:
     caption: str
+    text_embedding: List[float]
     time: float
     position: list
     theta: float
@@ -146,7 +148,8 @@ class MilvusMemory(Memory):
         self.db_ip = db_ip
         self.db_port = db_port
 
-        self.embedder = HuggingFaceEmbeddings(model_name='mixedbread-ai/mxbai-embed-large-v1')
+        # self.embedder = HuggingFaceEmbeddings(model_name='mixedbread-ai/mxbai-embed-large-v1')
+        self.embedder = HuggingFaceEmbeddings(model_name="BAAI/bge-large-en-v1.5")
         self.working_memory = []
         
         self.text_vector_db = Milvus(
@@ -199,7 +202,7 @@ class MilvusMemory(Memory):
                 
     def search_by_text(self, query: str, k:int = 8) -> str:
         self.milv_wrapper.reload()
-        query_embedding = self.embedder.embed_query(query)
+        query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
         results = self.milv_wrapper.search(query_embedding, k = k)
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
@@ -207,7 +210,7 @@ class MilvusMemory(Memory):
     
     def search_by_txt_and_time(self, query: str, start_time: str, end_time: str, k:int = 8) -> str:
         self.milv_wrapper.reload()
-        query_embedding = self.embedder.embed_query(query)
+        query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
         # TODO need to verify start_time and end_time str before calling this function
         start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp()
         end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").timestamp()
@@ -222,7 +225,7 @@ class MilvusMemory(Memory):
             self.last_seen_id = None
             return ''
         
-        query_embedding = self.embedder.embed_query(query)
+        query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
         if is_first_time:
             self.milv_wrapper.reload()
             start_id, end_id = max(self.last_id-k, 0), self.last_id
@@ -245,7 +248,7 @@ class MilvusMemory(Memory):
     
     def search_all(self, query: str) -> str:
         self.milv_wrapper.reload()
-        query_embedding = self.embedder.embed_query(query)
+        query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
         results = self.milv_wrapper.search(query_embedding=query_embedding, k=100)
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
@@ -277,6 +280,7 @@ class MilvusMemory(Memory):
         rets = []
         for item in memory_list:
             ret = {"id": item.metadata["id"], 
+                   "timestamp": item.metadata["timestamp"],
                    "position": str(item.metadata["position"]), 
                    "vidpath": item.metadata["vidpath"], 
                    "start_frame": item.metadata["start_frame"], 

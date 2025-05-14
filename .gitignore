@@ -6,3 +6,4 @@ data
 *.png
 debug
 tests
+evaluation/outputs

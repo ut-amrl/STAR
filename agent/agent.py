@@ -11,10 +11,10 @@ from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage
 
-from utils.debug import get_logger
-from utils.function_wrapper import FunctionsWrapper
-from utils.utils import *
-from utils.tools import (
+from agent.utils.debug import get_logger
+from agent.utils.function_wrapper import FunctionsWrapper
+from agent.utils.utils import *
+from agent.utils.tools import (
     create_find_specific_past_instance_tool, 
     create_best_guess_tool
 )
@@ -71,14 +71,25 @@ class ObjectRetrievalPlan:
             return None
         return copy.copy(self.candidate_records_in_world[-1])
     
-
-class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    current_goal: Annotated[Sequence, replace_messages]
-    task: Annotated[Sequence, replace_messages]
-    
+    def next_target(self, target_type: str):
+        if target_type == "world":
+            if len(self.candidate_records_in_world) == 0:
+                return None
+            return self.candidate_records_in_world[-1]
+        elif target_type == "mem":
+            if len(self.candidate_records_in_mem) == 0:
+                return None
+            return self.candidate_records_in_mem[-1]
+        else:
+            raise ValueError(f"Invalid target type: {target_type}")
 
 class Agent:
+    class AgentState(TypedDict):
+        messages: Annotated[Sequence[BaseMessage], add_messages]
+        current_goal: Annotated[Sequence, replace_messages]
+        task: Annotated[Sequence, replace_messages]
+        output: Annotated[Sequence, replace_messages]
+    
     def __init__(self, llm_type: str = "gpt-4", vlm_type: str = "gpt-4o", verbose: bool = False):
         
         self.logger = get_logger()
@@ -89,12 +100,6 @@ class Agent:
         self.llm = self._llm_selector(self.llm_type)
         self.vlm, self.vlm_processor = self._vlm_selector(self.vlm_type)
     
-        # if "qwen" in self.vlm_type:
-        #     self.local_vlm = self.vlm
-        #     self.local_vlm_processor = self.vlm_processor
-        # else:
-        #     self.local_vlm, self.local_vlm_processor =  self._vlm_selector("qwen")
-        
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
         
@@ -125,8 +130,6 @@ class Agent:
         
         self.contain_instance_prompt = file_to_string(os.path.join(prompt_dir, 'contain_instance_prompt.txt'))
         
-        self._build_graph()
-    
     def _llm_selector(self, llm_type):
         if 'gpt-4' in llm_type:
             import os
@@ -621,13 +624,36 @@ class Agent:
         curr_target = state["current_goal"].curr_target()
         debug_vid(curr_target, "debug")
         print(curr_target)
-        pass
+    
+    def retrieval_terminate(self, state):
+        next_target = state["current_goal"].next_target("mem")
+        next_target["output_type"] = "episode"
+        return {"output": next_target}
+    
+    def _build_retrieval_graph(self):
+        from langgraph.graph import END, StateGraph
+        from langgraph.prebuilt import ToolNode
+        
+        workflow = StateGraph(Agent.AgentState)
+        workflow.add_node("initialize_object_search", lambda state: try_except_continue(state, self.initialize_object_search))
+        workflow.add_node("retrieval_terminate", lambda state: self.retrieval_terminate(state))
+        workflow.add_edge("retrieval_terminate", END)
+        
+        workflow.add_node("find_by_description", lambda state: try_except_continue(state, self.find_by_description))
+        # workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
+        
+        workflow.add_edge("initialize_object_search", "find_by_description")
+        workflow.add_edge("find_by_description", "retrieval_terminate")
+        
+        workflow.set_entry_point("initialize_object_search")
+        self.graph = workflow.compile()
+        
     
     def _build_graph(self):
         from langgraph.graph import END, StateGraph
         from langgraph.prebuilt import ToolNode
         
-        workflow = StateGraph(AgentState)
+        workflow = StateGraph(Agent.AgentState)
         
         workflow.add_node("initialize_object_search", lambda state: try_except_continue(state, self.initialize_object_search))
         workflow.add_node("terminate", lambda state: self.terminate(state))
@@ -699,13 +725,24 @@ class Agent:
         workflow.set_entry_point("initialize_object_search")
         self.graph = workflow.compile()
         
-    def run(self, question: str):
+    def build_graph(self, graph_type: str):
+        if graph_type == "retrieval":
+            self._build_retrieval_graph()
+        elif graph_type == "full":
+            self._build_graph()
+        else:
+            raise ValueError(f"Unsupported graph type: {graph_type}")
+        
+    def run(self, question: str, graph_type: str = "full"):
+        self.build_graph(graph_type)
+        
         inputs = { 
             "messages": [
                 (("user", question)),
             ],
         }
         state = self.graph.invoke(inputs)
+        return state["output"]
         
         
 if __name__ == "__main__":

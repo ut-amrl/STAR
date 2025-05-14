@@ -11,8 +11,8 @@ from langgraph.prebuilt import ToolNode
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from utils.utils import *
-from utils.tools import *
+from agent.utils.utils import *
+from agent.utils.tools import *
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from memory.memory import MilvusMemory
