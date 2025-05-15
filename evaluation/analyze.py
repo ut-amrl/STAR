@@ -7,13 +7,15 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 
+EXPECTED_TASK_TYPES = ["unambiguous", "spatial", "spatial_temporal"]
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Read evaluation results.")
     parser.add_argument(
-        "--result_file",
+        "--result_dir",
         type=str,
-        default="evaluation/outputs/results.json",
-        help="Path to the results JSON file (default: evaluation/outputs/results.json)"
+        default="evaluation/outputs/",
+        help="Directory containing results_{task_type}.json files (default: evaluation/outputs/)"
     )
     parser.add_argument(
         "--output_dir",
@@ -23,29 +25,34 @@ def parse_args():
     )
     return parser.parse_args()
 
-def load_results(path):
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Results file not found: {path}")
-    with open(path, "r") as f:
-        return json.load(f)
+def load_results_from_dir(result_dir):
+    result_dir = Path(result_dir)
+    results = {}
+    for task_type in EXPECTED_TASK_TYPES:
+        file_path = result_dir / f"results_{task_type}.json"
+        if file_path.exists():
+            with open(file_path, "r") as f:
+                results[task_type] = json.load(f)
+        else:
+            print(f"⚠️  Skipping missing file: {file_path}")
+    return results
 
 def compute_success_rates(results):
     stats = defaultdict(lambda: defaultdict(lambda: [0, 0]))  # task_type → instance_class → [success_count, total_count]
-    
-    for task_type, records in results.get("results", {}).items():
-        for r in records:
-            cls = r.get("instance_class", "unknown")
-            success = r["success"]
-            stats[task_type][cls][1] += 1
-            if success:
-                stats[task_type][cls][0] += 1
+    for task_results in results.values():
+        for task_type, records in task_results.get("results", {}).items():
+            for r in records:
+                cls = r.get("instance_class", "unknown")
+                success = r["success"]
+                stats[task_type][cls][1] += 1
+                if success:
+                    stats[task_type][cls][0] += 1
     return stats
 
 def plot_success_rates(args, stats):
     task_types = sorted(stats.keys())
     all_classes = sorted({cls for t in stats.values() for cls in t})
-
+    
     x = np.arange(len(all_classes))
     width = 0.8 / len(task_types)
 
@@ -98,7 +105,8 @@ def plot_success_rates(args, stats):
 
 if __name__ == "__main__":
     args = parse_args()
-    results_data = load_results(args.result_file)
+    results_data = load_results_from_dir(args.result_dir)
+    
     stats = compute_success_rates(results_data)
     plot_success_rates(args, stats)
     

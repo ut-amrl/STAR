@@ -31,10 +31,17 @@ def parse_args():
         help="Path to the task file.",
     )
     parser.add_argument(
-        "--output_file",
+        "--output_dir",
         type=str,
-        default="evaluation/outputs/results.json",
-        help="Optional path to save evaluation results (default: evaluation/outputs/results.json)"
+        default="evaluation/outputs/",
+        help="Directory to save evaluation results (default: evaluation/outputs/)"
+    )
+    parser.add_argument(
+        "--task_types",
+        type=str,
+        nargs="*",
+        default=["unambiguous", "spatial", "spatial_temporal"],
+        help="List of task type prefixes to evaluate (e.g., unambiguous spatial). If not set, evaluate all."
     )
     args = parser.parse_args()
     return args
@@ -56,15 +63,15 @@ def evaluate(args):
     bag_waypoint_mapping = load_annotated_waypoints(args.benchmark_dir)
     waypoints = load_waypoints(args.benchmark_dir)
     
+    included_task_types = args.task_types + [f"{t}_wp_only" for t in args.task_types]
+    
     output = {
         "task_metadata": task_metadata,
     }
     results = defaultdict(list)
     for task_type, task_paths in task_metadata.items():
-        # if task_type != "spatial_temporal":
-            # continue # TODO: remove this line to evaluate all tasks
-        if task_type != "unambiguous" and task_type != "unambiguous_wp_only":
-            continue # TODO: remove this line to evaluate all tasks
+        if task_type not in included_task_types:
+            continue
         
         # progress bar
         total_tasks = 0
@@ -174,7 +181,7 @@ def evaluate(args):
             
             utility.drop_collection(db_name)
             import time; time.sleep(1)
-    pbar.close()
+        pbar.close()
     
     output["results"] = results
     return output
@@ -183,10 +190,13 @@ if __name__ == "__main__":
     args = parse_args()
     results = evaluate(args)
     
-    os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
-    with open(args.output_file, "w") as f:
-        json.dump(results, f, indent=2)
-    print(f"✅ Evaluation results saved to {args.output_file}")
+    os.makedirs(args.output_dir, exist_ok=True)
+    for task_type, result_list in results["results"].items():
+        output_path = os.path.join(args.output_dir, f"results_{task_type}.json")
+        with open(output_path, "w") as f:
+            json.dump(result_list, f, indent=2)
+        print(f"✅ Saved {task_type} results to {output_path}")
+
     
     # Print summary
     print("📊 Evaluation Summary:")

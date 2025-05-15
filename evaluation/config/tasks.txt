@@ -20,3 +20,7 @@ unambiguous/de223fb2.json
 unambiguous/ebd79b68.json
 unambiguous/edc6a37a.json
 unambiguous/edebbdf5.json
+spatial/08fd7c09.json
+spatial/0eca1805.json
+spatial/11ac122f.json
+spatial/33d214c8.json
