@@ -42,6 +42,8 @@ def parse_args():
 def evaluate_one_retrieval_task(args, agent: Agent, task: dict):
     question = f"Today is {args.current_pretty_date}. {task['task']}"
     result = agent.run(question=question, graph_type="retrieval")
+    if result is None:
+        return False
     state_t, end_t = task["mem_obs_time"]
     retrieval_t = result["timestamp"]
     return state_t <= retrieval_t and retrieval_t <= end_t
@@ -59,10 +61,21 @@ def evaluate(args):
     }
     results = defaultdict(list)
     for task_type, task_paths in task_metadata.items():
-        if task_type != "unambiguous":
+        if task_type != "spatial_temporal":
             continue # TODO: remove this line to evaluate all tasks
         
-        for task_path in tqdm(task_paths, desc=f"Evaluating [{task_type}]", unit="task"):
+        # progress bar
+        total_tasks = 0
+        task_path_to_num_tasks = {}
+        for task_path in task_paths:
+            with open(task_path, "r") as f:
+                task_data = json.load(f)
+                n_tasks = len(task_data["tasks"])
+                task_path_to_num_tasks[task_path] = n_tasks
+                total_tasks += n_tasks
+        pbar = tqdm(total=total_tasks, desc=f"Evaluating [{task_type}]", unit="task")
+        
+        for task_path in task_paths:
             task_id = Path(task_path).stem
             
             with open(task_path, "r") as f:
@@ -83,7 +96,7 @@ def evaluate(args):
                             args.current_pretty_date = dt.strftime("%b %-d, %Y")  # Linux/Mac
                         except ValueError:
                             args.current_pretty_date = dt.strftime("%b %#d, %Y")  # Windows fallback
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    # dt = dt.replace(tzinfo=timezone.utc)
                     unix_time = dt.timestamp()
                     bag_unix_times[bagname] = unix_time
                 except Exception as e:
@@ -136,8 +149,16 @@ def evaluate(args):
             
                 res = evaluate_one_retrieval_task(args, agent, task)
                 results[task_type].append(int(res))
+                pbar.update(1)
+                
+                # Update success rate display
+                success = sum(results[task_type])
+                total = len(results[task_type])
+                rate = 100.0 * success / total if total > 0 else 0.0
+                pbar.set_postfix_str(f"({rate:.1f}%)")
             
             utility.drop_collection(db_name)
+            pbar.close()
             import time; time.sleep(1)
     
     output["results"] = results

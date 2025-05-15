@@ -103,7 +103,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             agent_prompt = ChatPromptTemplate.from_messages(
                 [
                     MessagesPlaceholder("chat_history"),
-                    ("ai", prompt),
+                    ("system", prompt),
                     (("human"), self.previous_tool_requests),
                     ("human", "{question}"),
                 ]
@@ -132,49 +132,52 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
         
         def generate(self, state):
             messages = state["messages"]
-            last_message = messages[-1]
+            # last_message = messages[-1]
             
-            try:
-                last_response = eval(last_message.content)
-                if "moment_ids" not in last_response:
-                    raise ValueError("Missing required field 'moment_ids'")
-            except:
-                import pdb; pdb.set_trace()
-                model = self.llm
-
-                prompt = self.agent_gen_only_prompt
-                agent_prompt = ChatPromptTemplate.from_messages(
-                    [
-                        # ("system", prompt),
-                        MessagesPlaceholder("chat_history"),
-                        (("human"), self.previous_tool_requests),
-                        ("ai", prompt),
-                        ("human", "{question}"),
-                    ]
-                )
-                model = agent_prompt | model
-                
-                db_messages = state["retrieved_messages"]
-                parsed_db_messages = parse_db_records_for_llm(db_messages)
-                question = f"The object user wants to find is: {messages[0].content}"
-                last_response = model.invoke({"question": question, "chat_history": parsed_db_messages})
-                last_response = eval(last_response.content)
+            model = self.llm
+            prompt = self.agent_gen_only_prompt
+            agent_prompt = ChatPromptTemplate.from_messages(
+                [
+                    MessagesPlaceholder("chat_history"),
+                    (("human"), self.previous_tool_requests),
+                    ("system", prompt),
+                    ("human", "{question}"),
+                ]
+            )
+            model = agent_prompt | model
             
+            db_messages = state["retrieved_messages"]
+            parsed_db_messages = parse_db_records_for_llm(db_messages)
+            question = f"Answer the question based on the instructions and the chat history - {messages[0].content}"
+            last_message = model.invoke({"question": question, "chat_history": parsed_db_messages})
+            
+            if type(last_message) == str:
+                raise ValueError("Missing required field 'moment_ids'")
+            last_response = eval(last_message.content)
+            if "moment_ids" not in last_response.keys():
+                raise ValueError("Missing required field 'moment_ids'")
+            if len(last_response["moment_ids"]) == 0 and len(state["retrieved_messages"]) != 0:
+                raise ValueError("Missing required field 'moment_ids'")
             record_ids = last_response["moment_ids"]
             if type(record_ids) == str:
                 record_ids = eval(record_ids)
             record_ids = [int(id) for id in record_ids]
+            
             retrieved_messages = state["retrieved_messages"]
             retrieved_messages = {r["id"]: r for r in retrieved_messages}
             
             records = []
             for id in record_ids:
-                records.append(retrieved_messages[id])
+                if id in retrieved_messages.keys():
+                    records.append(retrieved_messages[id])
+            if len(record_ids) != 0 and len(records) == 0:
+                raise ValueError("Missing required field 'moment_ids'")
                 
             if self.logger:
                 self.logger.info(f"Makeing decisions based on: {retrieved_messages}")
+                self.logger.info(f"Final decision(s): {last_response}")
             
-            return {"output": records}
+            return {"messages":[last_message], "output": records}
                 
         def _build_graph(self):
             workflow = StateGraph(AgentState)
@@ -200,6 +203,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             self.graph = workflow.compile()
             
         def run(self, instance_description, search_start_time, search_end_time):
+            self.agent_call_count = 0
             inputs = { "messages": [
                     (("user", f"Between {search_start_time} and {search_end_time}, have you observe {instance_description}? If so, when?")),
                 ]
@@ -210,6 +214,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             
             state = self.graph.invoke(inputs)
             output = state['output']
+            import time; time.sleep(1)
             return output
 
     tool = DBRetriever(memory, llm, vlm, logger)
@@ -283,7 +288,7 @@ def create_best_guess_tool(memory: MilvusMemory, llm, vlm, logger=None):
             agent_prompt = ChatPromptTemplate.from_messages(
                 [
                     MessagesPlaceholder("chat_history"),
-                    ("ai", prompt),
+                    ("system", prompt),
                     (("human"), self.previous_tool_requests),
                     ("human", "{question}"),
                 ]

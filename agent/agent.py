@@ -30,6 +30,8 @@ def from_initialize_object_search_to(state):
 def from_find_specific_past_instance_to(state):
     if state["current_goal"].found_in_mem:
         return "next"
+    elif type(state["messages"][-1]) == ToolMessage:
+        return "common_sense"
     return "retry" # TODO Fix the naming; We should default to common sense instead
 
 def from_find_by_description_to(state):
@@ -167,7 +169,7 @@ class Agent:
         model = self.llm
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("ai", self.object_search_prompt),
+                ("system", self.object_search_prompt),
                 ("human", "{question}"),
             ]
         )
@@ -197,7 +199,7 @@ class Agent:
         model = self.llm
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("ai", keyword_prompt),
+                ("system", keyword_prompt),
                 ("human", "{question}"),
             ]
         )
@@ -244,7 +246,7 @@ class Agent:
             prompt = ChatPromptTemplate.from_messages(
                 [
                     ("system", "{docs}"),
-                    ("ai", identification_prompt),
+                    ("system", identification_prompt),
                     ("human", "{question}"),
                 ]
             )
@@ -326,14 +328,20 @@ class Agent:
     
     def find_specific_past_instance(self, state):
         last_message = state["messages"][-1]
+        
         if type(last_message) == ToolMessage:
-            # TODO need to handle empty case
-            records = eval(last_message.content)
             current_goal = state["current_goal"]
-            current_goal.found_in_mem = True
-            current_goal.candidate_records_in_mem += records
-            self.logger.info(f"Find {len(current_goal.candidate_records_in_mem)} record(s): {current_goal.candidate_records_in_mem}")
-            return self._prepare_find_from_specific_instance(current_goal)
+            if len(last_message.content) != 0:
+                try:
+                    records = eval(last_message.content)
+                except:
+                    import pdb; pdb.set_trace()
+                current_goal.found_in_mem = True
+                current_goal.candidate_records_in_mem += records
+                self.logger.info(f"Find {len(current_goal.candidate_records_in_mem)} record(s): {current_goal.candidate_records_in_mem}")
+                return self._prepare_find_from_specific_instance(current_goal)
+            else:
+                return {"current_goal": current_goal}
         else:
             state["current_goal"].found_in_mem = False
             
@@ -342,7 +350,7 @@ class Agent:
             
             prompt = ChatPromptTemplate.from_messages(
                 [
-                    ("ai", self.find_specific_past_instance_prompt),
+                    ("system", self.find_specific_past_instance_prompt),
                     ("human", "{question}"),
                 ]
             )
@@ -364,7 +372,7 @@ class Agent:
             model = self.vlm
             prompt = ChatPromptTemplate.from_messages(
                 [
-                    ("ai", self.prepare_find_from_specific_instance_prompt),
+                    ("system", self.prepare_find_from_specific_instance_prompt),
                     HumanMessage(content=image_message),
                     ("human", "{question}")
                 ]
@@ -400,7 +408,7 @@ class Agent:
             prompt = ChatPromptTemplate.from_messages(
                 [
                     MessagesPlaceholder("chat_history"),
-                    ("ai", self.recall_all_prompt),
+                    ("system", self.recall_all_prompt),
                     ("human", "{question}"),
                 ]
             )
@@ -516,7 +524,7 @@ class Agent:
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("human", "{chat_history}"),
-                ("ai", self.find_by_frequency_prompt),
+                ("system", self.find_by_frequency_prompt),
                 ("human", "{question}"),
             ]
         )
@@ -627,7 +635,8 @@ class Agent:
     
     def retrieval_terminate(self, state):
         next_target = state["current_goal"].next_target("mem")
-        next_target["output_type"] = "episode"
+        if next_target is not None:
+            next_target["output_type"] = "episode"
         return {"output": next_target}
     
     def _build_retrieval_graph(self):
@@ -640,10 +649,30 @@ class Agent:
         workflow.add_edge("retrieval_terminate", END)
         
         workflow.add_node("find_by_description", lambda state: try_except_continue(state, self.find_by_description))
-        # workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
+        workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
         
-        workflow.add_edge("initialize_object_search", "find_by_description")
+        # Memory tool nodes
+        workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
+        
+        workflow.add_conditional_edges(
+            "initialize_object_search",
+            from_initialize_object_search_to,
+            {
+                "find_by_description": "find_by_description",
+                "find_specific_past_instance": "find_specific_past_instance",
+            }
+        )
         workflow.add_edge("find_by_description", "retrieval_terminate")
+        workflow.add_edge("find_specific_past_instance_action_node", "find_specific_past_instance")
+        workflow.add_conditional_edges( # TODO this condition is incorrect
+            "find_specific_past_instance",
+            from_find_specific_past_instance_to,
+            {
+                "next": "retrieval_terminate",
+                "common_sense": "retrieval_terminate",
+                "retry": "find_specific_past_instance_action_node",
+            }
+        )
         
         workflow.set_entry_point("initialize_object_search")
         self.graph = workflow.compile()
@@ -697,7 +726,7 @@ class Agent:
             from_find_specific_past_instance_to,
             {
                 "next": "find_by_description",
-                "retry": "find_specific_past_instance_action_node",
+                "retry": "find_specific_past_instance_action_node", # TODO need to handle common sense
             }
         )
         

@@ -5,7 +5,7 @@ import inspect
 from datetime import datetime
 import re
 
-from langchain_community.vectorstores import Milvus
+from langchain_milvus import Milvus
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
