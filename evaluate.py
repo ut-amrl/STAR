@@ -42,11 +42,11 @@ def parse_args():
 def evaluate_one_retrieval_task(args, agent: Agent, task: dict):
     question = f"Today is {args.current_pretty_date}. {task['task']}"
     result = agent.run(question=question, graph_type="retrieval")
+    start_t, end_t = task["mem_obs_time"]
     if result is None:
-        return False
-    state_t, end_t = task["mem_obs_time"]
+        return (False, (start_t, end_t, None))
     retrieval_t = result["timestamp"]
-    return state_t <= retrieval_t and retrieval_t <= end_t
+    return (start_t <= retrieval_t and retrieval_t <= end_t, (start_t, end_t, retrieval_t))
 
 def evaluate(args):
     agent = Agent()
@@ -61,7 +61,9 @@ def evaluate(args):
     }
     results = defaultdict(list)
     for task_type, task_paths in task_metadata.items():
-        if task_type != "spatial_temporal":
+        # if task_type != "spatial_temporal":
+            # continue # TODO: remove this line to evaluate all tasks
+        if task_type != "unambiguous":
             continue # TODO: remove this line to evaluate all tasks
         
         # progress bar
@@ -117,7 +119,7 @@ def evaluate(args):
                 if bagname in bag_waypoint_mapping and wp_id in bag_waypoint_mapping[bagname]:
                     rel_start, rel_end = bag_waypoint_mapping[bagname][wp_id]
                     base_time = bag_unix_times[bagname]
-                    task["current_obs_time"] = [base_time + rel_start, base_time + rel_end]
+                    task["current_obs_time"] = [base_time + rel_start - 1, base_time + rel_end + 1]
                 else:
                     raise ValueError(f"Missing waypoint '{wp_id}' in bag '{bagname}'")
                 
@@ -135,7 +137,7 @@ def evaluate(args):
                     if mem_bag in bag_waypoint_mapping and mem_wp in bag_waypoint_mapping[mem_bag]:
                         rel_start, rel_end = bag_waypoint_mapping[mem_bag][mem_wp]
                         base_time = bag_unix_times[mem_bag]
-                        task["mem_obs_time"] = [base_time + rel_start, base_time + rel_end]
+                        task["mem_obs_time"] = [base_time + rel_start - 1, base_time + rel_end + 1]
                     else:
                         raise ValueError(f"Missing memory waypoint '{mem_wp}' in bag '{mem_bag}'")
 
@@ -147,19 +149,29 @@ def evaluate(args):
                     task["mem_obs_time"] = task["current_obs_time"]
                     task["mem_obs_pose"] = task["current_obs_pose"]
             
-                res = evaluate_one_retrieval_task(args, agent, task)
-                results[task_type].append(int(res))
-                pbar.update(1)
+                success, (start_t, end_t, retrieval_t) = evaluate_one_retrieval_task(args, agent, task)
+                result = {
+                    "task": task["task"],
+                    "task_type": task_type,
+                    "instance_name": task["instance_wp"],
+                    "instance_class": task["instance_class"],
+                    "gt_start_time": start_t,
+                    "gt_end_time": end_t,
+                    "retrieval_time": retrieval_t,
+                    "success": success,
+                }
+                results[task_type].append(result)
                 
                 # Update success rate display
-                success = sum(results[task_type])
+                pbar.update(1)
+                success = sum([r["success"] for r in results[task_type]])
                 total = len(results[task_type])
                 rate = 100.0 * success / total if total > 0 else 0.0
                 pbar.set_postfix_str(f"({rate:.1f}%)")
             
             utility.drop_collection(db_name)
-            pbar.close()
             import time; time.sleep(1)
+    pbar.close()
     
     output["results"] = results
     return output
@@ -177,6 +189,6 @@ if __name__ == "__main__":
     print("📊 Evaluation Summary:")
     for task_type, result_list in results["results"].items():
         total = len(result_list)
-        success = sum(result_list)
+        success = sum(r["success"] for r in result_list)
         rate = 100.0 * success / total if total > 0 else 0.0
         print(f" - {task_type:<20}: {success}/{total} succeeded ({rate:.1f}%)")

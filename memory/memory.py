@@ -165,7 +165,7 @@ class MilvusMemory(Memory):
     def reset(self, drop_collection:bool =True, delete_all_files:bool =False):
         if drop_collection:
             utility.drop_collection(self.db_collection_name)
-            print("Resetting memory. We are dropping the current collection")
+            # print("Resetting memory. We are dropping the current collection")
         if delete_all_files:
             confirm = input(f"Delete all files under {self.obs_savepth} (y/n)?  ")
             if confirm == 'y' and os.path.isdir(self.obs_savepth):
@@ -201,7 +201,7 @@ class MilvusMemory(Memory):
                 frame.save(savepath)
                 
     def search_by_text(self, query: str, k:int = 8) -> str:
-        self.milv_wrapper.reload()
+        # self.milv_wrapper.reload()
         query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
         results = self.milv_wrapper.search(query_embedding, k = k)
         docs = self._parse_query_results(results)
@@ -209,7 +209,7 @@ class MilvusMemory(Memory):
         return docs
     
     def search_by_txt_and_time(self, query: str, start_time: str, end_time: str, k:int = 8) -> str:
-        self.milv_wrapper.reload()
+        # self.milv_wrapper.reload()
         query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
         # TODO need to verify start_time and end_time str before calling this function
         start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp()
