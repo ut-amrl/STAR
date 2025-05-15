@@ -47,8 +47,7 @@ def parse_args():
     return args
 
 def evaluate_one_retrieval_task(args, agent: Agent, task: dict):
-    question = f"Today is {args.current_pretty_date}. {task['task']}"
-    result = agent.run(question=question, graph_type="retrieval")
+    result = agent.run(question=task['task'], today=f"Today is {args.current_pretty_date}.", graph_type="retrieval")
     start_t, end_t = task["mem_obs_time"]
     if result is None:
         return (False, (start_t, end_t, None))

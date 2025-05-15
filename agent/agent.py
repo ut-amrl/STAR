@@ -165,6 +165,7 @@ class Agent:
     def initialize_object_search(self, state):
         messages = state["messages"]
         task = messages[0].content
+        today = messages[1].content
         
         model = self.llm
         prompt = ChatPromptTemplate.from_messages(
@@ -174,7 +175,10 @@ class Agent:
             ]
         )
         model = prompt | model
-        question = f"User Task: {task}"
+        question = (
+            f"Fact: {today}\n"
+            f"User Task: {task}"
+        )
         response = model.invoke({"question": question})
         task_info = eval(response.content)
         
@@ -762,12 +766,13 @@ class Agent:
         else:
             raise ValueError(f"Unsupported graph type: {graph_type}")
         
-    def run(self, question: str, graph_type: str = "full"):
+    def run(self, question: str, today: str, graph_type: str = "full"):
         self.build_graph(graph_type)
         
         inputs = { 
             "messages": [
                 (("user", question)),
+                (("system", today)),
             ],
         }
         state = self.graph.invoke(inputs)
