@@ -7,10 +7,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from memory.memory import MilvusMemory
 from memory.memory import MemoryItem
 
-def remember(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: list):
+def remember(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: list, waypoint_only: bool = False):
     for inpath, time_offset, viddir in zip(inpaths, time_offsets, viddirs):
         with open(inpath, 'r') as f:
             for entry in json.load(f):
+                if waypoint_only and int(entry["waypoint"]) < 0:
+                    continue
                 t, pos, caption, text_embedding, start_frame, end_frame = entry["time"], entry["base_position"], entry["base_caption"], entry["base_caption_embedding"], entry["start_frame"], entry["end_frame"]
                 t += time_offset
                 start_frame, end_frame = int(start_frame), int(end_frame)

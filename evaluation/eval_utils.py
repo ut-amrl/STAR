@@ -2,14 +2,15 @@ import os
 import math
 import json
 import csv
+from collections import defaultdict
 
 def load_task_metadata(task_file_path: str, benchmark_dir: str):
     # Initialize the dictionary with all required keys
-    task_dict = {
-        "unambiguous": [],
-        "spatial": [],
-        "spatial_temporal": []
-    }
+    
+    task_dict = defaultdict(list)
+    task_dict["unambiguous"] = []
+    task_dict["spatial"] = []
+    task_dict["spatial_temporal"] = []
 
     with open(task_file_path, "r") as f:
         lines = [line.strip() for line in f if line.strip()]
@@ -19,6 +20,7 @@ def load_task_metadata(task_file_path: str, benchmark_dir: str):
         if category in task_dict:
             full_path = os.path.join(benchmark_dir, "tasks", category, filename)
             task_dict[category].append(full_path)
+            task_dict[f"{category}_wp_only"].append(full_path)
 
     return task_dict
 

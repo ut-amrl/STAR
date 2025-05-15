@@ -63,7 +63,7 @@ def evaluate(args):
     for task_type, task_paths in task_metadata.items():
         # if task_type != "spatial_temporal":
             # continue # TODO: remove this line to evaluate all tasks
-        if task_type != "unambiguous":
+        if task_type != "unambiguous" and task_type != "unambiguous_wp_only":
             continue # TODO: remove this line to evaluate all tasks
         
         # progress bar
@@ -109,7 +109,10 @@ def evaluate(args):
                 inpaths.append(data_metadata[bagname])
                 time_offsets.append(bag_unix_times[bagname])
                 viddirs.append(os.path.join(args.data_dir, bagname, "images"))
-            remember(memory, inpaths, time_offsets, viddirs)
+            if "wp_only" in task_type:
+                remember(memory, inpaths, time_offsets, viddirs, waypoint_only=True)
+            else:
+                remember(memory, inpaths, time_offsets, viddirs, waypoint_only=False)
             agent.set_memory(memory)
                 
             for task in task_data["tasks"]:
@@ -153,7 +156,7 @@ def evaluate(args):
                 result = {
                     "task": task["task"],
                     "task_type": task_type,
-                    "instance_name": task["instance_wp"],
+                    "instance_name": task["instance_name"],
                     "instance_class": task["instance_class"],
                     "gt_start_time": start_t,
                     "gt_end_time": end_t,
