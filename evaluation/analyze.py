@@ -46,19 +46,42 @@ def plot_success_rates(args, stats):
     task_types = sorted(stats.keys())
     all_classes = sorted({cls for t in stats.values() for cls in t})
 
-    x = np.arange(len(all_classes))  # the label locations
-    width = 0.8 / len(task_types)    # bar width, adjusted for group spacing
+    x = np.arange(len(all_classes))
+    width = 0.8 / len(task_types)
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    
+
+    # Group task_types by prefix
+    color_groups = {
+        "unambiguous": plt.cm.Greens,
+        "spatial_temporal": plt.cm.Blues,
+        "spatial": plt.cm.Purples
+    }
+
+    # Assign colors based on prefix families
+    type_to_color = {}
+    grouped = defaultdict(list)
+    for task_type in task_types:
+        for prefix in color_groups:
+            if task_type.startswith(prefix):
+                grouped[prefix].append(task_type)
+                break
+
+    for prefix, type_list in grouped.items():
+        cmap = color_groups[prefix]
+        for i, task_type in enumerate(type_list):
+            color = cmap(0.3 + 0.5 * i / max(len(type_list) - 1, 1))  # spaced shade
+            type_to_color[task_type] = color
+
     for i, task_type in enumerate(task_types):
         heights = []
         for cls in all_classes:
             success, total = stats[task_type].get(cls, [0, 0])
             rate = success / total if total > 0 else 0.0
             heights.append(rate)
-        ax.bar(x + i * width, heights, width, label=task_type)
-    
+        color = type_to_color.get(task_type, "gray")  # fallback
+        ax.bar(x + i * width, heights, width, label=task_type, color=color)
+
     ax.set_ylabel("Success Rate")
     ax.set_title("Success Rate by Instance Class and Task Type")
     ax.set_xticks(x + width * (len(task_types) - 1) / 2)
@@ -71,6 +94,7 @@ def plot_success_rates(args, stats):
     output_path = os.path.join(args.output_dir, "success_rates.png")
     plt.savefig(output_path)
     print(f"✅ Plot saved to {output_path}")
+
 
 if __name__ == "__main__":
     args = parse_args()
