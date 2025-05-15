@@ -89,19 +89,19 @@ def plot_success_rates(args, stats):
         color = type_to_color.get(task_type, "gray")  # fallback
         ax.bar(x + i * width, heights, width, label=task_type, color=color)
 
-    ax.set_ylabel("Success Rate")
-    ax.set_title("Success Rate by Instance Class and Task Type")
+    ax.set_ylabel("Retrieval Accuracy", fontsize=18)
+    ax.set_title("Retrieval Accuracy by Instance Class and Task Type")
     ax.set_xticks(x + width * (len(task_types) - 1) / 2)
-    ax.set_xticklabels(all_classes, rotation=45, ha="right")
+    ax.set_xticklabels(all_classes, rotation=45, ha="right", fontsize=12)
+    ax.tick_params(axis="y", labelsize=12)
     ax.set_ylim(0, 1.0)
     ax.legend(title="Task Type")
 
     plt.tight_layout()
     os.makedirs(args.output_dir, exist_ok=True)
-    output_path = os.path.join(args.output_dir, "success_rates.png")
+    output_path = os.path.join(args.output_dir, "retrieval_accuracy.png")
     plt.savefig(output_path)
     print(f"✅ Plot saved to {output_path}")
-
 
 if __name__ == "__main__":
     args = parse_args()
@@ -111,7 +111,12 @@ if __name__ == "__main__":
     plot_success_rates(args, stats)
     
     # Just print a quick summary to check
-    for task_type, result_list in results_data.get("results", {}).items():
-        total = len(result_list)
-        success = sum(r["success"] for r in result_list)
-        print(f"{task_type:<20}: {success}/{total} succeeded ({100 * success / total:.1f}%)")
+    for task_results in results_data.values():
+        for task_type, result_list in task_results.get("results", {}).items():
+            total = len(result_list)
+            success = sum(r["success"] for r in result_list)
+            rate = success / total if total > 0 else 0.0
+            stderr = (rate * (1 - rate) / total) ** 0.5 if total > 0 else 0.0
+            ci95 = 1.96 * stderr
+            print(f"{task_type:<20}: {success}/{total} succeeded "
+                f"({rate*100:.1f}% ± {ci95*100:.1f}%)")
