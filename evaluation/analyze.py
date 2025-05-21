@@ -8,6 +8,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 EXPECTED_TASK_TYPES = ["unambiguous", "spatial", "spatial_temporal"]
+TASK_TYPE_ORDER = [
+    "unambiguous", "unambiguous_wp_only",
+    "spatial", "spatial_wp_only",
+    "spatial_temporal", "spatial_temporal_wp_only"
+]
+ALL_TASK_TYPES = []
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Read evaluation results.")
@@ -28,8 +34,9 @@ def parse_args():
 def load_results_from_dir(result_dir):
     result_dir = Path(result_dir)
     results = {}
-    for task_type in EXPECTED_TASK_TYPES:
-        file_path = result_dir / f"results_{task_type}.json"
+    for task_type in ALL_TASK_TYPES:
+        file_path = os.path.join(result_dir, f"results_{task_type}.json")
+        file_path = Path(file_path)
         if file_path.exists():
             with open(file_path, "r") as f:
                 results[task_type] = json.load(f)
@@ -39,25 +46,25 @@ def load_results_from_dir(result_dir):
 
 def compute_success_rates(results):
     stats = defaultdict(lambda: defaultdict(lambda: [0, 0]))  # task_type → instance_class → [success_count, total_count]
-    for task_results in results.values():
-        for task_type, records in task_results.get("results", {}).items():
-            for r in records:
-                cls = r.get("instance_class", "unknown")
-                success = r["success"]
-                stats[task_type][cls][1] += 1
-                if success:
-                    stats[task_type][cls][0] += 1
+    for task_type, task_results in results.items():
+        for r in task_results:
+            cls = r.get("instance_class", "unknown")
+            success = r["success"]
+            stats[task_type][cls][1] += 1
+            if success:
+                stats[task_type][cls][0] += 1
     return stats
 
 def plot_success_rates(args, stats):
-    task_types = sorted(stats.keys())
+    task_types = [t for t in TASK_TYPE_ORDER if t in stats]
     all_classes = sorted({cls for t in stats.values() for cls in t})
     
     x = np.arange(len(all_classes))
     width = 0.8 / len(task_types)
 
     fig, ax = plt.subplots(figsize=(12, 6))
-
+    ax.set_axisbelow(True)
+    
     # Group task_types by prefix
     color_groups = {
         "unambiguous": plt.cm.Greens,
@@ -87,7 +94,7 @@ def plot_success_rates(args, stats):
             rate = success / total if total > 0 else 0.0
             heights.append(rate)
         color = type_to_color.get(task_type, "gray")  # fallback
-        ax.bar(x + i * width, heights, width, label=task_type, color=color)
+        ax.bar(x + i * width, heights, width, label=task_type, color=color, edgecolor="black", linewidth=0.5)
 
     ax.set_ylabel("Retrieval Accuracy", fontsize=18)
     ax.set_title("Retrieval Accuracy by Instance Class and Task Type")
@@ -95,6 +102,7 @@ def plot_success_rates(args, stats):
     ax.set_xticklabels(all_classes, rotation=45, ha="right", fontsize=12)
     ax.tick_params(axis="y", labelsize=12)
     ax.set_ylim(0, 1.0)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.5)
     ax.legend(title="Task Type")
 
     plt.tight_layout()
@@ -104,6 +112,10 @@ def plot_success_rates(args, stats):
     print(f"✅ Plot saved to {output_path}")
 
 if __name__ == "__main__":
+    for task_type in EXPECTED_TASK_TYPES:
+        ALL_TASK_TYPES.append(task_type)
+        ALL_TASK_TYPES.append(f"{task_type}_wp_only")
+    
     args = parse_args()
     results_data = load_results_from_dir(args.result_dir)
     
@@ -111,12 +123,11 @@ if __name__ == "__main__":
     plot_success_rates(args, stats)
     
     # Just print a quick summary to check
-    for task_results in results_data.values():
-        for task_type, result_list in task_results.get("results", {}).items():
-            total = len(result_list)
-            success = sum(r["success"] for r in result_list)
-            rate = success / total if total > 0 else 0.0
-            stderr = (rate * (1 - rate) / total) ** 0.5 if total > 0 else 0.0
-            ci95 = 1.96 * stderr
-            print(f"{task_type:<20}: {success}/{total} succeeded "
-                f"({rate*100:.1f}% ± {ci95*100:.1f}%)")
+    for task_type, task_results in results_data.items():
+        total = len(task_results)
+        success = sum(r["success"] for r in task_results)
+        rate = success / total if total > 0 else 0.0
+        stderr = (rate * (1 - rate) / total) ** 0.5 if total > 0 else 0.0
+        ci95 = 1.96 * stderr
+        print(f"{task_type:<20}: {success}/{total} succeeded "
+            f"({rate*100:.1f}% ± {ci95*100:.1f}%)")

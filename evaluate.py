@@ -192,6 +192,13 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
     for task_type, result_list in results["results"].items():
         output_path = os.path.join(args.output_dir, f"results_{task_type}.json")
+        
+        result = {
+            "task_metadata": results["task_metadata"],
+            "results": {},
+        }
+        result["results"][task_type] = result_list
+        
         with open(output_path, "w") as f:
             json.dump(result_list, f, indent=2)
         print(f"✅ Saved {task_type} results to {output_path}")
