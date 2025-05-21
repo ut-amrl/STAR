@@ -47,7 +47,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def evaluate_one_retrieval_task(args, agent: Agent, task: dict):
+def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict):
     result = agent.run(question=task['task'], today=f"Today is {args.current_pretty_date}.", graph_type="retrieval")
     start_t, end_t = task["mem_obs_time"]
     if result is None:
@@ -159,7 +159,7 @@ def evaluate(args):
                     task["mem_obs_time"] = task["current_obs_time"]
                     task["mem_obs_pose"] = task["current_obs_pose"]
             
-                success, (start_t, end_t, retrieval_t) = evaluate_one_retrieval_task(args, agent, task)
+                success, (start_t, end_t, retrieval_t) = evaluate_one_mem_retrieval_task(args, agent, task)
                 result = {
                     "task": task["task"],
                     "task_type": task_type,
