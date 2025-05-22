@@ -14,6 +14,9 @@ from amrl_msgs.srv import (
 )
 from agent.utils.utils import *
 
+def get_image_path_for_simulation(viddir: str, frame: int) -> str:
+    return os.path.join(viddir, f"Action_{frame:04d}_0_normal.png")
+
 def navigate(pos: List[float], theta: float) -> GetImageAtPoseSrvResponse:
     """
     Navigate to a specific position and orientation.

@@ -33,6 +33,7 @@ def evaluate(args):
         navigate_fn=navigate,
         observe_fn=observe,
         pick_fn=pick,
+        image_path_fn=get_image_path_for_simulation,
     )
     
     questions = [

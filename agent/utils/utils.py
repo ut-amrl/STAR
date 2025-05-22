@@ -10,6 +10,7 @@ from PIL import Image as PILImage
 from langchain_core.messages import ToolMessage
 import numpy as np
 import math
+from typing import Callable
 
 from sensor_msgs.msg import Image
 
@@ -160,10 +161,21 @@ def numpy_to_ros_image(np_image, encoding="rgb8"):
     ros_image.data = np_image.tobytes()
     return ros_image
 
-def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv", resize: bool = False):
+def get_image(
+    vidpath: str, 
+    start_frame: str, 
+    end_frame: str, 
+    type: str = "opencv", 
+    resize: bool = False,
+    image_path_fn: Callable[[str, int], str] = None
+):
+    if image_path_fn is None:
+        image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
+    
     start_frame, end_frame = int(start_frame), int(end_frame)
     frame = (start_frame + end_frame) // 2
-    imgpath = os.path.join(vidpath, f"{frame:06d}.png")
+    imgpath = image_path_fn(vidpath, frame)
+    
     if type.lower() == "opencv":
         img = cv2.imread(imgpath)
     elif type.lower() == "pil":
@@ -184,13 +196,35 @@ def get_image(vidpath: str, start_frame: str, end_frame: str, type: str = "openc
         ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
     return img
 
-def get_image_from_record(record, type: str = "opencv", resize: bool = False):
-    return get_image(record["vidpath"], record["start_frame"], record["end_frame"], type=type, resize=resize)
+def get_image_from_record(
+    record: dict, 
+    type: str = "opencv", 
+    resize: bool = False,
+    image_path_fn: Callable[[str, int], str] = None
+):
+    return get_image(
+        record["vidpath"], 
+        record["start_frame"], 
+        record["end_frame"], 
+        type=type, 
+        resize=resize,
+        image_path_fn=image_path_fn
+    )
 
-def get_images(vidpath: str, start_frame: str, end_frame: str, type: str = "opencv", step: int = 1):
+def get_images(
+    vidpath: str, 
+    start_frame: str, 
+    end_frame: str, 
+    type: str = "opencv", 
+    step: int = 1, 
+    image_path_fn: Callable[[str, int], str] = None
+):
+    if image_path_fn is None:
+        image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
+    
     images = []
     for frame in range(start_frame, end_frame+1, step):
-        imgpath = os.path.join(vidpath, f"{frame:06d}.png")
+        imgpath = image_path_fn(vidpath, frame)
         if type.lower() == "opencv":
             img = cv2.imread(imgpath)
         elif type.lower() == "pil":
@@ -204,8 +238,13 @@ def get_images(vidpath: str, start_frame: str, end_frame: str, type: str = "open
         images.append(img)
     return images
 
-def get_images_from_record(record, type: str = "opencv", step: int = 1):
-    return get_images(record["vidpath"], record["start_frame"], record["end_frame"], type=type, step=step)
+def get_images_from_record(
+    record: dict, 
+    type: str = "opencv", 
+    step: int = 1, 
+    image_path_fn: Callable[[str, int], str] = None
+):
+    return get_images(record["vidpath"], record["start_frame"], record["end_frame"], type=type, step=step, image_path_fn=image_path_fn)
 
 def debug_vid(vid, debugdir: str):
     os.makedirs(debugdir, exist_ok=True)

@@ -102,6 +102,7 @@ class Agent:
         navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None, 
         observe_fn: Callable[[], GetImageSrvResponse] = None,
         pick_fn = None,
+        image_path_fn: Callable[[str], str] = None,
         llm_type: str = "gpt-4", 
         vlm_type: str = "gpt-4o", 
         verbose: bool = False
@@ -110,6 +111,7 @@ class Agent:
         self.navigate_fn = navigate_fn
         self.observe_fn = observe_fn
         self.pick_fn = pick_fn
+        self.image_path_fn = image_path_fn
         
         self.logger = get_logger()
         
