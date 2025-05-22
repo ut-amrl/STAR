@@ -3,6 +3,7 @@ import json
 from typing import Annotated, Sequence, TypedDict
 from math import radians
 from collections import defaultdict
+from typing import Callable, List
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage
@@ -23,6 +24,11 @@ from memory.memory import MilvusMemory
 
 import rospy
 import roslib; roslib.load_manifest('amrl_msgs')
+from amrl_msgs.srv import (
+    GetImageSrvResponse,
+    GetImageAtPoseSrvResponse, 
+    PickObjectSrvResponse
+)
 
 def from_initialize_object_search_to(state):
     return state["current_goal"].task_type 
@@ -92,7 +98,18 @@ class Agent:
         task: Annotated[Sequence, replace_messages]
         output: Annotated[Sequence, replace_messages]
     
-    def __init__(self, llm_type: str = "gpt-4", vlm_type: str = "gpt-4o", verbose: bool = False):
+    def __init__(self,
+        navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None, 
+        observe_fn: Callable[[], GetImageSrvResponse] = None,
+        pick_fn = None,
+        llm_type: str = "gpt-4", 
+        vlm_type: str = "gpt-4o", 
+        verbose: bool = False
+    ):
+        # TODO raise error if the functions are not callable in non-memory-only mode
+        self.navigate_fn = navigate_fn
+        self.observe_fn = observe_fn
+        self.pick_fn = pick_fn
         
         self.logger = get_logger()
         
@@ -584,11 +601,16 @@ class Agent:
         target = current_goal.curr_target()
         
         self.logger.info(f"current target: {target}")
-        import pdb; pdb.set_trace()
         
         if type(target["position"]) == str:
             target["position"] = eval(target["position"])
         query_txt = current_goal.query_obj_cls
+        
+        # TODO: need to use theta instead of position in the future
+        response = self.navigate_fn(target["position"], target["position"][2])
+        
+        # TODO: need to feedback the success of navigation to the LLM and avoid raising error
+        response = self.observe_fn()
         
         import pdb; pdb.set_trace()
         
