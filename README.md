@@ -13,3 +13,8 @@ If the container is already running but the connection is broken, restart the ve
 ```bash
 cd vector_db && bash standalone_embed.sh restart
 ```
+
+If you encounter error "Failed to start transient timer unit: Unit <container_id>.service", run:
+```
+docker kill <container_id> && docker rm <container_id>
+```
