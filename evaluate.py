@@ -4,6 +4,7 @@ from pathlib import Path
 from pymilvus import utility
 from collections import defaultdict
 from tqdm import tqdm
+import copy
 
 from evaluation.eval_utils import *
 from agent.agent import Agent
@@ -159,7 +160,6 @@ def evaluate(args):
                     task["mem_obs_pose"] = task["current_obs_pose"]
             
                 success, (start_t, end_t, retrieval_t) = evaluate_one_retrieval_task(args, agent, task)
-                import pdb; pdb.set_trace()
                 result = {
                     "task": task["task"],
                     "task_type": task_type,

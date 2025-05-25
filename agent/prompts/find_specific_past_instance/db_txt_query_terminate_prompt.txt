@@ -41,3 +41,7 @@ Reasoning and Output rules:
     b. When user wants a generic item, you should rank moments based on where the object is most likely to be found based on past observations.
 2. "moment_ids" must be a list of integer strings. It should always be a list even if you only find 1 moment, or even 0 moment (empty list). Do not put anything else.
 3. Make sure you fill in each key and value field accordingly. Do not make a plain text response.
+4. If no relevant moment is found, you must still respond using the JSON format. 
+   - Set "moment_ids" to an empty list: []
+   - Do not use null, None, or omit the field.
+   - Your "reasoning" should explain why no relevant moment could be identified based on the available observations.

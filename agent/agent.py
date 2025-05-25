@@ -184,7 +184,7 @@ class Agent:
         
         # TODO ask LLM to fill it in
         current_goal = ObjectRetrievalPlan()
-        current_goal.task = f"Find {task_info['object_desc']}"
+        current_goal.task = f"Find {task_info['object_desc']}."
         current_goal.task_type = task_info['task_type']
         if current_goal.task_type not in ["find_by_description" , "find_specific_past_instance", "find_by_frequency"]:
             raise ValueError(f"LLM failed to respond valid task type. LLM response: {current_goal.task_type}")
@@ -359,7 +359,7 @@ class Agent:
                 ]
             )
             model = prompt | model
-            question = f"User Task: {state['task']}"
+            question = f"User Task: {state['current_goal'].task}"
             response = model.invoke({"question": question})
             
             self.logger.info(f"Tool Call: {response.tool_calls}")

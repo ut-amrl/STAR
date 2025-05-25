@@ -34,3 +34,8 @@ To run evaluation script:
 ```bash
 python evaluate.py --benchmark_dir <benchmark_dir> --data_dir <data_dir> --task_types <unambiguous spatial spatial_temporal ...>
 ```
+
+To visualize the result:
+```bash
+python evaluation/analyze.py
+```

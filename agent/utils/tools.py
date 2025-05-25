@@ -141,7 +141,6 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
         
         def generate(self, state):
             messages = state["messages"]
-            # last_message = messages[-1]
             
             model = self.llm
             prompt = self.agent_gen_only_prompt
@@ -165,8 +164,9 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             last_response = eval(last_message.content)
             if "moment_ids" not in last_response.keys():
                 raise ValueError("Missing required field 'moment_ids'")
-            if len(last_response["moment_ids"]) == 0 and len(state["retrieved_messages"]) != 0:
-                raise ValueError("Missing required field 'moment_ids'")
+            # if len(last_response["moment_ids"]) == 0 and len(state["retrieved_messages"]) != 0:
+            #     import pdb; pdb.set_trace() # TODO this is the case for recaption
+            #     raise ValueError("Missing required field 'moment_ids'")
             record_ids = last_response["moment_ids"]
             if type(record_ids) == str:
                 record_ids = eval(record_ids)
