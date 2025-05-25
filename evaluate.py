@@ -159,6 +159,7 @@ def evaluate(args):
                     task["mem_obs_pose"] = task["current_obs_pose"]
             
                 success, (start_t, end_t, retrieval_t) = evaluate_one_retrieval_task(args, agent, task)
+                import pdb; pdb.set_trace()
                 result = {
                     "task": task["task"],
                     "task_type": task_type,

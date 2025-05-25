@@ -85,8 +85,8 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             self.agent_prompt = file_to_string(prompt_dir+'db_txt_query_prompt.txt')
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'db_txt_query_terminate_prompt.txt')
             
-            self.previous_tool_requests = "These are the tools I have previously used so far: \n"
             self.agent_call_count = 0
+            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
             
             self._build_graph()
                 
@@ -100,23 +100,32 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             else:
                 prompt = self.agent_gen_only_prompt
                 
-            agent_prompt = ChatPromptTemplate.from_messages(
-                [
-                    MessagesPlaceholder("chat_history"),
-                    ("system", prompt),
-                    (("human"), self.previous_tool_requests),
-                    ("human", "{question}"),
-                ]
-            )
-            
-            model = agent_prompt | model
-            
-            db_messages = filter_retrieved_record(messages[:])
-            parsed_db_messages = parse_db_records_for_llm(db_messages)
-
-            question = f"The object user wants to find is: {messages[0].content}"
-            
-            response = model.invoke({"question": question, "chat_history": parsed_db_messages})
+            db_messages = []
+            if self.agent_call_count == 0:
+                agent_prompt = ChatPromptTemplate.from_messages(
+                    [
+                        ("system", prompt),
+                        ("human", "{question}"),
+                    ]
+                )
+                model = agent_prompt | model
+                question = f"The object user wants to find is: {messages[0].content}"
+                response = model.invoke({"question": question})
+            else:
+                agent_prompt = ChatPromptTemplate.from_messages(
+                    [
+                        MessagesPlaceholder("chat_history"),
+                        (("human"), self.previous_tool_requests),
+                        ("system", prompt),
+                        ("human", "{question}"),
+                    ]
+                )
+                model = agent_prompt | model
+                question = f"The object user wants to find is: {messages[0].content}"
+                
+                db_messages = filter_retrieved_record(messages[:])
+                parsed_db_messages = parse_db_records_for_llm(db_messages)
+                response = model.invoke({"question": question, "chat_history": parsed_db_messages})
             
             if response.tool_calls and self.logger:
                 self.logger.info(f"Calling tools: {response.tool_calls}")
@@ -126,7 +135,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
                     if tool_call['name'] != "__conversational_response":
                         args = re.sub(r'^\{(.*)\}$', r'(\1)', str(tool_call['args'])) # remove curly braces
                         self.previous_tool_requests += f" {tool_call['name']} tool with the arguments: {args}.\n"
-
+            
             self.agent_call_count += 1
             return {"messages": [response], "retrieved_messages": db_messages}
         
@@ -204,6 +213,8 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             
         def run(self, instance_description, search_start_time, search_end_time):
             self.agent_call_count = 0
+            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
+            
             inputs = { "messages": [
                     (("user", f"Between {search_start_time} and {search_end_time}, have you observe {instance_description}? If so, when?")),
                 ]

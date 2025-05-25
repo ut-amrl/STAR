@@ -243,6 +243,9 @@ def filter_retrieved_record(messages: list):
 def parse_db_records_for_llm(messages: list):
     processed_records = [{"record_id": record["id"], "text": record["text"]} for record in messages]
     parsed_processed_records = [json.dumps(record) for record in processed_records]
+    parsed_processed_records = [
+        f"[RETRIEVED OBSERVATION] {record}" for record in parsed_processed_records
+    ]
     return parsed_processed_records
 
 
