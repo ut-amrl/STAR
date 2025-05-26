@@ -188,8 +188,9 @@ def create_find_specific_past_instance_tool(
             # Recaption if needed
             if self.allow_recaption and (not self.has_recaptioned) and len(last_response["moment_ids"]) == 0 and len(state["retrieved_messages"]) != 0:
                 if self.logger:
-                    self.logger.info("Recaptioning the retrieved messages...")
-                return {"messages": [last_message]}
+                    n_retrieved_messages = len(state["retrieved_messages"])
+                    self.logger.info(f"Recaptioning {n_retrieved_messages} retrieved message(s)...")
+                return {"messages": [last_message], "output": None}
             
             # Prepare for return
             record_ids = last_response["moment_ids"]

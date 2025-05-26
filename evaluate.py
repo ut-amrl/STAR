@@ -64,8 +64,10 @@ def evaluate(args):
     bag_waypoint_mapping = load_annotated_waypoints(args.benchmark_dir)
     waypoints = load_waypoints(args.benchmark_dir)
     
-    # included_task_types = args.task_types + [f"{t}_wp_only" for t in args.task_types] + [f"{t}_recaption_wp_only" for t in args.task_types]
-    included_task_types = [f"{t}_recaption_wp_only" for t in args.task_types]
+    included_task_types = args.task_types \
+        + [f"{t}_wp_only" for t in args.task_types] \
+        + [f"{t}_recaption_wp_only" for t in args.task_types]
+    # included_task_types = [f"{t}_recaption_wp_only" for t in args.task_types]
     
     output = {
         "task_metadata": task_metadata,
@@ -104,9 +106,9 @@ def evaluate(args):
                     dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
                     if bagname == task_data["bagnames"][-1]:
                         try:
-                            args.current_pretty_date = dt.strftime("%b %-d, %Y")  # Linux/Mac
+                            args.current_pretty_date = dt.strftime("%A, %b %-d, %Y")  # Linux/Mac
                         except ValueError:
-                            args.current_pretty_date = dt.strftime("%b %#d, %Y")  # Windows fallback
+                            args.current_pretty_date = dt.strftime("%A, %b %#d, %Y")  # Windows fallback
                     # dt = dt.replace(tzinfo=timezone.utc)
                     unix_time = dt.timestamp()
                     bag_unix_times[bagname] = unix_time

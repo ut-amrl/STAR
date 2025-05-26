@@ -487,12 +487,15 @@ def ask_chatgpt(model, prompt: str, images, question: str):
 def recaption(memory: MilvusMemory, task:str, record: dict, caption_fn):
     caption = caption_fn(task, record)
     caption_embedding = memory.embedder.embed_query(caption)  # Ensure caption is embedded before inserting
+    position = record["position"]
+    if type(position) == str:
+        position = eval(position)
     
     item = MemoryItem(
         caption=caption,
         text_embedding=caption_embedding,
         time=record["timestamp"],
-        position=record["position"],
+        position=position,
         theta=record["theta"],
         vidpath=record["vidpath"],
         start_frame=record["start_frame"],
@@ -537,4 +540,4 @@ def caption_gpt(task: str, record: dict, model: ChatOpenAI = None, image_path_fn
     old_caption = record["text"]
     question = f"This is the original caption of the video: {old_caption}.\nUser task: {task}.\nCould you recaption the video in light of the user task?"
     response = ask_chatgpt(model, prompt, image_messages, question)
-    return response
+    return response.content
