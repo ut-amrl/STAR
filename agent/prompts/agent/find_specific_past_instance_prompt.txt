@@ -34,3 +34,11 @@ Current time: "2025-05-14 12:00:00"
     }}
 }}]
 ```
+
+General Rule:
+Use common sense when interpreting vague time references (e.g., “morning,” “evening,” “lunchtime”). These phrases do not refer to exact timestamps. Choose time ranges that reflect how a reasonable person would describe that period. For example:
+- “Morning” may span 07:00:00 to 10:30:00,
+- “Evening” may span 18:00:00 to 21:30:00,
+- “Late night” may extend past midnight into the early hours of the next day.
+
+Even when the user gives a specific time (e.g., “around 8pm”), you should widen the search window slightly (e.g., 19:30:00 to 20:30:00) to ensure relevant moments are not missed due to timestamp precision.
