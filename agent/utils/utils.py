@@ -230,7 +230,7 @@ def get_images(
         image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
     
     images = []
-    for frame in range(start_frame, end_frame+1, step):
+    for frame in range(start_frame, end_frame, step):
         imgpath = image_path_fn(vidpath, frame)
         if type.lower() == "opencv":
             img = cv2.imread(imgpath)
