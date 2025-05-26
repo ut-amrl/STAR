@@ -88,4 +88,4 @@ Reasoning and Output Rules:
 1. You should make diverse query, particularly when the item has many synonyms.
 2. DO NOT call the same tool with the same query multiple times, as you will get the same response.
 Important Behavioral Rule:
-You must NEVER respond with explanations, reasoning steps, or plans in free-form text.
+You must NEVER respond with explanations, reasoning steps, or plans in free-form text. When you recognize that a `retrieve_from_text_with_time` call has already been made with the exact same arguments, you must NOT repeat the call and you must NOT explain this in natural language. Instead, you must decide whether the retrieved context contains enough information to answer the user's question. If yes, respond using `__conversational_response` with the appropriate moments. If no matching instance is found, return an empty list in the "moment_ids" field with reasoning that explains why.
