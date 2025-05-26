@@ -1,6 +1,7 @@
 import os
 import re
 from typing import Annotated, Sequence, TypedDict
+from functools import partial
 
 from langchain.tools import StructuredTool
 from langchain_core.pydantic_v1 import BaseModel, Field
@@ -55,13 +56,13 @@ def create_db_txt_search_tool(memory):
     )
     return [txt_retriever_tool, txt_time_retriever_tool]
 
-def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logger=None):
+def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, vlm_raw, logger=None):
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
         retrieved_messages: Annotated[Sequence, replace_messages]
-        output: Annotated[Sequence, replace_messages]
+        output: Annotated[Sequence, replace_messages] = None
         
-    def should_continue(state: AgentState):
+    def from_agent_to(state: AgentState):
         messages = state["messages"]
 
         last_message = messages[-1]
@@ -70,12 +71,21 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             return "end"
         else:
             return "continue"
-    
+        
+    def from_generate_to(state: AgentState):
+        output = state["output"]
+
+        if output is None:
+            return "recaption"
+        else:
+            return "continue"
+        
     class DBRetriever:
-        def __init__(self, memory, llm, vlm, logger=None):
+        def __init__(self, memory, llm, vlm, vlm_raw, logger=None):
             self.memory = memory
             self.llm = llm
             self.vlm = vlm
+            self.vlm_raw = vlm_raw
             self.logger = logger
 
             self.db_retriever_tools = create_db_txt_search_tool(memory)
@@ -86,6 +96,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'db_txt_query_terminate_prompt.txt')
             
             self.agent_call_count = 0
+            self.has_recaptioned = False
             self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
             
             self._build_graph()
@@ -100,6 +111,8 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             else:
                 prompt = self.agent_gen_only_prompt
                 
+            question = f"The object user wants to find is: {messages[0].content}"
+                
             db_messages = []
             if self.agent_call_count == 0:
                 agent_prompt = ChatPromptTemplate.from_messages(
@@ -109,7 +122,6 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
                     ]
                 )
                 model = agent_prompt | model
-                question = f"The object user wants to find is: {messages[0].content}"
                 response = model.invoke({"question": question})
             else:
                 agent_prompt = ChatPromptTemplate.from_messages(
@@ -121,7 +133,6 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
                     ]
                 )
                 model = agent_prompt | model
-                question = f"The object user wants to find is: {messages[0].content}"
                 
                 db_messages = filter_retrieved_record(messages[:])
                 parsed_db_messages = parse_db_records_for_llm(db_messages)
@@ -140,6 +151,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             return {"messages": [response], "retrieved_messages": db_messages}
         
         def generate(self, state):
+            self.agent_call_count = 0
             messages = state["messages"]
             
             model = self.llm
@@ -164,9 +176,11 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             last_response = eval(last_message.content)
             if "moment_ids" not in last_response.keys():
                 raise ValueError("Missing required field 'moment_ids'")
-            # if len(last_response["moment_ids"]) == 0 and len(state["retrieved_messages"]) != 0:
-            #     import pdb; pdb.set_trace() # TODO this is the case for recaption
-            #     raise ValueError("Missing required field 'moment_ids'")
+            # Recaption if needed
+            if (not self.has_recaptioned) and len(last_response["moment_ids"]) == 0 and len(state["retrieved_messages"]) != 0:
+                return {"messages": [last_message]}
+            
+            # Prepare for return
             record_ids = last_response["moment_ids"]
             if type(record_ids) == str:
                 record_ids = eval(record_ids)
@@ -186,7 +200,26 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
                 self.logger.info(f"Makeing decisions based on: {retrieved_messages}")
                 self.logger.info(f"Final decision(s): {last_response}")
             
-            return {"messages":[last_message], "output": records}
+            self.has_recaptioned = False
+            return {"messages": [last_message], "output": records}
+        
+        def recaption(self, state):
+            messages = state["messages"]
+            task = messages[0].content
+            
+            db_messages = state["retrieved_messages"]
+            caption_fn = partial(caption_gpt, model=self.vlm_raw, image_path_fn=None) # Use default image_path_fn
+            
+            if len(db_messages) > 20:
+                import pdb; pdb.set_trace()
+            
+            # TODO should run this in parallel
+            for record in db_messages:
+                caption = recaption(self.memory, task, record, caption_fn)
+                record["text"] = caption # update in-place
+            self.memory.flush_and_reload()
+            self.has_recaptioned = True
+            return {"retrieved_messages": db_messages}
                 
         def _build_graph(self):
             workflow = StateGraph(AgentState)
@@ -194,25 +227,33 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
             workflow.add_node("action", ToolNode(self.db_retriever_tools))
             workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
+            workflow.add_node("recaption", lambda state: try_except_continue(state, self.recaption))
             
             workflow.add_conditional_edges(
                 "agent",
-                # Assess agent decision
-                should_continue,
+                from_agent_to,
                 {
-                    # Translate the condition outputs to nodes in our graph
                     "continue": "action",
                     "end": "generate",
                 },
             )
             workflow.add_edge('action', 'agent')
-            workflow.add_edge("generate", END)
+            workflow.add_conditional_edges(
+                "generate",
+                from_generate_to,
+                {
+                    "recaption": "recaption",
+                    "end": END,
+                },
+            )
+            workflow.add_edge("recaption", "generate")
             
             workflow.set_entry_point("agent")
             self.graph = workflow.compile()
             
         def run(self, instance_description, search_start_time, search_end_time):
             self.agent_call_count = 0
+            self.has_recaptioned = False
             self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
             
             inputs = { "messages": [
@@ -228,7 +269,7 @@ def create_find_specific_past_instance_tool(memory: MilvusMemory, llm, vlm, logg
             import time; time.sleep(1)
             return output
 
-    tool = DBRetriever(memory, llm, vlm, logger)
+    tool = DBRetriever(memory, llm, vlm, vlm_raw, logger)
     class RecallAnyInput(BaseModel):
         instance_description: str = Field(description="You are a robot agent with extensive past observations. This tool helps you recall the specific moment when you observed an instance matching the given description. \
                             This query argument should be a phrase such as 'a book', 'the book that was on a table', or 'an apple that was in kitchen yesterday'. \

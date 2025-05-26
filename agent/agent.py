@@ -120,11 +120,17 @@ class Agent:
         self.llm_type, self.vlm_type = llm_type, vlm_type
         self.llm = self._llm_selector(self.llm_type)
         self.vlm, self.vlm_processor = self._vlm_selector(self.vlm_type)
+        
+        # NOTE: When we only want the model to make free-from response, 
+        # we can directly call llm_raw/vlm_raw (without function wrapper) to avoid LLM formatting errors
+        # We can clean up this code later
+        self.llm_raw = ChatOpenAI(model=self.llm_type, api_key=os.environ.get("OPENAI_API_KEY"))
+        self.vlm_raw = ChatOpenAI(model=self.vlm_type, api_key=os.environ.get("OPENAI_API_KEY"))
     
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
         
-        recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm, self.logger)
+        recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm, self.vlm_raw, self.logger)
         self.recall_tools = [recall_tool]
         self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.recall_tools]
         

@@ -7,12 +7,19 @@ from typing import Sequence
 import json
 import cv2
 from PIL import Image as PILImage
-from langchain_core.messages import ToolMessage
 import numpy as np
 import math
 from typing import Callable
 
+# LangeChain imports
+from langchain_core.messages import ToolMessage
+from langchain_openai import ChatOpenAI
+
+# ROS imports
 from sensor_msgs.msg import Image
+
+# Custom imports
+from memory.memory import MilvusMemory, MemoryItem
 
 class UnionFind:
     def __init__(self, size):
@@ -475,4 +482,59 @@ def ask_chatgpt(model, prompt: str, images, question: str):
     ]
     
     response = model.invoke(messages)
+    return response
+
+def recaption(memory: MilvusMemory, task:str, record: dict, caption_fn):
+    caption = caption_fn(task, record)
+    caption_embedding = memory.embedder.embed_query(caption)  # Ensure caption is embedded before inserting
+    
+    item = MemoryItem(
+        caption=caption,
+        text_embedding=caption_embedding,
+        time=record["timestamp"],
+        position=record["position"],
+        theta=record["theta"],
+        vidpath=record["vidpath"],
+        start_frame=record["start_frame"],
+        end_frame=record["end_frame"]
+    )
+    # Memory should handle caption embedding internally
+    memory.insert(item)
+    
+    return caption
+
+def caption_gpt(task: str, record: dict, model: ChatOpenAI = None, image_path_fn: Callable[[str, int], str] = None):
+    if model is None:
+        model = ChatOpenAI(model="gpt-4o", api_key=os.environ.get("OPENAI_API_KEY"))
+    if image_path_fn is None:
+        image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
+        
+    images = get_images_from_record(
+        record, type="utf-8", image_path_fn=image_path_fn
+    )
+    image_messages = []
+    for image in images:
+        image_message = get_vlm_img_message(image, type="gpt")
+        image_messages.append(image_message)
+    
+    prompt = (
+        "You are a robot assistant re-examining a previously observed scene to improve its memory. "
+        "You are given the original caption and a user task. Your job is to revise the caption in light of the user's task, "
+        "while preserving all general-purpose information.\n\n"
+
+        "Instructions:\n"
+        "- Do not remove or rewrite any part of the original caption that is unrelated to the task.\n"
+        "- If the scene contains information relevant to the user's task, update the caption to include those details—both confirming and negating.\n"
+        "- Use common sense reasoning to infer likely intent, usage, or relevance based on the task and the scene.\n"
+        "- Always stay faithful to the visual input. If something appears incorrect or missing in the original caption, correct it based on the actual scene.\n"
+        "- The result must be a single, standalone paragraph that is descriptive, detailed, and useful for both general memory and task resolution.\n"
+        "- Do not mention the task explicitly. Incorporate task-relevant information naturally into the description.\n\n"
+
+        "Your goal is to help the robot better remember and interpret this scene for the current task and future use."
+        "Do not introduce yourself or comment on the video — just describe what is present and what is happening, "
+        "with high factual precision that would help a robot remember and act on this scene. Your should respond in a single paragraph."
+    )
+    old_caption = record["text"]
+    question = f"This is the original caption of the video: {old_caption}.\nUser task: {task}.\nCould you recaption the video in light of the user task?"
+    response = ask_chatgpt(model, prompt, image_messages, question)
     return response

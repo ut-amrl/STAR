@@ -306,6 +306,7 @@ class MilvusMemory(Memory):
             ret = {"id": item.metadata["id"], 
                    "timestamp": item.metadata["timestamp"],
                    "position": str(item.metadata["position"]), 
+                   "theta": item.metadata["theta"],
                    "vidpath": item.metadata["vidpath"], 
                    "start_frame": item.metadata["start_frame"], 
                    "end_frame": item.metadata["end_frame"], 
