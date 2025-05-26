@@ -1,4 +1,7 @@
 spatial_temporal/f7008816.json
+spatial_temporal/73daea13.json
+spatial_temporal/a3eaceaa.json
+spatial_temporal/e748c034.json
 unambiguous/15b373a9.json
 unambiguous/17cca54d.json
 unambiguous/1c4b0a5c.json
