@@ -182,6 +182,10 @@ class MilvusMemory(Memory):
             text_field='caption',
         )
         
+    def flush_and_reload(self):
+        self.milv_wrapper.collection.flush()
+        self.milv_wrapper.reload()
+        
     def insert(self, item: MemoryItem, images=None):
         memory_dict = asdict(item)
         memory_dict['id'] = self.last_id # cannot use num_entities from db until we call `self.milv_wrapper.collection.load()`
@@ -199,6 +203,26 @@ class MilvusMemory(Memory):
             for fid, frame in zip(range(memory_dict["start_frame"], memory_dict["end_frame"]+1), images):
                 savepath = os.path.join(self.obs_savepth, f"{fid:06d}.png")
                 frame.save(savepath)
+                
+    def update(self, id: int, item: MemoryItem):
+        """
+        Update the memory entry with given id by deleting the old one and inserting the new item.
+        NOTE: Milvus deletion is soft and asynchronous. Call `flush_and_reload()` afterwards to ensure consistency.
+        """
+        # Delete old record (soft delete)
+        self.milv_wrapper.collection.delete(expr=f"id == {id}")
+        
+        # Prepare new record with the same id
+        memory_dict = asdict(item)
+        memory_dict['id'] = id  # Keep same ID
+        memory_dict['timestamp'] = memory_dict['time']
+        memory_dict['time'] = [memory_dict['time'], 0]
+
+        if 'text_embedding' not in memory_dict or memory_dict['text_embedding'] is None:
+            memory_dict['text_embedding'] = self.embedder.embed_query(memory_dict['caption'])
+
+        # Insert new record
+        self.milv_wrapper.insert([memory_dict])
                 
     def search_by_text(self, query: str, k:int = 8) -> str:
         # self.milv_wrapper.reload()
