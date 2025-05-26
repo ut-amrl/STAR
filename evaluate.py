@@ -59,11 +59,13 @@ def evaluate(args):
     agent = Agent()
     
     data_metadata = load_data_metadata(args.data_dir)
+    # NOTE: be aware need to update load_task_metadata for different versions of task types
     task_metadata = load_task_metadata(args.task_file, args.benchmark_dir)
     bag_waypoint_mapping = load_annotated_waypoints(args.benchmark_dir)
     waypoints = load_waypoints(args.benchmark_dir)
     
-    included_task_types = args.task_types + [f"{t}_wp_only" for t in args.task_types]
+    # included_task_types = args.task_types + [f"{t}_wp_only" for t in args.task_types] + [f"{t}_recaption_wp_only" for t in args.task_types]
+    included_task_types = [f"{t}_recaption_wp_only" for t in args.task_types]
     
     output = {
         "task_metadata": task_metadata,
@@ -120,6 +122,8 @@ def evaluate(args):
                 remember(memory, inpaths, time_offsets, viddirs, waypoint_only=True)
             else:
                 remember(memory, inpaths, time_offsets, viddirs, waypoint_only=False)
+            
+            agent.allow_recaption = "recaption" in task_type
             agent.set_memory(memory)
                 
             for task in task_data["tasks"]:

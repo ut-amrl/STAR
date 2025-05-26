@@ -99,6 +99,7 @@ class Agent:
         output: Annotated[Sequence, replace_messages]
     
     def __init__(self,
+        allow_recaption: bool = False,
         navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None, 
         observe_fn: Callable[[], GetImageSrvResponse] = None,
         pick_fn = None,
@@ -107,6 +108,8 @@ class Agent:
         vlm_type: str = "gpt-4o", 
         verbose: bool = False
     ):
+        self.allow_recaption = allow_recaption
+        
         # TODO raise error if the functions are not callable in non-memory-only mode
         self.navigate_fn = navigate_fn
         self.observe_fn = observe_fn
@@ -130,7 +133,7 @@ class Agent:
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
         
-        recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm, self.vlm_raw, self.logger)
+        recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm, self.vlm_raw, self.allow_recaption, self.logger)
         self.recall_tools = [recall_tool]
         self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.recall_tools]
         

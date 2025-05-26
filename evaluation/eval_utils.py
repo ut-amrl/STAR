@@ -21,6 +21,7 @@ def load_task_metadata(task_file_path: str, benchmark_dir: str):
             full_path = os.path.join(benchmark_dir, "tasks", category, filename)
             task_dict[category].append(full_path)
             task_dict[f"{category}_wp_only"].append(full_path)
+            task_dict[f"{category}_recaption_wp_only"].append(full_path)
 
     return task_dict
 
