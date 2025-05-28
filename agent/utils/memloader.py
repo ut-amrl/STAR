@@ -11,7 +11,7 @@ def remember(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: l
     for inpath, time_offset, viddir in zip(inpaths, time_offsets, viddirs):
         with open(inpath, 'r') as f:
             for entry in json.load(f):
-                if waypoint_only and int(entry["waypoint"]) < 0:
+                if ("waypoint" in entry) and waypoint_only and (int(entry["waypoint"]) < 0):
                     continue
                 t, pos, caption, text_embedding, start_frame, end_frame = entry["time"], entry["base_position"], entry["base_caption"], entry["base_caption_embedding"], entry["start_frame"], entry["end_frame"]
                 t += time_offset
@@ -21,7 +21,7 @@ def remember(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: l
                     text_embedding=text_embedding,
                     time=t,
                     position=pos,
-                    theta=0,
+                    theta=0, # TODO: handle theta
                     vidpath=viddir,
                     start_frame=start_frame,
                     end_frame=end_frame

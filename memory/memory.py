@@ -4,6 +4,7 @@ from typing import List
 import inspect 
 from datetime import datetime
 import re
+import json
 
 from langchain_milvus import Milvus
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -304,13 +305,12 @@ class MilvusMemory(Memory):
         rets = []
         for item in memory_list:
             ret = {"id": item.metadata["id"], 
-                   "timestamp": item.metadata["timestamp"],
+                   "timestamp": float(item.metadata["timestamp"]),
                    "position": str(item.metadata["position"]), 
-                   "theta": item.metadata["theta"],
+                   "theta": float(item.metadata["theta"]),
                    "vidpath": item.metadata["vidpath"], 
                    "start_frame": item.metadata["start_frame"], 
                    "end_frame": item.metadata["end_frame"], 
                    "text": item.page_content}
             rets.append(ret)
-        import json
         return json.dumps(rets)

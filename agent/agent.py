@@ -27,7 +27,8 @@ import roslib; roslib.load_manifest('amrl_msgs')
 from amrl_msgs.srv import (
     GetImageSrvResponse,
     GetImageAtPoseSrvResponse, 
-    PickObjectSrvResponse
+    PickObjectSrvResponse,
+    GetVisibleObjectsSrvResponse
 )
 
 def from_initialize_object_search_to(state):
@@ -103,6 +104,7 @@ class Agent:
         navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None, 
         observe_fn: Callable[[], GetImageSrvResponse] = None,
         pick_fn = None,
+        visible_objects_fn: Callable[[], GetVisibleObjectsSrvResponse] = None,
         image_path_fn: Callable[[str], str] = None,
         llm_type: str = "gpt-4", 
         vlm_type: str = "gpt-4o", 
@@ -114,6 +116,7 @@ class Agent:
         self.navigate_fn = navigate_fn
         self.observe_fn = observe_fn
         self.pick_fn = pick_fn
+        self.visible_objects_fn = visible_objects_fn
         self.image_path_fn = image_path_fn
         
         self.logger = get_logger()
@@ -617,13 +620,13 @@ class Agent:
             target["position"] = eval(target["position"])
         query_txt = current_goal.query_obj_cls
         
-        # TODO: need to use theta instead of position in the future
-        response = self.navigate_fn(target["position"], target["position"][2])
-        
-        # TODO: need to feedback the success of navigation to the LLM and avoid raising error
-        response = self.observe_fn()
-        
+        # NOTE currently, cobot takes (x,y,theta), while simulator takes (x.y.z)
+        nav_response = self.navigate_fn(target["position"], target["position"][2]) # TODO: need to use theta instead of position in the future
+        obs_response = self.observe_fn() # TODO: need to feedback the success of navigation to the LLM and avoid raising error
+        obj_response = self.visible_objects_fn()
         import pdb; pdb.set_trace()
+        
+        return {"current_goal": current_goal}
         
         goal_x, goal_y, goal_theta = target["position"][0], target["position"][1], target["position"][2]
         
@@ -672,6 +675,7 @@ class Agent:
     
     def retrieval_terminate(self, state):
         next_target = state["current_goal"].next_target("mem")
+        self.logger.info(f"Retrieval terminated. Output: {next_target}")
         if next_target is not None:
             next_target["output_type"] = "episode"
         return {"output": next_target}

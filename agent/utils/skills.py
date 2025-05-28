@@ -10,7 +10,9 @@ from amrl_msgs.srv import (
     GetImageAtPoseSrvRequest, 
     GetImageAtPoseSrvResponse, 
     PickObjectSrv, 
-    PickObjectSrvResponse
+    PickObjectSrvResponse,
+    GetVisibleObjectsSrv,
+    GetVisibleObjectsSrvResponse
 )
 from agent.utils.utils import *
 
@@ -60,5 +62,14 @@ def pick() -> PickObjectSrvResponse:
         print("Service call failed:", e)
         
 
-    
-    
+def get_visible_objects() -> GetVisibleObjectsSrvResponse:
+    """
+    Get a list of visible objects.
+    """
+    rospy.wait_for_service("/moma/visible_objects")
+    try:
+        get_visible_objects_service = rospy.ServiceProxy("/moma/visible_objects", GetVisibleObjectsSrv)
+        response = get_visible_objects_service()
+        return response
+    except rospy.ServiceException as e:
+        print("Service call failed:", e)    
