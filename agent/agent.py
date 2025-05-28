@@ -23,12 +23,14 @@ from agent.utils.tools import (
 from memory.memory import MilvusMemory
 
 import rospy
+from sensor_msgs.msg import Image
 import roslib; roslib.load_manifest('amrl_msgs')
 from amrl_msgs.srv import (
     GetImageSrvResponse,
     GetImageAtPoseSrvResponse, 
     PickObjectSrvResponse,
-    GetVisibleObjectsSrvResponse
+    GetVisibleObjectsSrvResponse,
+    SemanticObjectDetectionSrvResponse
 )
 
 def from_initialize_object_search_to(state):
@@ -101,7 +103,8 @@ class Agent:
     
     def __init__(self,
         allow_recaption: bool = False,
-        navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None, 
+        navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
+        find_object_fn: Callable[[str], List[List[int]]] = None, 
         observe_fn: Callable[[], GetImageSrvResponse] = None,
         pick_fn = None,
         visible_objects_fn: Callable[[], GetVisibleObjectsSrvResponse] = None,
@@ -115,6 +118,7 @@ class Agent:
         # TODO raise error if the functions are not callable in non-memory-only mode
         self.navigate_fn = navigate_fn
         self.observe_fn = observe_fn
+        self.find_object_fn = find_object_fn
         self.pick_fn = pick_fn
         self.visible_objects_fn = visible_objects_fn
         self.image_path_fn = image_path_fn
@@ -622,8 +626,9 @@ class Agent:
         
         # NOTE currently, cobot takes (x,y,theta), while simulator takes (x.y.z)
         nav_response = self.navigate_fn(target["position"], target["position"][2]) # TODO: need to use theta instead of position in the future
-        obs_response = self.observe_fn() # TODO: need to feedback the success of navigation to the LLM and avoid raising error
-        obj_response = self.visible_objects_fn()
+        find_response = self.find_object_fn(query_txt) 
+        # obs_response = self.observe_fn() # TODO: need to feedback the success of navigation to the LLM and avoid raising error
+        # obj_response = self.visible_objects_fn()
         import pdb; pdb.set_trace()
         
         return {"current_goal": current_goal}
