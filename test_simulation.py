@@ -40,6 +40,7 @@ def run(args):
     agent = Agent(
         navigate_fn=navigate,
         observe_fn=observe,
+        find_object_fn=find_object,
         pick_fn=pick,
         visible_objects_fn=get_visible_objects,
     )

@@ -60,14 +60,16 @@ def from_find_at_to(state):
 
 class ObjectRetrievalPlan:
     def __init__(self):
-        self.found_in_world = False
-        self.found_in_mem = False
+        self.found_in_world: bool = False
+        self.found_in_mem: bool = False
         self.task = None # a description of the plan
         self.task_type = None
         self.query_obj_desc = None
         self.query_obj_cls = None
         self.query_img = None # a past observation of the instance
         self.annotated_query_img = None
+        self.has_picked: bool = False
+        self.instance_uid: str = None # a unique identifier for the instance, 
 
         self.candidate_records_in_mem = []
         self.explored_records_in_mem = []
@@ -106,7 +108,7 @@ class Agent:
         navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
         find_object_fn: Callable[[str], List[List[int]]] = None, 
         observe_fn: Callable[[], GetImageSrvResponse] = None,
-        pick_fn = None,
+        pick_fn: Callable[[str], PickObjectSrvResponse] = None,
         visible_objects_fn: Callable[[], GetVisibleObjectsSrvResponse] = None,
         image_path_fn: Callable[[str], str] = None,
         llm_type: str = "gpt-4", 
@@ -626,10 +628,13 @@ class Agent:
         
         # NOTE currently, cobot takes (x,y,theta), while simulator takes (x.y.z)
         nav_response = self.navigate_fn(target["position"], target["position"][2]) # TODO: need to use theta instead of position in the future
-        find_response = self.find_object_fn(query_txt) 
-        # obs_response = self.observe_fn() # TODO: need to feedback the success of navigation to the LLM and avoid raising error
-        # obj_response = self.visible_objects_fn()
-        import pdb; pdb.set_trace()
+        if nav_response.success:
+            find_response = self.find_object_fn(query_txt) 
+            current_goal.found_in_world = find_response.success
+        
+        if current_goal.found_in_world:
+            position = target['position']
+            self.logger.info(f"Found {query_txt} at ({position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f})!")
         
         return {"current_goal": current_goal}
         
@@ -667,11 +672,16 @@ class Agent:
         return {"current_goal": current_goal}
     
     def pick(self, state):
-        object_text = state["current_goal"].query_obj_cls
-        curr_target = state["current_goal"].curr_target()
+        current_goal = state["current_goal"]
+        query_text = current_goal.query_obj_cls
+        self.logger.info(f"Attempting to pick up object: {query_text}")
+        
+        pick_response = self.pick_fn(query_text)
         import pdb; pdb.set_trace()
-        response = request_pick_service(query_txt=object_text)
-        return
+        
+        current_goal.has_picked = pick_response.success
+        current_goal.instance_uid = pick_response.instance_uid
+        return {"current_goal": current_goal}
     
     def terminate(self, state):
         curr_target = state["current_goal"].curr_target()
