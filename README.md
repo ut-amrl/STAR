@@ -35,7 +35,11 @@ To run evaluation script:
 python evaluate.py --benchmark_dir <benchmark_dir> --data_dir <data_dir> --task_types <unambiguous spatial spatial_temporal ...>
 ```
 
+If you're using the MoMaBenchmark script, `<benchmark_dir>` referts to its `outputs` directory (the one contains annotations and tasks), and `<data_dir>` refers to the postprocessed `data` directory, containting captions and images.
+
 To visualize the result:
 ```bash
 python evaluation/analyze.py
 ```
+
+In addition, you can also use `test_simulation.py` for a quick start. `--inpaths` assumes a list of paths to the caption json files, and `--viddirs` requires a list of paths to the corresponding image directory.
