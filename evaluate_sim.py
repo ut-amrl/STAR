@@ -14,10 +14,29 @@ from agent.utils.skills import *
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate the agent in simulation.")
     parser.add_argument(
+        "--benchmark_dir",
+        type=str,
+        required=True,
+        help="Path to the directory containing the task files.",
+    )
+    parser.add_argument(
         "--data_dir",
         type=str,
         # required=True,
         help="Path to the directory containing the data files.",
+    )
+    parser.add_argument(
+        "--task_file",
+        type=str,
+        default="evaluation/config/tasks_sim.txt",
+        help="Path to the task file.",
+    )
+    parser.add_argument(
+        "--task_types",
+        type=str,
+        nargs="*",
+        default=["unambiguous", "spatial", "spatial_temporal"],
+        help="List of task type prefixes to evaluate (e.g., unambiguous spatial). If not set, evaluate all."
     )
     args = parser.parse_args()
     return args
@@ -35,6 +54,20 @@ def evaluate(args):
         pick_fn=pick,
         image_path_fn=get_image_path_for_simulation,
     )
+    
+    data_metadata = load_virtualhome_data_metadata(args.data_dir)
+    task_metadata = load_task_metadata(
+        args.task_file, 
+        args.benchmark_dir, 
+        prefix="sim_tasks",
+        versions=[""]
+    )
+    import pdb; pdb.set_trace()
+    
+    output = {
+        "task_metadata": task_metadata,
+    }
+    results = defaultdict(list)
     
     questions = [
         "Bring me the green book.",

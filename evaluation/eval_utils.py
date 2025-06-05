@@ -4,7 +4,12 @@ import json
 import csv
 from collections import defaultdict
 
-def load_task_metadata(task_file_path: str, benchmark_dir: str):
+def load_task_metadata(
+    task_file_path: str, 
+    benchmark_dir: str, 
+    prefix: str = "tasks",
+    versions: list = ["", "_wp_only", "_recaption_wp_only"]
+):
     # Initialize the dictionary with all required keys
     
     task_dict = defaultdict(list)
@@ -18,10 +23,12 @@ def load_task_metadata(task_file_path: str, benchmark_dir: str):
     for line in lines:
         category, filename = line.split("/", 1)
         if category in task_dict:
-            full_path = os.path.join(benchmark_dir, "tasks", category, filename)
-            task_dict[category].append(full_path)
-            task_dict[f"{category}_wp_only"].append(full_path)
-            task_dict[f"{category}_recaption_wp_only"].append(full_path)
+            full_path = os.path.join(benchmark_dir, prefix, category, filename)
+            for version in versions:
+                task_dict[f"category{version}"].append(full_path)
+            # task_dict[category].append(full_path)
+            # task_dict[f"{category}_wp_only"].append(full_path)
+            # task_dict[f"{category}_recaption_wp_only"].append(full_path)
 
     return task_dict
 
@@ -79,4 +86,17 @@ def load_data_metadata(data_dir: str):
         else:
             raise FileNotFoundError(f"Missing caption_gpt4o.json in {bag_path}")
     
+    return result
+
+def load_virtualhome_data_metadata(data_dir: str):
+    result = {}
+    for dataname in os.listdir(data_dir):
+        data_path = os.path.join(data_dir, dataname)
+        if not os.path.isdir(data_path):
+            continue  # skip non-directory entries
+        simulation_data_dir = os.path.join(data_path, "0")
+
+        caption_file = os.path.join(simulation_data_dir, "caption_synthtic.json")
+        if os.path.exists(caption_file):
+            result[dataname] = caption_file
     return result

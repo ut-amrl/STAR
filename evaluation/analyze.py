@@ -7,11 +7,15 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 
-EXPECTED_TASK_TYPES = ["unambiguous", "spatial", "spatial_temporal"]
+EXPECTED_TASK_TYPES = [
+    # "unambiguous", 
+    # "spatial", 
+    "spatial_temporal"
+]
 TASK_TYPE_ORDER = [
-    "unambiguous", "unambiguous_wp_only",
-    "spatial", "spatial_wp_only",
-    "spatial_temporal", "spatial_temporal_wp_only"
+    # "unambiguous", "unambiguous_wp_only",
+    # "spatial", "spatial_wp_only",
+    "spatial_temporal", "spatial_temporal_wp_only", "spatial_temporal_recaption_wp_only"
 ]
 ALL_TASK_TYPES = []
 
@@ -115,6 +119,7 @@ if __name__ == "__main__":
     for task_type in EXPECTED_TASK_TYPES:
         ALL_TASK_TYPES.append(task_type)
         ALL_TASK_TYPES.append(f"{task_type}_wp_only")
+        ALL_TASK_TYPES.append(f"{task_type}_recaption_wp_only")
     
     args = parse_args()
     results_data = load_results_from_dir(args.result_dir)
