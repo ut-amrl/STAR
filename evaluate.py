@@ -60,7 +60,11 @@ def evaluate(args):
     
     data_metadata = load_data_metadata(args.data_dir)
     # NOTE: be aware need to update load_task_metadata for different versions of task types
-    task_metadata = load_task_metadata(args.task_file, args.benchmark_dir)
+    task_metadata = load_task_metadata(
+        args.task_file, 
+        args.benchmark_dir,
+        args.task_types
+    )
     bag_waypoint_mapping = load_annotated_waypoints(args.benchmark_dir)
     waypoints = load_waypoints(args.benchmark_dir)
     

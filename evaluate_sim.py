@@ -22,8 +22,14 @@ def parse_args():
     parser.add_argument(
         "--data_dir",
         type=str,
-        # required=True,
+        required=True,
         help="Path to the directory containing the data files.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="evaluation/sim_outputs/mem_retrieval/",
+        help="Directory to save evaluation results (default: evaluation/sim_outputs/mem_retrieval/)"
     )
     parser.add_argument(
         "--task_file",
@@ -41,11 +47,28 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def evaluate_one_task(args, agent: Agent, task: dict):
+def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict, annotations):
     result = agent.run(
-        question=task['task'],
-        today=f"Today is {args.current_pretty_date}."
+        # question=task['task'],
+        question = "Bring me a book",
+        today=f"Today is {args.current_pretty_date}.",
+        graph_type="retrieval",
     )
+    if result is None:
+        return (False, (None, None, None, None))
+    
+    instances = []
+    for annotation in annotations:
+        if int(annotation["start_frame"]) >= int(result["start_frame"]) and \
+           int(result["end_frame"]) >= int(annotation["end_frame"]):
+               instances += [item for sublist in annotation["target_instances"].values() for item in sublist]
+    instances = list(set(instances))
+    
+    return (task["instance_name"] in instances, 
+            (result["start_frame"], result["end_frame"], task["instance_name"], instances))
+    
+def evaluate_one_execution_task(args, agent: Agent, task: dict):
+    pass
     
 def evaluate(args):
     agent = Agent(
@@ -59,52 +82,120 @@ def evaluate(args):
     task_metadata = load_task_metadata(
         args.task_file, 
         args.benchmark_dir, 
+        args.task_types,
         prefix="sim_tasks",
         versions=[""]
     )
-    import pdb; pdb.set_trace()
+    included_task_types = task_metadata.keys()
     
     output = {
         "task_metadata": task_metadata,
     }
     results = defaultdict(list)
     
-    questions = [
-        "Bring me the green book.",
-    ]
+    for task_type, task_paths in task_metadata.items():
+        if task_type not in included_task_types:
+            continue
+        
+        # progress bar
+        total_tasks = 0
+        task_path_to_num_tasks = {}
+        for task_path in task_paths:
+            with open(task_path, "r") as f:
+                task_data = json.load(f)
+                n_tasks = len(task_data["tasks"])
+                task_path_to_num_tasks[task_path] = n_tasks
+                total_tasks += n_tasks
+        pbar = tqdm(total=total_tasks, desc=f"Evaluating [{task_type}]", unit="task")
+        
+        for task_path in task_paths:
+            task_id = Path(task_path).stem
+            
+            with open(task_path, "r") as f:
+                task_data = json.load(f)
+                
+            db_name = f"virtualhome_{task_type}_{task_id}"
+            timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            obs_savepath = f"data/cobot/{task_type}_{task_id}_{timestamp}/"
+            memory = MilvusMemory(db_name, obs_savepth=obs_savepath)
+            memory.reset()
     
-    db_name = "test_virtualhome"
-    memory = MilvusMemory(db_name, obs_savepth=None)
-    memory.reset()
+            bag_unix_times = {}
+            for bagname, (date_str, time_str) in task_data["bag_time_mapping"].items():
+                try:
+                    dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+                    if bagname == task_data["bagnames"][-1]:
+                        try:
+                            args.current_pretty_date = dt.strftime("%A, %b %-d, %Y")  # Linux/Mac
+                        except ValueError:
+                            args.current_pretty_date = dt.strftime("%A, %b %#d, %Y")  # Windows fallback
+                    # dt = dt.replace(tzinfo=timezone.utc)
+                    unix_time = dt.timestamp()
+                    bag_unix_times[bagname] = unix_time
+                except Exception as e:
+                    raise ValueError(f"Failed to parse datetime for bag '{bagname}': {e}")
     
-    inpaths = [
-        "/robodata/taijing/benchmarks/virtualhome/unity_output/scene4_754ab231d3_0/0/caption_gpt4o.json",
-    ]
-    # Convert "2025-02-27 09:00:00" to double UNIX timestamp
-    dt = datetime(2025, 2, 27, 9, 0, 0, tzinfo=timezone.utc)
-    timestamp = float(dt.timestamp())
-    time_offsets = [
-        timestamp,
-    ]
-    try:
-        args.current_pretty_date = dt.strftime("%b %-d, %Y")  # Linux/Mac
-    except ValueError:
-        args.current_pretty_date = dt.strftime("%b %#d, %Y")  # Windows fallback
-    viddirs = [
-        "/robodata/taijing/benchmarks/virtualhome/unity_output/scene4_754ab231d3_0/0/",
-    ]
-    remember(memory, inpaths, time_offsets, viddirs)
-    agent.set_memory(memory)
+            inpaths, time_offsets, viddirs = [], [], []
+            for bagname in task_data["bagnames"]:
+                inpaths.append(data_metadata[bagname])
+                time_offsets.append(bag_unix_times[bagname])
+                viddirs.append(os.path.join(args.data_dir, bagname, "images"))
+            remember(memory, inpaths, time_offsets, viddirs)
+            
+            with open(os.path.join(str(Path(inpaths[-1]).parent), "caption_synthetic.json"), "r") as f:
+                annotations = json.load(f)
+            if annotations is None:
+                raise ValueError(f"No annotations found in {inpaths[-1]}")
+                
+            agent.allow_recaption = "recaption" in task_type
+            agent.set_memory(memory)
+            
+            for task in task_data["tasks"]:
+                success, _ = evaluate_one_mem_retrieval_task(args, agent, task, annotations)
+                result = {
+                    "task": task["task"],
+                    "task_type": task_type,
+                    "instance_name": task["instance_name"],
+                    "instance_class": task["instance_class"],
+                    "success": success,
+                }
+                results[task_type].append(result)
+                pbar.update(1)
+                success = sum([r["success"] for r in results[task_type]])
+                total = len(results[task_type])
+                rate = 100.0 * success / total if total > 0 else 0.0
+                pbar.set_postfix_str(f"({rate:.1f}%)")
+                
+            utility.drop_collection(db_name)
+            import time; time.sleep(1)
+        pbar.close()
+        
+    output["results"] = results
+    return output
     
-    for question in questions:
-        task = {
-            "task": question,
-        }
-        evaluate_one_task(args, agent, task)
-    
-    utility.drop_collection(db_name)
-    import time; time.sleep(1)
-
 if __name__ == "__main__":
     args = parse_args()
     results = evaluate(args)
+    
+    os.makedirs(args.output_dir, exist_ok=True)
+    for task_type, result_list in results["results"].items():
+        output_path = os.path.join(args.output_dir, f"results_{task_type}.json")
+        
+        result = {
+            "task_metadata": results["task_metadata"],
+            "results": {},
+        }
+        result["results"][task_type] = result_list
+        
+        with open(output_path, "w") as f:
+            json.dump(result_list, f, indent=2)
+        print(f"✅ Saved {task_type} results to {output_path}")
+
+    
+    # Print summary
+    print("📊 Evaluation Summary:")
+    for task_type, result_list in results["results"].items():
+        total = len(result_list)
+        success = sum(r["success"] for r in result_list)
+        rate = 100.0 * success / total if total > 0 else 0.0
+        print(f" - {task_type:<20}: {success}/{total} succeeded ({rate:.1f}%)")

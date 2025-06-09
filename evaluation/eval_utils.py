@@ -7,15 +7,15 @@ from collections import defaultdict
 def load_task_metadata(
     task_file_path: str, 
     benchmark_dir: str, 
+    task_types: list[str],
     prefix: str = "tasks",
     versions: list = ["", "_wp_only", "_recaption_wp_only"]
 ):
     # Initialize the dictionary with all required keys
     
     task_dict = defaultdict(list)
-    task_dict["unambiguous"] = []
-    task_dict["spatial"] = []
-    task_dict["spatial_temporal"] = []
+    for task_type in task_types:
+        task_dict[task_type] = []
 
     with open(task_file_path, "r") as f:
         lines = [line.strip() for line in f if line.strip()]
@@ -25,7 +25,7 @@ def load_task_metadata(
         if category in task_dict:
             full_path = os.path.join(benchmark_dir, prefix, category, filename)
             for version in versions:
-                task_dict[f"category{version}"].append(full_path)
+                task_dict[f"{category}{version}"].append(full_path)
             # task_dict[category].append(full_path)
             # task_dict[f"{category}_wp_only"].append(full_path)
             # task_dict[f"{category}_recaption_wp_only"].append(full_path)
@@ -96,7 +96,8 @@ def load_virtualhome_data_metadata(data_dir: str):
             continue  # skip non-directory entries
         simulation_data_dir = os.path.join(data_path, "0")
 
-        caption_file = os.path.join(simulation_data_dir, "caption_synthtic.json")
+        # caption_file = os.path.join(simulation_data_dir, "caption_synthetic.json")
+        caption_file = os.path.join(simulation_data_dir, "caption_gpt4o.json")
         if os.path.exists(caption_file):
             result[dataname] = caption_file
     return result
