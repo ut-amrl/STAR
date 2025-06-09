@@ -72,14 +72,34 @@ def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict, annotations)
     return (task["instance_name"] in instances, 
             (result["start_frame"], result["end_frame"], task["instance_name"], instances))
     
-def evaluate_one_execution_task(args, agent: Agent, task: dict):
+def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
     result = agent.run(
         question=task['task'],
         today=f"Today is {args.current_pretty_date}.",
     )
+    
+    retrieved_record = result.curr_target()
+    if retrieved_record is None:
+        mem_retrieval_success = False
+    elif retrieved_record["id"] == -1:
+        mem_retrieval_success = False
+    else:
+        instances = []
+        for annotation in annotations:
+            if int(annotation["start_frame"]) >= int(retrieved_record["start_frame"]) and \
+            int(retrieved_record["end_frame"]) >= int(annotation["end_frame"]):
+                instances += [item for sublist in annotation["target_instances"].values() for item in sublist]
+        instances = set(instances)
+        mem_retrieval_success = (task["instance_name"] in instances)
+    
     if not result.has_picked:
-        return (False, None)
-    return (task["instance_name"] == result.instance_uid, result.instance_uid)
+        obj_retrieval_success = False
+        retrieved_instance = None
+    else:
+        obj_retrieval_success = (task["instance_name"] == result.instance_uid)
+        retrieved_instance = result.instance_uid
+        
+    return (obj_retrieval_success, mem_retrieval_success, retrieved_instance)
     
 def evaluate(args):
     agent = Agent(
@@ -179,13 +199,14 @@ def evaluate(args):
                         "success": success,
                     }
                 elif args.eval_type == "execution":
-                    success, retrieved_instance = evaluate_one_execution_task(args, agent, task)
+                    obj_success, mem_success, retrieved_instance = evaluate_one_execution_task(args, agent, task, annotations)
                     result = {
                         "task": task["task"],
                         "task_type": task_type,
                         "instance_name": task["instance_name"],
                         "instance_class": task["instance_class"],
-                        "success": success,
+                        "success": obj_success,
+                        "mem_success": mem_success,
                         "retrieved_instance": retrieved_instance,
                         "target_instance": task["instance_name"],
                     }
@@ -197,7 +218,12 @@ def evaluate(args):
                 success = sum([r["success"] for r in results[task_type]])
                 total = len(results[task_type])
                 rate = 100.0 * success / total if total > 0 else 0.0
-                pbar.set_postfix_str(f"({rate:.1f}%)")
+                pbar_postfix_str = f"({rate:.1f}%)"
+                if args.eval_type == "execution":
+                    mem_success = sum([r["mem_success"] for r in results[task_type]])
+                    mem_rate = 100.0 * mem_success / total if total > 0 else 0.0
+                    pbar_postfix_str += f"/({mem_rate:.1f})%"
+                pbar.set_postfix_str(pbar_postfix_str)
                 
             utility.drop_collection(db_name)
             import time; time.sleep(1)
@@ -231,4 +257,9 @@ if __name__ == "__main__":
         total = len(result_list)
         success = sum(r["success"] for r in result_list)
         rate = 100.0 * success / total if total > 0 else 0.0
-        print(f" - {task_type:<20}: {success}/{total} succeeded ({rate:.1f}%)")
+        summary = f" - {task_type:<20}: {success}/{total} succeeded ({rate:.1f}%)"
+        if args.eval_type == "execution":
+            mem_success = sum(r["mem_success"] for r in result_list)
+            mem_rate = 100.0 * mem_success / total if total > 0 else 0.0
+            summary += f", Memory Retrieval: {mem_success}/{total} ({mem_rate:.1f}%)"
+        print(summary)
