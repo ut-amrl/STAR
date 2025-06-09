@@ -602,8 +602,9 @@ class Agent:
         }
         
         current_goal.candidate_records_in_world.append(dummy_record)
+        return {"messages": response, "current_goal": current_goal}
         
-        return self._prepare_find_from_specific_instance(current_goal)
+        # return self._prepare_find_from_specific_instance(current_goal)
         
     ##############################
     # Robot Tools
@@ -677,7 +678,6 @@ class Agent:
         self.logger.info(f"Attempting to pick up object: {query_text}")
         
         pick_response = self.pick_fn(query_text)
-        import pdb; pdb.set_trace()
         
         current_goal.has_picked = pick_response.success
         current_goal.instance_uid = pick_response.instance_uid
@@ -685,8 +685,10 @@ class Agent:
     
     def terminate(self, state):
         curr_target = state["current_goal"].curr_target()
-        debug_vid(curr_target, "debug")
-        print(curr_target)
+        # debug_vid(curr_target, "debug")
+        # print(curr_target)
+        current_goal = state["current_goal"]
+        return {"output": current_goal}
     
     def retrieval_terminate(self, state):
         next_target = state["current_goal"].next_target("mem")

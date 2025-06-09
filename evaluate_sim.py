@@ -45,11 +45,10 @@ def parse_args():
         help="List of task type prefixes to evaluate (e.g., unambiguous spatial). If not set, evaluate all."
     )
     parser.add_argument(
-        "--eval_types",
+        "--eval_type",
         type=str,
-        nargs="*",
-        default=["mem_retrieval", "execution"],
-        help="List of evaluation types to run (e.g., mem_retrieval execution). If not set, run all."
+        required=True,
+        help="Evaluation type to run (e.g., 'mem_retrieval', 'execution')."
     )
     args = parser.parse_args()
     return args
@@ -77,13 +76,15 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict):
     result = agent.run(
         question=task['task'],
         today=f"Today is {args.current_pretty_date}.",
-        graph_type="retrieval",
     )
-    
+    if not result.has_picked:
+        return (False, None)
+    return (task["instance_name"] == result.instance_uid, result.instance_uid)
     
 def evaluate(args):
     agent = Agent(
         navigate_fn=navigate,
+        find_object_fn=find_object,
         observe_fn=observe,
         pick_fn=pick,
         image_path_fn=get_image_path_for_simulation,
@@ -161,15 +162,36 @@ def evaluate(args):
             agent.allow_recaption = "recaption" in task_type
             agent.set_memory(memory)
             
+            graph_path = os.path.join(args.data_dir, bagname, "0", "graph.json")
+            scene_id = int(bagname.split("_")[0].replace("scene", ""))
+            if not set_virtulhome_scene(graph_path, scene_id):
+                import pdb; pdb.set_trace()
+            
             for task in task_data["tasks"]:
-                success, _ = evaluate_one_mem_retrieval_task(args, agent, task, annotations)
-                result = {
-                    "task": task["task"],
-                    "task_type": task_type,
-                    "instance_name": task["instance_name"],
-                    "instance_class": task["instance_class"],
-                    "success": success,
-                }
+                # TODO use args.eval_types to determine which tasks to run
+                if args.eval_type == "mem_retrieval":
+                    success, _ = evaluate_one_mem_retrieval_task(args, agent, task, annotations)
+                    result = {
+                        "task": task["task"],
+                        "task_type": task_type,
+                        "instance_name": task["instance_name"],
+                        "instance_class": task["instance_class"],
+                        "success": success,
+                    }
+                elif args.eval_type == "execution":
+                    success, retrieved_instance = evaluate_one_execution_task(args, agent, task)
+                    result = {
+                        "task": task["task"],
+                        "task_type": task_type,
+                        "instance_name": task["instance_name"],
+                        "instance_class": task["instance_class"],
+                        "success": success,
+                        "retrieved_instance": retrieved_instance,
+                        "target_instance": task["instance_name"],
+                    }
+                else:
+                    raise ValueError(f"Unknown evaluation type: {args.eval_type}")
+                
                 results[task_type].append(result)
                 pbar.update(1)
                 success = sum([r["success"] for r in results[task_type]])

@@ -101,3 +101,26 @@ def load_virtualhome_data_metadata(data_dir: str):
         if os.path.exists(caption_file):
             result[dataname] = caption_file
     return result
+
+import rospy
+import roslib; roslib.load_manifest('amrl_msgs')
+from amrl_msgs.srv import (
+    ChangeVirtualHomeGraphSrv,
+    ChangeVirtualHomeGraphSrvRequest,
+)
+def set_virtulhome_scene(graph_path: str, scene_id: int = None) -> bool:
+    """
+    Set the virtual home scene by changing the graph.
+    """
+    rospy.wait_for_service("/moma/change_virtualhome_graph", timeout=10)
+    try:
+        change_graph_service = rospy.ServiceProxy("/moma/change_virtualhome_graph", ChangeVirtualHomeGraphSrv)
+        request = ChangeVirtualHomeGraphSrvRequest()
+        request.graph_path = graph_path
+        if scene_id is not None:
+            request.scene_id = scene_id
+        response = change_graph_service(request)
+        return response.success
+    except rospy.ServiceException as e:
+        print("Service call failed:", e)
+        return False
