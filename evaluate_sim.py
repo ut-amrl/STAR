@@ -44,13 +44,19 @@ def parse_args():
         default=["unambiguous", "spatial", "spatial_temporal"],
         help="List of task type prefixes to evaluate (e.g., unambiguous spatial). If not set, evaluate all."
     )
+    parser.add_argument(
+        "--eval_types",
+        type=str,
+        nargs="*",
+        default=["mem_retrieval", "execution"],
+        help="List of evaluation types to run (e.g., mem_retrieval execution). If not set, run all."
+    )
     args = parser.parse_args()
     return args
 
 def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict, annotations):
     result = agent.run(
-        # question=task['task'],
-        question = "Bring me a book",
+        question=task['task'],
         today=f"Today is {args.current_pretty_date}.",
         graph_type="retrieval",
     )
@@ -68,7 +74,12 @@ def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict, annotations)
             (result["start_frame"], result["end_frame"], task["instance_name"], instances))
     
 def evaluate_one_execution_task(args, agent: Agent, task: dict):
-    pass
+    result = agent.run(
+        question=task['task'],
+        today=f"Today is {args.current_pretty_date}.",
+        graph_type="retrieval",
+    )
+    
     
 def evaluate(args):
     agent = Agent(
