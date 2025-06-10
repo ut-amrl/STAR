@@ -73,10 +73,13 @@ def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict, annotations)
             (result["start_frame"], result["end_frame"], task["instance_name"], instances))
     
 def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
-    result = agent.run(
-        question=task['task'],
-        today=f"Today is {args.current_pretty_date}.",
-    )
+    try:
+        result = agent.run(
+            question=task['task'],
+            today=f"Today is {args.current_pretty_date}.",
+        )
+    except Exception as e:
+        return (False, False, None)
     
     retrieved_record = result.curr_target()
     if retrieved_record is None:
