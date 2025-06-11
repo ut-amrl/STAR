@@ -629,6 +629,7 @@ class Agent:
         
         # NOTE currently, cobot takes (x,y,theta), while simulator takes (x.y.z)
         nav_response = self.navigate_fn(target["position"], target["position"][2]) # TODO: need to use theta instead of position in the future
+        self.logger.info(f"Navigated to ({target['position'][0]:.2f}, {target['position'][1]:.2f}, {target['position'][2]:.2f}); Success: {nav_response.success}")
         if nav_response.success:
             find_response = self.find_object_fn(query_txt) 
             current_goal.found_in_world = find_response.success
@@ -674,13 +675,18 @@ class Agent:
     
     def pick(self, state):
         current_goal = state["current_goal"]
-        query_text = current_goal.query_obj_cls
-        self.logger.info(f"Attempting to pick up object: {query_text}")
-        
-        pick_response = self.pick_fn(query_text)
-        
-        current_goal.has_picked = pick_response.success
-        current_goal.instance_uid = pick_response.instance_uid
+        if current_goal.found_in_world:
+            query_text = current_goal.query_obj_cls
+            self.logger.info(f"Attempting to pick up object: {query_text}")
+            
+            pick_response = self.pick_fn(query_text)
+            
+            current_goal.has_picked = pick_response.success
+            current_goal.instance_uid = pick_response.instance_uid
+        else:
+            current_goal.has_picked = False
+            current_goal.instance_uid = None
+            
         return {"current_goal": current_goal}
     
     def terminate(self, state):
@@ -731,6 +737,82 @@ class Agent:
                 "retry": "find_specific_past_instance_action_node",
             }
         )
+        
+        workflow.set_entry_point("initialize_object_search")
+        self.graph = workflow.compile()
+        
+    def _build_no_replanning_graph(self): # doesn't have replanning
+        from langgraph.graph import END, StateGraph
+        from langgraph.prebuilt import ToolNode
+        
+        workflow = StateGraph(Agent.AgentState)
+        
+        workflow.add_node("initialize_object_search", lambda state: try_except_continue(state, self.initialize_object_search))
+        workflow.add_node("terminate", lambda state: self.terminate(state))
+        
+        # Task and the corresponding action nodes
+        workflow.add_node("find_by_description", lambda state: try_except_continue(state, self.find_by_description))
+        workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
+        workflow.add_node("find_by_frequency", lambda state: try_except_continue(state, self.find_by_frequency))
+        workflow.add_node("find_by_best_guess", lambda state: try_except_continue(state, self.find_by_best_guess))
+        
+        # Memory tool nodes
+        workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
+        
+        
+        # Robot tool nodes
+        workflow.add_node("find_at", lambda state: self.find_at(state))
+        workflow.add_node("pick", lambda state: self.pick(state))
+        
+        workflow.add_conditional_edges(
+            "initialize_object_search",
+            from_initialize_object_search_to,
+            {
+                "find_by_description": "find_by_description",
+                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_frequency": "find_by_frequency",
+            }
+        )
+        workflow.add_conditional_edges(
+            "find_by_description",
+            from_find_by_description_to,
+            {
+                "next": "find_at",
+                "find_by_best_guess": "find_by_best_guess"
+            }
+        )
+        workflow.add_edge("find_by_best_guess", "find_at")
+        
+        workflow.add_edge("find_specific_past_instance_action_node", "find_specific_past_instance")
+        workflow.add_conditional_edges( # TODO this condition is incorrect
+            "find_specific_past_instance",
+            from_find_specific_past_instance_to,
+            {
+                "next": "find_by_description",
+                "retry": "find_specific_past_instance_action_node", # TODO need to handle common sense
+            }
+        )
+        
+        workflow.add_edge("find_by_frequency", "find_by_description")
+        workflow.add_conditional_edges(
+            "find_by_frequency",
+            from_find_by_frequency_to,
+            {
+                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_description": "find_by_description",
+            }
+        )
+        
+        workflow.add_conditional_edges(
+            "find_at",
+            from_find_at_to,
+            {
+                "next": "pick",
+                "retry": "terminate" # "find_by_description", # TODO - avoid replanning
+            },
+        )
+        workflow.add_edge("pick", "terminate")
+        workflow.add_edge("terminate", END)
         
         workflow.set_entry_point("initialize_object_search")
         self.graph = workflow.compile()
@@ -815,6 +897,8 @@ class Agent:
     def build_graph(self, graph_type: str):
         if graph_type == "retrieval":
             self._build_retrieval_graph()
+        elif graph_type == "no_replanning":
+            self._build_no_replanning_graph()
         elif graph_type == "full":
             self._build_graph()
         else:

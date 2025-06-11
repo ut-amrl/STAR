@@ -165,6 +165,7 @@ class MilvusMemory(Memory):
         
     def reset(self, drop_collection:bool =True, delete_all_files:bool =False):
         if drop_collection:
+            connections.connect(host=self.db_ip, port=self.db_port)
             utility.drop_collection(self.db_collection_name)
             # print("Resetting memory. We are dropping the current collection")
         if delete_all_files:

@@ -77,6 +77,7 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
         result = agent.run(
             question=task['task'],
             today=f"Today is {args.current_pretty_date}.",
+            graph_type="no_replanning"
         )
     except Exception as e:
         return (False, False, None)
@@ -185,12 +186,13 @@ def evaluate(args):
             agent.allow_recaption = "recaption" in task_type
             agent.set_memory(memory)
             
-            graph_path = os.path.join(args.data_dir, bagname, "0", "graph.json")
-            scene_id = int(bagname.split("_")[0].replace("scene", ""))
-            if not set_virtulhome_scene(graph_path, scene_id):
-                import pdb; pdb.set_trace()
-            
             for task in task_data["tasks"]:
+                # Reset the testing environment
+                graph_path = os.path.join(args.data_dir, bagname, "0", "graph.json")
+                scene_id = int(bagname.split("_")[0].replace("scene", ""))
+                if not set_virtulhome_scene(graph_path, scene_id):
+                    import pdb; pdb.set_trace()
+                
                 # TODO use args.eval_types to determine which tasks to run
                 if args.eval_type == "mem_retrieval":
                     success, _ = evaluate_one_mem_retrieval_task(args, agent, task, annotations)
