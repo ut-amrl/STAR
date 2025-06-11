@@ -104,6 +104,7 @@ class Agent:
         output: Annotated[Sequence, replace_messages]
     
     def __init__(self,
+        agent_type: str = None,
         allow_recaption: bool = False,
         navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
         find_object_fn: Callable[[str], List[List[int]]] = None, 
@@ -115,6 +116,7 @@ class Agent:
         vlm_type: str = "gpt-4o", 
         verbose: bool = False
     ):
+        self.agent_type = agent_type
         self.allow_recaption = allow_recaption
         
         # TODO raise error if the functions are not callable in non-memory-only mode
@@ -151,7 +153,10 @@ class Agent:
         self.best_guess_tool_definitions = [convert_to_openai_function(t) for t in self.best_guess_tools]
         
         prompt_dir = os.path.join(str(os.path.dirname(__file__)), "prompts", "agent")
-        self.object_search_prompt = file_to_string(os.path.join(prompt_dir, 'object_search_prompt.txt'))
+        if self.agent_type is not None and self.agent_type != "":
+            self.object_search_prompt = file_to_string(os.path.join(prompt_dir, f'{self.agent_type}_object_search_prompt.txt'))
+        else:
+            self.object_search_prompt = file_to_string(os.path.join(prompt_dir, 'object_search_prompt.txt'))
 
         # Find specific past instance prompt        
         self.find_specific_past_instance_prompt = file_to_string(os.path.join(prompt_dir, 'find_specific_past_instance_prompt.txt'))
