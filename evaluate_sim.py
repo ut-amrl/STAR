@@ -69,7 +69,7 @@ def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict, annotations)
                instances += [item for sublist in annotation["target_instances"].values() for item in sublist]
     instances = list(set(instances))
     
-    return (task["instance_name"] in instances, 
+    return ((task["instance_name"] in instances) and (task["target_bagname_memory"] in result["vidpath"]), 
             (result["start_frame"], result["end_frame"], task["instance_name"], instances))
     
 def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
@@ -94,7 +94,7 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
             int(retrieved_record["end_frame"]) >= int(annotation["end_frame"]):
                 instances += [item for sublist in annotation["target_instances"].values() for item in sublist]
         instances = set(instances)
-        mem_retrieval_success = (task["instance_name"] in instances)
+        mem_retrieval_success = (task["instance_name"] in instances) and (task["target_bagname_memory"] in retrieved_record["vidpath"])
     
     if not result.has_picked:
         obj_retrieval_success = False
@@ -107,6 +107,7 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
     
 def evaluate(args):
     agent = Agent(
+        agent_type="sim",
         navigate_fn=navigate,
         find_object_fn=find_object,
         observe_fn=observe,
