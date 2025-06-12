@@ -682,9 +682,12 @@ class Agent:
         current_goal = state["current_goal"]
         if current_goal.found_in_world:
             query_text = current_goal.query_obj_cls
-            self.logger.info(f"Attempting to pick up object: {query_text}")
             
             pick_response = self.pick_fn(query_text)
+            if self.logger and pick_response.success:
+                self.logger.info(f"Picked {query_text} successfully! Instance UID: {pick_response.instance_uid}")
+            else:
+                self.logger.info(f"Failed to pick {query_text}.")
             
             current_goal.has_picked = pick_response.success
             current_goal.instance_uid = pick_response.instance_uid

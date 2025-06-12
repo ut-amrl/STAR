@@ -80,6 +80,7 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
             graph_type="no_replanning"
         )
     except Exception as e:
+        import pdb; pdb.set_trace()
         return (False, False, None)
     
     retrieved_record = result.curr_target()
@@ -102,6 +103,9 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
     else:
         obj_retrieval_success = (task["instance_name"] == result.instance_uid)
         retrieved_instance = result.instance_uid
+        
+    if mem_retrieval_success and not obj_retrieval_success:
+        import pdb; pdb.set_trace()
         
     return (obj_retrieval_success, mem_retrieval_success, retrieved_instance)
     

@@ -153,13 +153,13 @@ class MilvusMemory(Memory):
         self.embedder = HuggingFaceEmbeddings(model_name="BAAI/bge-large-en-v1.5")
         self.working_memory = []
         
-        self.text_vector_db = Milvus(
-            self.embedder,
-            connection_args={"host": self.db_ip, "port": self.db_port},
-            collection_name=self.db_collection_name,
-            vector_field='text_embedding',
-            text_field='caption',
-        )
+        # self.text_vector_db = Milvus(
+        #     self.embedder,
+        #     connection_args={"host": self.db_ip, "port": self.db_port},
+        #     collection_name=self.db_collection_name,
+        #     vector_field='text_embedding',
+        #     text_field='caption',
+        # )
         
         self.reset(drop_collection=False)
         
