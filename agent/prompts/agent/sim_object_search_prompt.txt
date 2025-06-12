@@ -9,7 +9,7 @@ Given a natural language user command, extract two pieces of information:
     – A semantic label selected from a given list of candidate classes (e.g., ["dishbowl", "cup", "book"]), provided by the object detection system.
     – Even if the label is slightly unnatural (e.g., “dishbowl”), select the closest match based on the user’s description. Do not invent new labels.
     – This will be used by an object detector for visual grounding.
-    - candidate classes to select from: "book", "toy".
+    - candidate classes to select from: "book", "toy", "folder", "magazine".
 
 3. `task_type`:
     - "find_by_description" – The query describes what the object is (category, attributes, etc.) but does not reference a specific past moment or context. (Examples: "Bring me a book from the shelf.", "Bring me a red book titled 'Machine Learning'.", "Bring me a new cup.")

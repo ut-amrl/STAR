@@ -4,8 +4,13 @@ unambiguous/1636832e.json
 unambiguous/73d3096b.json
 unambiguous/e96204ae.json
 unambiguous/101eec74.json
+unambiguous/9f2b0511.json
+unambiguous/4d78355d.json
+unambiguous/d067abd2.json
+unambiguous/5b3e4a46.json
 spatial/1baa9b72.json
 spatial/1cb8c743.json
+spatial/ef3c621b.json
 spatial/499e9c4a.json
 spatial/310f3090.json
 spatial/88aabb70.json

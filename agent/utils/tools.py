@@ -148,7 +148,7 @@ def create_find_specific_past_instance_tool(
                 response = model.invoke({"question": question, "chat_history": parsed_db_messages})
             
             if response.tool_calls and self.logger:
-                self.logger.info(f"Calling tools: {response.tool_calls}")
+                self.logger.info(f"[SPECIFIC_INSTANCE] Calling tools: {response.tool_calls}")
                 
             if response.tool_calls:
                 for tool_call in response.tool_calls:
@@ -395,7 +395,7 @@ def create_best_guess_tool(memory: MilvusMemory, llm, vlm, logger=None):
             response = model.invoke({"question": question, "chat_history": parsed_db_messages})
             
             if response.tool_calls and self.logger:
-                self.logger.info(f"Calling tools: {response.tool_calls}")
+                self.logger.info(f"[BEST GUESS] Calling tools: {response.tool_calls}")
 
             if response.tool_calls:
                 for tool_call in response.tool_calls:
