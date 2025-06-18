@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="evaluation/sim_outputs/mem_retrieval/",
+        default="evaluation/sim_outputs/",
         help="Directory to save evaluation results (default: evaluation/sim_outputs/mem_retrieval/)"
     )
     parser.add_argument(
@@ -49,6 +49,11 @@ def parse_args():
         type=str,
         required=True,
         help="Evaluation type to run (e.g., 'mem_retrieval', 'execution')."
+    )
+    parser.add_argument(
+        "--include_common_sense",
+        action='store_true',
+        help="Whether to include common sense reasoning in the evaluation.",
     )
     args = parser.parse_args()
     return args
@@ -244,6 +249,9 @@ def evaluate(args):
     
 if __name__ == "__main__":
     args = parse_args()
+    if args.include_common_sense:
+        args.task_type += [f"{t}_common_sense" for t in args.task_types]
+    
     results = evaluate(args)
     
     os.makedirs(args.output_dir, exist_ok=True)

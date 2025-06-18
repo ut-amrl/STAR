@@ -1,3 +1,12 @@
+classonly/37ab8e30.json
+classonly/4863483b.json
+classonly/5b672d53.json
+classonly/68c42405.json
+classonly/af223db5.json
+classonly/c981589b.json
+classonly/d27fbdc0.json
+classonly/db89f1e8.json
+classonly/f90dc902.json
 unambiguous/13b36498.json
 unambiguous/99facf40.json
 unambiguous/1636832e.json
@@ -8,6 +17,10 @@ unambiguous/9f2b0511.json
 unambiguous/4d78355d.json
 unambiguous/d067abd2.json
 unambiguous/5b3e4a46.json
+spatial/989b2eac.json
+spatial/552959af.json
+spatial/a7f522ce.json
+spatial/c6575399.json
 spatial/1baa9b72.json
 spatial/1cb8c743.json
 spatial/ef3c621b.json

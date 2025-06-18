@@ -16,7 +16,7 @@ from agent.utils.debug import get_logger
 from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
 from agent.utils.tools import (
-    create_find_specific_past_instance_tool, 
+    create_find_by_description_with_time_tool, 
     create_best_guess_tool
 )
 
@@ -36,7 +36,7 @@ from amrl_msgs.srv import (
 def from_initialize_object_search_to(state):
     return state["current_goal"].task_type 
 
-def from_find_specific_past_instance_to(state):
+def from_find_by_description_with_time_to(state):
     if state["current_goal"].found_in_mem:
         return "next"
     elif type(state["messages"][-1]) == ToolMessage:
@@ -106,6 +106,7 @@ class Agent:
     def __init__(self,
         agent_type: str = None,
         allow_recaption: bool = False,
+        allow_common_sense: bool = False,
         navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
         find_object_fn: Callable[[str], List[List[int]]] = None, 
         observe_fn: Callable[[], GetImageSrvResponse] = None,
@@ -118,6 +119,7 @@ class Agent:
     ):
         self.agent_type = agent_type
         self.allow_recaption = allow_recaption
+        self.allow_common_sense = allow_common_sense
         
         # TODO raise error if the functions are not callable in non-memory-only mode
         self.navigate_fn = navigate_fn
@@ -144,7 +146,7 @@ class Agent:
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
         
-        recall_tool = create_find_specific_past_instance_tool(self.memory, self.llm, self.vlm, self.vlm_raw, self.allow_recaption, self.logger)
+        recall_tool = create_find_by_description_with_time_tool(self.memory, self.llm, self.vlm, self.vlm_raw, self.allow_recaption, self.logger)
         self.recall_tools = [recall_tool]
         self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.recall_tools]
         
@@ -159,7 +161,7 @@ class Agent:
             self.object_search_prompt = file_to_string(os.path.join(prompt_dir, 'object_search_prompt.txt'))
 
         # Find specific past instance prompt        
-        self.find_specific_past_instance_prompt = file_to_string(os.path.join(prompt_dir, 'find_specific_past_instance_prompt.txt'))
+        self.find_by_description_with_time_prompt = file_to_string(os.path.join(prompt_dir, 'find_by_description_with_time_prompt.txt'))
         self.prepare_find_from_specific_instance_prompt = file_to_string(os.path.join(prompt_dir, 'prepare_find_from_specific_instance_prompt.txt'))
 
         # Recall last seen prompts
@@ -228,7 +230,7 @@ class Agent:
         current_goal = ObjectRetrievalPlan()
         current_goal.task = f"Find {task_info['object_desc']}."
         current_goal.task_type = task_info['task_type']
-        if current_goal.task_type not in ["find_by_description" , "find_specific_past_instance", "find_by_frequency"]:
+        if current_goal.task_type not in ["find_by_description" , "find_by_description_with_time", "find_by_frequency"]:
             raise ValueError(f"LLM failed to respond valid task type. LLM response: {current_goal.task_type}")
         current_goal.query_obj_desc = task_info['object_desc']
         current_goal.query_obj_cls = task_info['object_class']
@@ -369,10 +371,10 @@ class Agent:
         return self._recall_last_seen(current_goal)
     
     ##############################
-    # Recall Specific Episode (find_specific_past_instance)
+    # Recall Specific Episode (find_by_description_with_time)
     ##############################
     
-    def find_specific_past_instance(self, state):
+    def find_by_description_with_time(self, state):
         last_message = state["messages"][-1]
         
         if type(last_message) == ToolMessage:
@@ -396,7 +398,7 @@ class Agent:
             
             prompt = ChatPromptTemplate.from_messages(
                 [
-                    ("system", self.find_specific_past_instance_prompt),
+                    ("system", self.find_by_description_with_time_prompt),
                     ("human", "{question}"),
                 ]
             )
@@ -721,28 +723,28 @@ class Agent:
         workflow.add_edge("retrieval_terminate", END)
         
         workflow.add_node("find_by_description", lambda state: try_except_continue(state, self.find_by_description))
-        workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
+        workflow.add_node("find_by_description_with_time", lambda state: try_except_continue(state, self.find_by_description_with_time))
         
         # Memory tool nodes
-        workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
+        workflow.add_node("find_by_description_with_time_action_node", ToolNode(self.recall_tools))
         
         workflow.add_conditional_edges(
             "initialize_object_search",
             from_initialize_object_search_to,
             {
                 "find_by_description": "find_by_description",
-                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_description_with_time": "find_by_description_with_time",
             }
         )
         workflow.add_edge("find_by_description", "retrieval_terminate")
-        workflow.add_edge("find_specific_past_instance_action_node", "find_specific_past_instance")
+        workflow.add_edge("find_by_description_with_time_action_node", "find_by_description_with_time")
         workflow.add_conditional_edges( # TODO this condition is incorrect
-            "find_specific_past_instance",
-            from_find_specific_past_instance_to,
+            "find_by_description_with_time",
+            from_find_by_description_with_time_to,
             {
                 "next": "retrieval_terminate",
                 "common_sense": "retrieval_terminate",
-                "retry": "find_specific_past_instance_action_node",
+                "retry": "find_by_description_with_time_action_node",
             }
         )
         
@@ -760,12 +762,12 @@ class Agent:
         
         # Task and the corresponding action nodes
         workflow.add_node("find_by_description", lambda state: try_except_continue(state, self.find_by_description))
-        workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
+        workflow.add_node("find_by_description_with_time", lambda state: try_except_continue(state, self.find_by_description_with_time))
         workflow.add_node("find_by_frequency", lambda state: try_except_continue(state, self.find_by_frequency))
         workflow.add_node("find_by_best_guess", lambda state: try_except_continue(state, self.find_by_best_guess))
         
         # Memory tool nodes
-        workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
+        workflow.add_node("find_by_description_with_time_action_node", ToolNode(self.recall_tools))
         
         
         # Robot tool nodes
@@ -777,7 +779,7 @@ class Agent:
             from_initialize_object_search_to,
             {
                 "find_by_description": "find_by_description",
-                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_description_with_time": "find_by_description_with_time",
                 "find_by_frequency": "find_by_frequency",
             }
         )
@@ -791,13 +793,13 @@ class Agent:
         )
         workflow.add_edge("find_by_best_guess", "find_at")
         
-        workflow.add_edge("find_specific_past_instance_action_node", "find_specific_past_instance")
+        workflow.add_edge("find_by_description_with_time_action_node", "find_by_description_with_time")
         workflow.add_conditional_edges( # TODO this condition is incorrect
-            "find_specific_past_instance",
-            from_find_specific_past_instance_to,
+            "find_by_description_with_time",
+            from_find_by_description_with_time_to,
             {
                 "next": "find_by_description",
-                "retry": "find_specific_past_instance_action_node", # TODO need to handle common sense
+                "retry": "find_by_description_with_time_action_node", # TODO need to handle common sense
             }
         )
         
@@ -806,7 +808,7 @@ class Agent:
             "find_by_frequency",
             from_find_by_frequency_to,
             {
-                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_description_with_time": "find_by_description_with_time",
                 "find_by_description": "find_by_description",
             }
         )
@@ -837,12 +839,12 @@ class Agent:
         
         # Task and the corresponding action nodes
         workflow.add_node("find_by_description", lambda state: try_except_continue(state, self.find_by_description))
-        workflow.add_node("find_specific_past_instance", lambda state: try_except_continue(state, self.find_specific_past_instance))
+        workflow.add_node("find_by_description_with_time", lambda state: try_except_continue(state, self.find_by_description_with_time))
         workflow.add_node("find_by_frequency", lambda state: try_except_continue(state, self.find_by_frequency))
         workflow.add_node("find_by_best_guess", lambda state: try_except_continue(state, self.find_by_best_guess))
         
         # Memory tool nodes
-        workflow.add_node("find_specific_past_instance_action_node", ToolNode(self.recall_tools))
+        workflow.add_node("find_by_description_with_time_action_node", ToolNode(self.recall_tools))
         
         
         # Robot tool nodes
@@ -854,27 +856,30 @@ class Agent:
             from_initialize_object_search_to,
             {
                 "find_by_description": "find_by_description",
-                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_description_with_time": "find_by_description_with_time",
                 "find_by_frequency": "find_by_frequency",
             }
         )
-        workflow.add_conditional_edges(
-            "find_by_description",
-            from_find_by_description_to,
-            {
-                "next": "find_at",
-                "find_by_best_guess": "find_by_best_guess"
-            }
-        )
+        if self.allow_common_sense:
+            workflow.add_conditional_edges(
+                "find_by_description",
+                from_find_by_description_to,
+                {
+                    "next": "find_at",
+                    "find_by_best_guess": "find_by_best_guess"
+                }
+            )
+        else:
+            workflow.add_edge("find_by_description", "find_at")
         workflow.add_edge("find_by_best_guess", "find_at")
         
-        workflow.add_edge("find_specific_past_instance_action_node", "find_specific_past_instance")
+        workflow.add_edge("find_by_description_with_time_action_node", "find_by_description_with_time")
         workflow.add_conditional_edges( # TODO this condition is incorrect
-            "find_specific_past_instance",
-            from_find_specific_past_instance_to,
+            "find_by_description_with_time",
+            from_find_by_description_with_time_to,
             {
                 "next": "find_by_description",
-                "retry": "find_specific_past_instance_action_node", # TODO need to handle common sense
+                "retry": "find_by_description_with_time_action_node", # TODO need to handle common sense
             }
         )
         
@@ -883,7 +888,7 @@ class Agent:
             "find_by_frequency",
             from_find_by_frequency_to,
             {
-                "find_specific_past_instance": "find_specific_past_instance",
+                "find_by_description_with_time": "find_by_description_with_time",
                 "find_by_description": "find_by_description",
             }
         )

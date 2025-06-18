@@ -42,10 +42,10 @@ def create_db_txt_search_tool(memory):
                         "This query argument should be a phrase such as 'a crowd gathering' or 'a green car driving down the road'."
         )
         start_time: str = Field(
-            description="Start search time in YYYY-MM-DD HH:MM:SS format. Only search for observations made after this timestamp."
+            description="Start search time in YYYY-MM-DD HH:MM:SS format. Only search for observations made after this timestamp. Following unix standard, this can only be a time after 1970-01-01 00:00:00."
         )
         end_time: str = Field(
-            description="End search time in YYYY-MM-DD HH:MM:SS format. Only search for observations made before this timestamp."
+            description="End search time in YYYY-MM-DD HH:MM:SS format. Only search for observations made before this timestamp. Following unix standard, this can only be a time larger than the start time, and also before current time 2025-03-01."
         )
 
     txt_time_retriever_tool = StructuredTool.from_function(
@@ -56,7 +56,7 @@ def create_db_txt_search_tool(memory):
     )
     return [txt_retriever_tool, txt_time_retriever_tool]
 
-def create_find_specific_past_instance_tool(
+def create_find_by_description_with_time_tool(
     memory: MilvusMemory, 
     llm, 
     vlm, 
