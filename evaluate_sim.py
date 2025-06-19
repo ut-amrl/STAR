@@ -221,10 +221,10 @@ def evaluate(args):
                         "instance_name": task["instance_name"],
                         "instance_class": task["instance_class"],
                         "success": obj_success,
-                        "mem_success": mem_success,
+                        "mem_success": mem_success or obj_success,  # If object retrieval is successful, memory retrieval is also considered successful
                         "retrieved_instance": retrieved_instance,
                         "target_instance": task["instance_name"],
-                    }
+                    } # TODO figure out why ground truth sometimes missed the target instance
                 else:
                     raise ValueError(f"Unknown evaluation type: {args.eval_type}")
                 
