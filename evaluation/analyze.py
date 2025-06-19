@@ -19,6 +19,11 @@ TASK_TYPE_ORDER = [
     # "spatial_wp_only",
     # "spatial_temporal", "spatial_temporal_wp_only", "spatial_temporal_recaption_wp_only"
 ]
+TASK_DISPLAY_NAMES = {
+    "unambiguous": "attribute-based",
+    "spatial": "spatial",  # leave unchanged
+    "spatial_temporal": "spatio-temporal",  # if used in future
+}
 
 
 def parse_args():
@@ -119,31 +124,39 @@ def plot_combined_success_rates(args, stats_dict, metric_keys):
                 rate = success / total if total > 0 else 0.0
                 heights.append(rate)
             color = type_to_color.get(task_type, "gray")
-            ax.bar(x + i * width, heights, width, label=task_type, color=color, edgecolor="black", linewidth=0.5)
+            ax.bar(
+                x + i * width,
+                heights,
+                width,
+                label=TASK_DISPLAY_NAMES.get(task_type, task_type),
+                color=color,
+                edgecolor="black",
+                linewidth=0.5
+            )
+            ax.grid(True, axis="y", linestyle="--", alpha=0.7)
+            ax.set_axisbelow(True)
 
         # Labeling
         title = {
             "success": "Execution Success Rate",
-            "mem_success": "Retrieval Accuracy"
+            "mem_success": "Memory Recall Accuracy"
         }.get(key, key.replace("_", " ").title())
 
         ylabel = {
             "success": "Execution Success Rate",
-            "mem_success": "Retrieval Accuracy"
+            "mem_success": "Memory Recall Accuracy"
         }.get(key, "Success Rate")
 
         ax.set_title(title, fontsize=16)
         ax.set_ylabel(ylabel, fontsize=14)
 
     # Shared axis and formatting
-    axes[0].set_xticks(x + width * (len(task_types) - 1) / 2)
-    axes[0].set_xticklabels(all_classes, rotation=45, ha="right", fontsize=12)
+    center_positions = x + width * (len(task_types) - 1) / 2
     for ax in axes:
-        ax.tick_params(axis="y", labelsize=12)
-        ax.set_ylim(0, 1.0)
-        ax.grid(True, axis="y", linestyle="--", alpha=0.5)
+        ax.set_xticks(center_positions)
+        ax.set_xticklabels(all_classes, rotation=45, ha="right", fontsize=12)
+        ax.legend(title="Task Type")
 
-    axes[0].legend(title="Task Type")
     plt.tight_layout()
     os.makedirs(args.output_dir, exist_ok=True)
     out_path = Path(args.output_dir) / "accuracy.png"
@@ -168,6 +181,8 @@ if __name__ == "__main__":
     all_task_types = EXPECTED_TASK_TYPES.copy()
     results_data = load_results_from_dir(args.result_dir, all_task_types)
     present_keys = get_present_metric_keys(results_data)
+    preferred_order = ["mem_success", "success"]
+    present_keys = [k for k in preferred_order if k in present_keys]
 
     if not present_keys:
         print("❌ No valid metric keys found (expected 'success' or 'mem_success')")

@@ -100,13 +100,24 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
             int(retrieved_record["end_frame"]) >= int(annotation["end_frame"]):
                 instances += [item for sublist in annotation["target_instances"].values() for item in sublist]
         instances = set(instances)
-        mem_retrieval_success = (task["instance_name"] in instances) and (task["target_bagname_memory"] in retrieved_record["vidpath"])
+        if task["task_type"] == "classonly":
+            mem_retrieval_success = False
+            for instance in instances:
+                if task["instance_name"] in instance.lower():
+                    mem_retrieval_success = True
+                    break
+            mem_retrieval_success = mem_retrieval_success and (task["target_bagname_memory"] in retrieved_record["vidpath"])
+        else:
+            mem_retrieval_success = (task["instance_name"] in instances) and (task["target_bagname_memory"] in retrieved_record["vidpath"])
     
     if not result.has_picked:
         obj_retrieval_success = False
         retrieved_instance = None
     else:
-        obj_retrieval_success = (task["instance_name"] == result.instance_uid)
+        if task["task_type"] == "classonly":
+            obj_retrieval_success = task["instance_name"] in result.instance_uid.lower()
+        else:
+            obj_retrieval_success = (task["instance_name"] == result.instance_uid)
         retrieved_instance = result.instance_uid
         
     if mem_retrieval_success and (not obj_retrieval_success) and len(instances) == 1:
@@ -125,12 +136,15 @@ def evaluate(args):
     )
     
     data_metadata = load_virtualhome_data_metadata(args.data_dir)
+    versions = [""]
+    if args.include_common_sense:
+        versions += ["_common_sense"]
     task_metadata = load_task_metadata(
         args.task_file, 
         args.benchmark_dir, 
         args.task_types,
         prefix="sim_tasks",
-        versions=[""]
+        versions=versions
     )
     included_task_types = task_metadata.keys()
     
@@ -194,6 +208,7 @@ def evaluate(args):
                 raise ValueError(f"No annotations found in {inpaths[-1]}")
                 
             agent.allow_recaption = "recaption" in task_type
+            agent.allow_common_sense = "common_sense" in task_type
             agent.set_memory(memory)
             
             for task in task_data["tasks"]:
@@ -249,8 +264,6 @@ def evaluate(args):
     
 if __name__ == "__main__":
     args = parse_args()
-    if args.include_common_sense:
-        args.task_type += [f"{t}_common_sense" for t in args.task_types]
     
     results = evaluate(args)
     
