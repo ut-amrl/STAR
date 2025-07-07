@@ -8,21 +8,31 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 EXPECTED_TASK_TYPES = [
-    "unambiguous",
-    "spatial",
+    # "unambiguous",
+    # "spatial",
     # "spatial_temporal"
+    # "unambiguous_wp_only",
+    # "spatial_wp_only",
+    "spatial_temporal_wp_only",
+    "spatial_temporal_recaption_wp_only"
 ]
 TASK_TYPE_ORDER = [
-    "unambiguous",
+    # "unambiguous",
     # "unambiguous_wp_only",
-    "spatial",
+    # "spatial",
     # "spatial_wp_only",
-    # "spatial_temporal", "spatial_temporal_wp_only", "spatial_temporal_recaption_wp_only"
+    # "spatial_temporal", 
+    "spatial_temporal_wp_only", 
+    "spatial_temporal_recaption_wp_only"
 ]
 TASK_DISPLAY_NAMES = {
     "unambiguous": "attribute-based",
     "spatial": "spatial",  # leave unchanged
-    "spatial_temporal": "spatio-temporal",  # if used in future
+    "spatial_temporal": "temporal",  # if used in future
+    "unambiguous_wp_only": "attribute-based",
+    "spatial_wp_only": "spatial",
+    "spatial_temporal_wp_only": "temporal",
+    "spatial_temporal_recaption_wp_only": "temporal (recaption)"
 }
 
 
@@ -90,7 +100,7 @@ def plot_combined_success_rates(args, stats_dict, metric_keys):
     x = np.arange(len(all_classes))
     width = 0.8 / len(task_types)
 
-    fig, axes = plt.subplots(1, len(metric_keys), figsize=(7 * len(metric_keys), 6), sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, len(metric_keys), figsize=(9 * len(metric_keys), 6), sharex=True, sharey=True)
     if len(metric_keys) == 1:
         axes = [axes]  # ensure iterable
 
@@ -138,12 +148,12 @@ def plot_combined_success_rates(args, stats_dict, metric_keys):
 
         # Labeling
         title = {
-            "success": "Execution Success Rate",
+            "success": "Memory Recall Accuracy",
             "mem_success": "Memory Recall Accuracy"
         }.get(key, key.replace("_", " ").title())
 
         ylabel = {
-            "success": "Execution Success Rate",
+            "success": "Memory Recall Accuracy",
             "mem_success": "Memory Recall Accuracy"
         }.get(key, "Success Rate")
 

@@ -347,7 +347,8 @@ class Agent:
             if 'yes' in eval(response.content)["same_instance"]:
                 self.logger.info(f"Found instance in record: {record}")
                 return [record]
-        self.logger.info(f"Failed to find this instance in memory!")
+        self.logger.info(f"Failed to find this instance in memory!") # TODO improve this
+        return records[:1]
         return None
         
     def _recall_last_seen(self, current_goal: ObjectRetrievalPlan):

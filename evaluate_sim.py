@@ -55,6 +55,11 @@ def parse_args():
         action='store_true',
         help="Whether to include common sense reasoning in the evaluation.",
     )
+    parser.add_argument(
+        "--include_recaption",
+        action='store_true',
+        help="Whether to include recaptioning in the evaluation.",
+    )
     args = parser.parse_args()
     return args
 
@@ -139,6 +144,8 @@ def evaluate(args):
     versions = [""]
     if args.include_common_sense:
         versions += ["_common_sense"]
+    if args.include_recaption:
+        versions += ["_recaption"]
     task_metadata = load_task_metadata(
         args.task_file, 
         args.benchmark_dir, 
