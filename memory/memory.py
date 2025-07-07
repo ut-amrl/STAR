@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, asdict
-from typing import List
+from typing import List, Optional
 import inspect 
 from datetime import datetime
 import re
