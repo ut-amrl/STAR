@@ -21,15 +21,59 @@ from agent.utils.utils import *
 
 class SearchInstance:
     def __init__(self):
-        self.found_in_world: bool = False
-        self.found_in_memory: bool = False
-        
         self.inst_desc: str = ""
         self.inst_viz_path: str = None
         self.annotated_inst_viz = None
         self.annotated_bbox = None
         
+        self.found_in_world: bool = False
+        self.found_in_memory: bool = False
         self.past_observations: List[Dict] = []  # TODO likely needs to be refactored
+        
+    def __str__(self):
+        return f"SearchInstance(inst_desc={self.inst_desc}, inst_viz_path={self.inst_viz_path}, found_in_memory={self.found_in_memory})"
+    
+    def to_message(self, type: str = "mem"):
+        message = []
+        
+        if type == "mem":
+            txt_msg = [{"type": "text", "text": f"Current Memory Search Instance and its most update-to-update status: {self.__str__()}"}]
+        else:
+            txt_msg = [{"type": "text", "text": f"Current World Search Instance and its most update-to-update status: {self.__str__()}"}]
+        
+        message += txt_msg
+        
+        if self.inst_viz_path:
+            try:
+                img = PILImage.open(self.inst_viz_path).convert("RGB")  # RGBA to preserve color + alpha
+            except Exception:
+                # If the image cannot be opened, skip adding the image message
+                return message
+            img = img.resize((512, 512), PILImage.BILINEAR)
+            # Draw the record ID with background
+            draw = ImageDraw.Draw(img)
+            text = f"Current Search Instance: {self.inst_desc}"
+            font = ImageFont.load_default()
+            text_size = draw.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
+            padding = 4
+            bg_rect = (
+                text_size[0] - padding,
+                text_size[1] - padding,
+                text_size[2] + padding,
+                text_size[3] + padding
+            )
+            draw.rectangle(bg_rect, fill=(0, 0, 0))  # Black background
+            draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
+            
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+            img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            img_msg = [get_vlm_img_message(img, type="gpt")]
+            
+            message += img_msg
+        
+        return message
+        
 
 def create_db_txt_search_tool(memory: MilvusMemory):
     class TextRetrieverInput(BaseModel):
@@ -279,13 +323,13 @@ def create_recall_best_match_tool(
             description="(Optional) End time in 'YYYY-MM-DD HH:MM:SS'. Results before this time will be considered."
         )
         
-    return StructuredTool.from_function(
+    return [StructuredTool.from_function(
         func=lambda context, instance_description, search_start_time=None, search_end_time=None: 
             tool_runner.run(context, instance_description, search_start_time, search_end_time),
         name="recall_best_match",
         description="Recalls the single best-matching memory observation based on description and optional time range.",
         args_schema=BestMatchInput
-    )
+    )]
 
 def create_recall_last_seen_tool(
     memory: MilvusMemory,
@@ -449,6 +493,9 @@ def create_determine_search_instance_tool(
             memory_messages = self._parse_memory_records(messages)
             response = chained_model.invoke({"question": question, "memory_records": memory_messages})
         
+            if self.logger:
+                self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] decide() - Tool calls present: {bool(getattr(response, 'tool_calls', None))}")
+        
             if hasattr(response, "tool_calls") and response.tool_calls:
                 for tool_call in response.tool_calls:
                     if tool_call['name'] != "__conversational_response":
@@ -506,6 +553,10 @@ def create_determine_search_instance_tool(
             output["instance_viz_path"] = instance_viz_path
             output["past_observations"] = [target_record] if target_record else []
                 
+            if self.logger:
+                self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] generate() - Parsed output: {parsed}")
+                self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] generate() - Output keys: found_in_memory={output['found_in_memory']}, instance_desc={output['instance_desc']}, instance_viz_path={output['instance_viz_path']}")
+                
             return {"messages": [response], "output": parsed}
         
         def build_graph(self):
@@ -556,22 +607,10 @@ def create_determine_search_instance_tool(
                 ]
             }
             state = self.graph.invoke(inputs)
-            import pdb; pdb.set_trace()
             
             output = state.get("output", [])
             return output
             
-            if output:
-                # TODO assign right value
-                search_instance = SearchInstance()
-                search_instance.found_in_world = output.get("found_in_memory", False)
-                search_instance.inst_desc = output.get("instance_desc", "")
-                search_instance.inst_viz_path = output.get("instance_viz_path", None)
-                search_instance.past_observations = output.get("past_observations", [])
-                return search_instance
-            else:
-                import pdb; pdb.set_trace()
-        
     class DetermineSearchInstanceInput(BaseModel):
         user_task: str = Field(
             description="The high-level task the user wants to perform. For example, 'bring me the book I was reading yesterday'."
@@ -587,11 +626,20 @@ def create_determine_search_instance_tool(
             description="(Optional) A list of memory records retrieved earlier. Each record includes a caption, time, position, and possibly an image path."
         )
         
-    tool_runner = DetermineSearchInstanceAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
-        
-    return StructuredTool.from_function(
-        func=lambda user_task, history_summary, current_task, memory_records: tool_runner.run(user_task, history_summary, current_task, memory_records),
-        name="determine_search_instance",
-        description="Create or Update the search instance based on the high-level user task, current reasoning step, and optionally retrieved memory records.",
+    memory_instance_tool_runner = DetermineSearchInstanceAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+    memory_instance_tool = StructuredTool.from_function(
+        func=lambda user_task, history_summary, current_task, memory_records: memory_instance_tool_runner.run(user_task, history_summary, current_task, memory_records),
+        name="create_or_update_target_search_instance",
+        description="Create or Update the memory search instance based on the high-level user task, current reasoning step, and optionally retrieved memory records. This would be the next memory search target for the agent.",
         args_schema=DetermineSearchInstanceInput
     )
+    
+    real_world_instance_tool_runner = DetermineSearchInstanceAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+    real_world_instance_tool = StructuredTool.from_function(
+        func=lambda user_task, history_summary, current_task, memory_records: real_world_instance_tool_runner.run(user_task, history_summary, current_task, memory_records),
+        name="create_or_update_target_search_instance",
+        description="Create or Update the real world search instance based on the high-level user task, current reasoning step, and optionally retrieved memory records.",
+        args_schema=DetermineSearchInstanceInput
+    )
+    
+    return [memory_instance_tool, real_world_instance_tool]

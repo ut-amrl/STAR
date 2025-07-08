@@ -7,12 +7,20 @@ from agent.utils.tools2 import *
 class Task:
     def __init__(self, task_desc: str):
         self.task_desc: str = task_desc
-        self.search_instance: SearchInstance
+        self.memory_search_instance = SearchInstance()
+        self.world_search_instance = SearchInstance()
         
         self.searched_in_space: list = []
         self.searched_in_time: list = []
 
 class Agent:
+    class AgentState(TypedDict):
+        messages: Annotated[Sequence[BaseMessage], add_messages]
+        agent_history: Annotated[Sequence[BaseMessage], add_messages]
+        search_in_time_history: Annotated[Sequence[BaseMessage], add_messages]
+        search_in_space_history: Annotated[Sequence[BaseMessage], add_messages]
+        last_response: Annotated[Sequence, replace_messages]
+    
     def __init__(self,
         agent_type: str,
         allow_recaption: bool = False,
@@ -20,6 +28,8 @@ class Agent:
         allow_common_sense: bool = False,
         verbose: bool = False,
     ):
+        self.logger = None  # Placeholder for a logger, can be set later
+        
         self.agent_type: str = agent_type
         self.allow_recaption: bool = allow_recaption
         self.allow_replan: bool = allow_replan
@@ -33,9 +43,171 @@ class Agent:
         self.vlm_raw =  ChatOpenAI(model='gpt-4o', api_key=os.environ.get("OPENAI_API_KEY"))
         self.vlm = FunctionsWrapper(self.vlm_raw)
         
+        prompt_dir = os.path.join(str(os.path.dirname(__file__)), "prompts", "agent2")
+        self.search_in_time_prompt = file_to_string(os.path.join(prompt_dir, 'search_in_time_prompt.txt'))
+        
+        self.working_memory = [[]]
+        
     def set_task(self, task_desc: str):
         self.task = Task(task_desc)
         if self.verbose:
             print(f"Task set: {task_desc}")
             
+    def agent(self, state: AgentState):
+        pass
+            
+    def search_in_time(self, state: AgentState):
+        messages = state["messages"]
+        
+        model = self.vlm
+        
+        history_summary = state["search_in_time_history"]
+        memory_search_instance_msg = self.task.memory_search_instance.to_message(type="mem")
+        world_search_instance_msg = self.task.world_search_instance.to_message(type="world")
+        
+        chat_prompt = ChatPromptTemplate.from_messages([
+            ("human", "{history_summary}"),
+            ("human", self.search_in_time_prompt),
+            ("system", "{fact_prompt}"),
+            ("system", memory_search_instance_msg),
+            ("system", world_search_instance_msg),
+            ("human", "Please determine the next action to take!"),
+        ])
+        fact_prompt = ("Here are some facts about the current situation:\n" 
+                          "1. The current date is: {today_str}.\n"
+                          "2. The user task is: {self.task.task_desc}.\n")
+        chained_model = chat_prompt | model
+        
+        response = chained_model.invoke({
+            "fact_prompt": fact_prompt, 
+            "history_summary": history_summary,
+        })
+        import pdb; pdb.set_trace()
+        
+        keys_to_check_for = ["history_summary", "current_task", "tool_call", "tool_input"]
+        parsed = eval(response.content)
+        for key in keys_to_check_for:
+            if key not in parsed:
+                raise ValueError("Missing required keys during generate. Retrying...")
+        if parsed["tool_call"] not in [
+            "create_or_update_memory_search_instance",
+            "create_or_update_real_world_search_instance",
+            "recall_best_match",
+            "recall_last_seen",
+            "recall_all",
+            "search_current_target_instance_in_real_world"
+        ]:
+            raise ValueError(f"Invalid tool call: {parsed['tool_call']}. Retrying...")
+        
+        parsed_response = {
+            "history_summary": parsed["history_summary"],
+            "current_task": parsed["current_task"],
+            "tool_call": parsed["tool_call"],
+            "tool_input": parsed["tool_input"],
+            "search_start_time": parsed.get("search_start_time", None),
+            "search_end_time": parsed.get("search_end_time", None),
+        }
+        
+        tool_call = parsed_response["tool_call"]
+        if tool_call == "create_or_update_memory_search_instance" or \
+           tool_call == "create_or_update_real_world_search_instance" or \
+           tool_call == "search_current_target_instance_in_real_world":
+            tool_call_str = f"{tool_call}()"
+        else:
+            start_time = parsed_response.get("search_start_time", None)
+            end_time = parsed_response.get("search_end_time", None)
+            tool_input = parsed_response["tool_input"]
+            if start_time and end_time:
+                tool_call_str = f"{tool_call}({tool_input}, search_start_time='{start_time}', search_end_time='{end_time}')"
+            else:
+                tool_call_str = f"{tool_call}({tool_input})"
+        tool_call_summary = "----------------\n" 
+        tool_call_summary += f"History Summary: {parsed_response['history_summary']}\n" \
+                            f"Current Task: {parsed_response['current_task']}\n" \
+                            f"Tool Call: {tool_call_str}\n"
+        tool_call_summary += "----------------\n" 
     
+        return {"messages": [response], 
+                # "search_in_time_history": [tool_call_summary], 
+                "search_in_time_history": [response],
+                "last_response": parsed_response,}
+        
+    def search_in_time_action(self, state: AgentState):
+        tool_call_metadata = state["last_response"]
+        
+        tool_call = tool_call_metadata["tool_call"]
+        
+        output = None
+        if tool_call == "create_or_update_memory_search_instance":
+            output = self.create_or_update_memory_search_instance_tool.run({
+                "user_task": self.task.task_desc,
+                "history_summary": tool_call_metadata["history_summary"],
+                "current_task": tool_call_metadata["current_task"],
+                "memory_records": self.working_memory[-1]
+            })
+            import pdb; pdb.set_trace()
+        else:
+            import pdb; pdb.set_trace()
+
+        tool_response_summary = "----------------\n"
+        tool_response_summary += f"Tool Response: {output}\n"
+        tool_response_summary += "----------------\n"
+        return {"search_in_time_history": [str(output)], 
+                "last_response": output,}
+    
+    def search_in_space(self, state: AgentState):
+        pass
+            
+    def search_in_space_action(self, state: AgentState):
+        pass
+            
+    def build_graph(self):
+        """
+        Build the graph for the agent.
+        """
+        workflow = StateGraph(Agent.AgentState)
+        
+        workflow.add_node("search_in_time", lambda state: self.search_in_time(state))
+        workflow.add_node("search_in_time_action", lambda state: self.search_in_time_action(state))
+        
+        workflow.add_edge("search_in_time", "search_in_time_action")
+        workflow.add_edge("search_in_time_action", "search_in_time")
+        
+        workflow.set_entry_point("search_in_time")
+        self.graph = workflow.compile()
+        
+    def set_memory(self, memory: MilvusMemory):
+        self.memory = memory
+        
+        self.best_match_tool = create_recall_best_match_tool(
+            memory=memory,
+            llm=self.llm,
+            llm_raw=self.llm_raw,
+            vlm=self.vlm,
+            vlm_raw=self.vlm_raw,
+            logger=self.logger
+        )[0]
+        determin_search_instance_tools = create_determine_search_instance_tool(
+            memory=memory,
+            llm=self.llm,
+            llm_raw=self.llm_raw,
+            vlm=self.vlm,
+            vlm_raw=self.vlm_raw,
+            logger=self.logger
+        )
+        self.create_or_update_memory_search_instance_tool = determin_search_instance_tools[0]
+        self.create_or_update_real_world_instance_tool = determin_search_instance_tools[1]
+        
+            
+    def run(self, task_data: dict):
+        self.task = Task(task_data["task_desc"])
+        self.today_str = task_data.get("today_str", "2025-01-01")
+        
+        self.build_graph()
+        
+        inputs = { "messages": [
+                (("user", task_data["task_desc"]))
+            ]
+        }
+        state = self.graph.invoke(inputs)
+        import pdb; pdb.set_trace()
