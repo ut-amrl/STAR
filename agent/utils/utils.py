@@ -288,17 +288,26 @@ def filter_retrieved_record(messages: list):
         print()
     return records
             
-def parse_db_records_for_llm(messages: list):
+def parse_db_records_for_llm(messages):
+    is_str = False
+    if type(messages) is not list:
+        is_str = True
+        
+    if is_str:
+        messages = [messages]
     processed_records = [
         {"record_id": record["id"],
-         "text": f"I was at ({eval(record['position'])[0]:.2f}, {eval(record['position'])[1]:.2f}, {eval(record['position'])[2]:.2f}). {record['text']}"} 
+        "text": f"I was at ({eval(record['position'])[0]:.2f}, {eval(record['position'])[1]:.2f}, {eval(record['position'])[2]:.2f}). {record['text']}"} 
         for record in messages
     ]
     parsed_processed_records = [json.dumps(record) for record in processed_records]
     parsed_processed_records = [
         f"[RETRIEVED OBSERVATION] {record}" for record in parsed_processed_records
     ]
-    return parsed_processed_records
+    if is_str:
+        return parsed_processed_records[0]
+    else:
+        return parsed_processed_records
 
 
 ### LLM/VLM/ML tools

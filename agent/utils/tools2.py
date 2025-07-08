@@ -3,6 +3,8 @@ import os
 import re
 from typing import List, Dict, Optional
 from typing import Annotated, Sequence, TypedDict
+from PIL import Image as PILImage
+from PIL import ImageDraw, ImageFont
 
 from langchain.tools import StructuredTool
 from langchain_core.pydantic_v1 import BaseModel, Field
@@ -23,9 +25,11 @@ class SearchInstance:
         self.found_in_memory: bool = False
         
         self.inst_desc: str = ""
-        self.inst_viz = None
+        self.inst_viz_path: str = None
         self.annotated_inst_viz = None
         self.annotated_bbox = None
+        
+        self.past_observations: List[Dict] = []  # TODO likely needs to be refactored
 
 def create_db_txt_search_tool(memory: MilvusMemory):
     class TextRetrieverInput(BaseModel):
@@ -67,6 +71,9 @@ def create_db_txt_search_with_time_tool(memory: MilvusMemory):
         args_schema=TextRetrieverInputWithTime
     )
     return [txt_time_retriever_tool]
+
+def create_db_txt_backward_search_tool(memory: MilvusMemory):
+    pass 
 
 def create_recall_best_match_tool(
     memory: MilvusMemory,
@@ -296,3 +303,295 @@ def create_recall_all_tool(
     logger=None
 ) -> StructuredTool:
     pass
+
+def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
+
+    class MemoryInspectionInput(BaseModel):
+        record_id: int = Field(
+            description="The ID of the memory record you want to inspect. The image associated with this record will be returned in base64 (utf-8) format."
+        )
+
+    def _inspect_memory_record(record_id: int) -> str:
+        # Should return base64-encoded (utf-8) image string for the record
+        docs = memory.get_by_id(record_id)
+        if docs is None or len(docs) == 0:
+            return "" # "No record found with the given ID."
+        record = eval(docs)[0]
+
+        image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
+        vidpath = record["vidpath"]
+        start_frame = record["start_frame"]
+        end_frame = record["end_frame"]
+        start_frame, end_frame = int(start_frame), int(end_frame)
+        frame = (start_frame + end_frame) // 2
+        imgpath = image_path_fn(vidpath, frame)
+        return {record_id : imgpath}
+
+        # img = get_image_from_record(record, type="utf-8", resize=True)
+        # img_msg = get_vlm_img_message(img, type="gpt")
+        # return [img_msg]
+
+    inspection_tool = StructuredTool.from_function(
+        func=_inspect_memory_record,
+        name="inspect_memory_record",
+        description="Given a memory record ID, return its associated visual observation as a base64-encoded image string.",
+        args_schema=MemoryInspectionInput
+    )
+
+    return [inspection_tool]
+
+def create_determine_search_instance_tool(
+    memory: MilvusMemory,
+    llm,
+    llm_raw,
+    vlm,
+    vlm_raw,
+    logger=None
+) -> StructuredTool:
+    
+    class AgentState(TypedDict):
+        messages: Annotated[Sequence[BaseMessage], add_messages]
+        output: Annotated[Sequence, replace_messages] = None
+        
+    def from_decide_to(state: AgentState):
+        messages = state["messages"]
+        last_message = messages[-1]
+        if not last_message.tool_calls:
+            return "end"
+        else:
+            return "action"
+        
+    class DetermineSearchInstanceAgent:
+        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
+            self.memory = memory
+            self.llm = llm
+            self.llm_raw = llm_raw
+            self.vlm = vlm
+            self.vlm_raw = vlm_raw
+            self.logger = logger
+            
+            self.setup_tools(memory)
+            
+            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/determine_search_instance_tool/'
+            self.decide_prompt = file_to_string(prompt_dir+'decide_prompt.txt')
+            self.decide_gen_only_prompt = file_to_string(prompt_dir+'decide_gen_only_prompt.txt')
+            
+            self.decide_call_count = 0
+            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
+            
+        def setup_tools(self, memory: MilvusMemory):
+            self.tools = create_memory_inspection_tool(memory)
+            self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
+            
+        def _parse_memory_records(self, messages: Sequence[BaseMessage]) -> List[Dict]:
+            image_paths = {}
+            for msg in filter(lambda x: isinstance(x, ToolMessage), messages):
+                if not msg.content:
+                    continue
+                try:
+                    val = eval(msg.content)
+                    for k,v in val.items():
+                        image_paths[int(k)] = v
+                except Exception:
+                    continue
+            memory_messages = []
+            for record in self.memory_records:
+                msg = [{"type": "text", "text": parse_db_records_for_llm(record)}]
+                memory_messages += msg
+                
+                if int(record["id"]) in image_paths:
+                    image_path = image_paths[int(record["id"])]
+                    img = PILImage.open(image_path).convert("RGB")  # RGBA to preserve color + alpha
+                    img = img.resize((512, 512), PILImage.BILINEAR)
+                    
+                    # Draw the record ID with background
+                    draw = ImageDraw.Draw(img)
+                    text = f"record_id: {record['id']}"
+                    font = ImageFont.load_default()
+                    text_size = draw.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
+                    padding = 4
+                    bg_rect = (
+                        text_size[0] - padding,
+                        text_size[1] - padding,
+                        text_size[2] + padding,
+                        text_size[3] + padding
+                    )
+                    draw.rectangle(bg_rect, fill=(0, 0, 0))  # Black background
+                    draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
+                    
+                    buffer = BytesIO()
+                    img.save(buffer, format="PNG")
+                    img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    memory_messages += [get_vlm_img_message(img, type="gpt")]
+            return memory_messages
+            
+        def decide(self, state: AgentState):
+            messages = state["messages"]
+            
+            model = self.vlm
+            if self.decide_call_count > 2:
+                prompt = self.decide_gen_only_prompt
+            else:
+                prompt = self.decide_prompt
+                model = model.bind_tools(self.tool_definitions)
+                
+            chat_prompt = ChatPromptTemplate.from_messages([
+                ("human", "{memory_records}"),
+                # ("human", self.previous_tool_requests),
+                ("user", prompt),
+                ("human", "{question}"),
+            ])
+            chained_model = chat_prompt | model
+            question  = f"User Task: {self.user_task}\n" \
+                        f"History Summary: {self.history_summary}\n" \
+                        f"Current Task: {self.current_task}\n"
+                        
+            memory_messages = self._parse_memory_records(messages)
+            response = chained_model.invoke({"question": question, "memory_records": memory_messages})
+        
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                for tool_call in response.tool_calls:
+                    if tool_call['name'] != "__conversational_response":
+                        args = re.sub(r'^\{(.*)\}$', r'(\1)', str(tool_call['args'])) # remove curly braces
+                        self.previous_tool_requests += f" {tool_call['name']} tool with the arguments: {args}.\n"
+                        
+            self.decide_call_count += 1
+            return {"messages": [response]}
+        
+        def generate(self, state: AgentState):
+            messages = state["messages"]
+            keys_to_check_for = ["found_in_memory", "instance_desc", "record_id"]
+            
+            prompt = self.decide_gen_only_prompt
+            chat_prompt = ChatPromptTemplate.from_messages([
+                ("human", "{memory_records}"),
+                ("user", prompt),
+                ("human", "{question}"),
+            ])
+            model = self.vlm
+            chained_model = chat_prompt | model
+            question  = f"User Task: {self.user_task}\n" \
+                        f"History Summary: {self.history_summary}\n" \
+                        f"Current Task: {self.current_task}\n"
+                        
+            memory_messages = self._parse_memory_records(messages)
+            response = chained_model.invoke({"question": question, "memory_records": memory_messages})
+
+            parsed = eval(response.content)
+            for key in keys_to_check_for:
+                if key not in parsed:
+                    raise ValueError("Missing required keys during generate. Retrying...")
+            
+            output = {
+                "found_in_memory": parsed["found_in_memory"],
+                "instance_desc": parsed["instance_desc"],
+            }
+            target_record = None
+            if not parsed["found_in_memory"]:
+                instance_viz_path = None
+            else:
+                for record in self.memory_records:
+                    if int(record["id"]) == int(parsed["record_id"]):
+                        target_record = record
+                        break
+                if target_record is None:
+                    raise ValueError(f"Could not find record with ID {parsed['record_id']} in memory records. Retrying...")
+                image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
+                vidpath = record["vidpath"]
+                start_frame = record["start_frame"]
+                end_frame = record["end_frame"]
+                start_frame, end_frame = int(start_frame), int(end_frame)
+                frame = (start_frame + end_frame) // 2
+                instance_viz_path = image_path_fn(vidpath, frame)
+            output["instance_viz_path"] = instance_viz_path
+            output["past_observations"] = [target_record] if target_record else []
+                
+            return {"messages": [response], "output": parsed}
+        
+        def build_graph(self):
+            workflow = StateGraph(AgentState)
+            
+            workflow.add_node("decide", lambda state: try_except_continue(state, self.decide))
+            workflow.add_node("action", ToolNode(self.tools))
+            workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
+            
+            workflow.add_conditional_edges(
+                "decide",
+                from_decide_to,
+                {
+                    "action": "action",
+                    "end": "generate",
+                },
+            )
+            workflow.add_edge('action', 'decide')
+            workflow.add_edge("generate", END)
+            workflow.set_entry_point("decide")
+            self.graph = workflow.compile()
+            
+            
+        def run(self, user_task: str, history_summary: str, current_task: str, memory_records: Optional[List[Dict]] = None) -> SearchInstance:
+            if self.logger:
+                self.logger.info(
+                    f"[DETERMINE_SEARCH_INSTANCE] Running tool with user_task: {user_task}, "
+                    f"current_task: {current_task}, memory_records: {memory_records}"
+                )
+            
+            self.decide_call_count = 0
+            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
+            
+            self.user_task = user_task
+            self.history_summary = history_summary
+            self.current_task = current_task
+            self.memory_records = memory_records
+            
+            self.build_graph()
+            
+            question = f"In your context, you have the following information, and you will need to address some user request -" \
+                       f"User Task: {user_task}\n" \
+                       f"History Summary: {history_summary}\n" \
+                       f"Current Task: {current_task}\n" \
+                       f"Memory Records: {memory_records if memory_records else 'None'}\n"
+            inputs = { "messages": [
+                    (("user", question))
+                ]
+            }
+            state = self.graph.invoke(inputs)
+            import pdb; pdb.set_trace()
+            
+            output = state.get("output", [])
+            return output
+            
+            if output:
+                # TODO assign right value
+                search_instance = SearchInstance()
+                search_instance.found_in_world = output.get("found_in_memory", False)
+                search_instance.inst_desc = output.get("instance_desc", "")
+                search_instance.inst_viz_path = output.get("instance_viz_path", None)
+                search_instance.past_observations = output.get("past_observations", [])
+                return search_instance
+            else:
+                import pdb; pdb.set_trace()
+        
+    class DetermineSearchInstanceInput(BaseModel):
+        user_task: str = Field(
+            description="The high-level task the user wants to perform. For example, 'bring me the book I was reading yesterday'."
+        )
+        history_summary: str = Field(
+            description="A summary of the conversation history leading up to this point. This can help the agent understand the context better."
+        )
+        current_task: str = Field(
+            description="The current goal or subtask the system is working on. For example, 'resolve which book the user is referring to', 'identify where (or how) to retrieve ths instance."
+        )
+        memory_records: Optional[List[Dict]] = Field(
+            default=None,
+            description="(Optional) A list of memory records retrieved earlier. Each record includes a caption, time, position, and possibly an image path."
+        )
+        
+    tool_runner = DetermineSearchInstanceAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+        
+    return StructuredTool.from_function(
+        func=lambda user_task, history_summary, current_task, memory_records: tool_runner.run(user_task, history_summary, current_task, memory_records),
+        name="determine_search_instance",
+        description="Create or Update the search instance based on the high-level user task, current reasoning step, and optionally retrieved memory records.",
+        args_schema=DetermineSearchInstanceInput
+    )
