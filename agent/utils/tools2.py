@@ -641,6 +641,7 @@ def create_determine_search_instance_tool(
                 # ("human", self.previous_tool_requests),
                 ("user", prompt),
                 ("human", "{question}"),
+                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
             ])
             chained_model = chat_prompt | model
             question  = f"User Task: {self.user_task}\n" \
@@ -671,6 +672,7 @@ def create_determine_search_instance_tool(
                 ("human", "{memory_records}"),
                 ("user", prompt),
                 ("human", "{question}"),
+                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
             ])
             model = self.vlm
             chained_model = chat_prompt | model
@@ -711,10 +713,10 @@ def create_determine_search_instance_tool(
             output["past_observations"] = [target_record] if target_record else []
                 
             if self.logger:
-                self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] generate() - Parsed output: {parsed}")
+                self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] generate() - Parsed output: {output}")
                 self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] generate() - Output keys: found_in_memory={output['found_in_memory']}, instance_desc={output['instance_desc']}, instance_viz_path={output['instance_viz_path']}")
                 
-            return {"messages": [response], "output": parsed}
+            return {"messages": [response], "output": output}
         
         def build_graph(self):
             workflow = StateGraph(AgentState)
@@ -899,6 +901,7 @@ def create_determine_unique_instances_tool(
                 ("human", "{memory_records}"),
                 ("user", prompt),
                 ("human", "{question}"),
+                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
             ])
             chained_model = chat_prompt | model
             question  = f"User Task: {self.user_task}\n" \
@@ -921,6 +924,60 @@ def create_determine_unique_instances_tool(
         
         def generate(self, state: AgentState):
             messages = state["messages"]
+            
+            keys_to_check_for = ["instance_desc", "record_ids"]
+            
+            prompt = self.decide_gen_only_prompt
+            chat_prompt = ChatPromptTemplate.from_messages([
+                ("human", "{memory_records}"),
+                ("user", prompt),
+                ("human", "{question}"),
+                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. You must now list all distinct, plausible instances using rich, **visual-appearance-based** descriptions.")
+            ])
+            model = self.vlm
+            chained_model = chat_prompt | model
+            question  = f"User Task: {self.user_task}\n" \
+                        f"History Summary: {self.history_summary}\n" \
+                        f"Current Task: {self.current_task}\n"
+            
+            memory_messages = self._parse_memory_records(messages)
+            response = chained_model.invoke({"question": question, "memory_records": memory_messages})
+            
+            parsed = eval(response.content)
+            if type(parsed) is not list:
+                raise ValueError("Expected a list of unique instances, but got something else. Retrying...")
+            for item in parsed:
+                for key in keys_to_check_for:
+                    if key not in item:
+                        raise ValueError("Missing required keys during generate. Retrying...")
+
+                # Parse record_ids into a list of ints
+                record_ids_str = item["record_ids"]
+                if not isinstance(record_ids_str, str):
+                    raise ValueError(f"record_ids must be a string, got {type(record_ids_str)}")
+                try:
+                    record_ids = [int(x.strip()) for x in record_ids_str.split(",") if x.strip().isdigit()]
+                except Exception as e:
+                    raise ValueError(f"Failed to parse record_ids '{record_ids_str}': {e}")
+                # Check that the parsed list matches the expected format (at least one int, no junk)
+                if not record_ids or ",".join(str(i) for i in record_ids) != ",".join(x.strip() for x in record_ids_str.split(",") if x.strip()):
+                    raise ValueError(f"record_ids format is invalid: '{record_ids_str}'")
+                item["record_ids"] = record_ids
+                
+            ids_to_records = [
+                {int(record["id"]): record} for record in self.memory_records
+            ]
+            output = []
+            for item in parsed:
+                output_item = {}
+                output_item["instance_desc"] = item["instance_desc"]
+                output_item["records"] = []
+                for id in item["record_ids"]:
+                    output_item["records"].append(ids_to_records[id])
+                output.append(output_item)
+        
+            return {"messages": [response], "output": output}
+
         
         def build_graph(self):
             workflow = StateGraph(AgentState)

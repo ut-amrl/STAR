@@ -8,7 +8,8 @@ from agent.utils.skills import *
 from agent.utils.tools2 import (
     create_recall_best_match_tool, 
     create_memory_inspection_tool,
-    create_determine_search_instance_tool
+    create_determine_search_instance_tool,
+    create_determine_unique_instances_tool
 )
 from agent.utils.function_wrapper import FunctionsWrapper
 
@@ -39,7 +40,22 @@ def load_toy_memory(memory: MilvusMemory):
             "base_caption": "I saw a chair",
             "start_frame": 21,
             "end_frame": 30
-        }
+        },
+        {
+            "time": start_t+3.0,
+            "base_position": [1.1, 1.0, 1.0],
+            "base_caption": "I saw a coffee cup",
+            "start_frame": 31,
+            "end_frame": 40
+        },
+        {
+            "time": ONE_DAY+start_t+0.0,
+            "base_position": [0.0, 0.1, 0.0],
+            "base_caption": "I saw a white cup",
+            "start_frame": 41,
+            "end_frame": 50
+        },
+        
     ]
  
     for record in records:
@@ -154,11 +170,40 @@ def run_determine_search_intance_tool(memory: MilvusMemory):
     })
     print("Tool output:\n", output)
 
+def run_determine_unique_instances_tool(memory: MilvusMemory):
+    llm_raw = ChatOpenAI(model="gpt-4", api_key=os.environ.get("OPENAI_API_KEY"))
+    llm = FunctionsWrapper(llm_raw)
+    vlm_raw =  ChatOpenAI(model='gpt-4o', api_key=os.environ.get("OPENAI_API_KEY"))
+    vlm = FunctionsWrapper(vlm_raw)
+    
+    tool = create_determine_unique_instances_tool(
+        memory=memory,
+        llm=llm,
+        llm_raw=llm_raw,
+        vlm=vlm,
+        vlm_raw=vlm_raw,
+        logger=None
+    )[0]
+    
+    memory_records = memory.get_all()
+    memory_records = eval(memory_records)
+    
+    output = tool.run({
+        "user_task": "Bring me my favorite cup",
+        "history_summary": "I have created a search instance for a cup. Now I need to gather information from my memory.",
+        "current_task": "figure out what cups do we have based on my memory",
+        "instance_description": "cup",
+        "memory_records": memory_records
+    })
+    print("Tool output:\n", output)
+    import pdb; pdb.set_trace()
+
 if __name__ == "__main__":
     memory = MilvusMemory("test", obs_savepth=None)
     memory.reset()
     load_toy_memory(memory)
     
+    run_determine_unique_instances_tool(memory)
     run_recall_best_match_tool(memory)
     
     agent = Agent("full")

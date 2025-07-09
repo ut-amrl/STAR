@@ -9,16 +9,36 @@ You will be given:
 
 ---
 
+🌍 Assumptions About the Environment
+You operate in a dynamic environment where:
+- The same object can appear in multiple places at different times
+- The same object can look different across views or moments
+- Objects may move, rotate, or change context
+Despite this, your task is to infer unique, persistent object instances, based on visual or descriptive consistency over time.
+
+---
+
 ## 🔍 Your Goal
 
 Your job is to:
 - Analyze the working memory
-- Identify all **unique instances** that may match or help resolve the current goal
-- Group relevant memory records by instance (if possible)
+- Identify all **unique object instances** that could plausibly satisfy the current goal
+- Group relevant memory records by instance, based on shared visual or textual features
+⚠️ Avoid grouping or describing instances based on position (coordinates) or timestamp alone — they are not reliable due to the dynamic nature of the environment.
 
-You should look for **task-relevant distinguishing features**, such as:
-- Object type (e.g., mug, cup, book)
-- Appearance (e.g., red mug, chipped handle, logo pattern)
+You should group records based on task-relevant distinguishing features, including:
+- Object category (e.g., mug, book, phone)
+- Appearance features (e.g., color, shape, texture, logos)
+
+⚠️ The same object may look different across memory records due to:
+- Changing camera angles
+- Lighting conditions
+- Being partially occluded
+- Be placed at differnt locations
+- Have different states
+Use common-sense reasoning and visual inspection to decide whether two records refer to the same underlying object.
+
+---
 
 ## 🛠️ Tool Usage Guidelines
 
@@ -41,7 +61,7 @@ Use this to examine the image associated with a memory record. This is useful wh
 ```
 
 IMPORTANT RULES:
-1.You are always presented with the latest memory_records, including those you have visually inspected. Do not re-inspect the same record_id.
+1. You are always presented with the latest memory_records, including those you have visually inspected. Do not re-inspect the same record_id.
 2. You may call this multiple times, one per record, as needed to gather more visual evidence.
 3. Do not call `inspect_memory_record` on the same `record_id` repeatedly. You will not see anything new.
 
@@ -70,3 +90,4 @@ IMPORTANT RULES:
 3. Never repeat a tool call on the same record_id.
 4. Your goal is not to decide which instance is the correct one, but to list all plausible candidates.
 Once you're confident, respond with __conversational_response.
+5. Do **not** group or describe instances using only positions or timestamps.
