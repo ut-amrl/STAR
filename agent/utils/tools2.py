@@ -51,7 +51,7 @@ class SearchInstance:
             except Exception:
                 # If the image cannot be opened, skip adding the image message
                 return message
-            img = img.resize((512, 512), PILImage.BILINEAR)
+            
             # Draw the record ID with background
             draw = ImageDraw.Draw(img)
             text = f"Current Search Instance: {self.inst_desc}"
@@ -861,7 +861,7 @@ def create_determine_unique_instances_tool(
             for record in self.memory_records:
                 if int(record["id"]) in image_paths:
                     txt = parse_db_records_for_llm(record)
-                    txt = f"\n You have inspected its visual observation. See image below for more details."
+                    txt += f"\n You have inspected its visual observation. See image below for more details."
                     msg = [{"type": "text", "text": txt}]
                 else:
                     msg = [{"type": "text", "text": parse_db_records_for_llm(record)}]
@@ -888,15 +888,15 @@ def create_determine_unique_instances_tool(
                     draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
 
                     # Save debug image
-                    debug_dir = os.path.join(os.path.dirname(__file__), "debug", "unique_instances")
-                    os.makedirs(debug_dir, exist_ok=True)
-                    debug_img_path = os.path.join(debug_dir, f"record_{record['id']}.png")
-                    img.save(debug_img_path)
+                    # debug_dir = os.path.join("debug", "unique_instances")
+                    # os.makedirs(debug_dir, exist_ok=True)
+                    # debug_img_path = os.path.join(debug_dir, f"record_{record['id']}.png")
+                    # img.save(debug_img_path)
 
                     buffer = BytesIO()
                     img.save(buffer, format="PNG")
-                    img = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                    memory_messages += [get_vlm_img_message(img, type="gpt")]
+                    encoded_img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    memory_messages.append(get_vlm_img_message(encoded_img, type="gpt"))
                     
             return memory_messages
         
@@ -913,7 +913,7 @@ def create_determine_unique_instances_tool(
             chat_prompt = ChatPromptTemplate.from_messages([
                 MessagesPlaceholder(variable_name="chat_history"),
                 ("human", "{memory_records}"),
-                ("user", prompt),
+                ("system", prompt),
                 ("human", "{question}"),
                 ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
             ])
@@ -941,13 +941,13 @@ def create_determine_unique_instances_tool(
         
         def generate(self, state: AgentState):
             messages = state["messages"]
-            
             keys_to_check_for = ["instance_desc", "record_ids"]
             
             prompt = self.generate_prompt
             chat_prompt = ChatPromptTemplate.from_messages([
+                MessagesPlaceholder(variable_name="chat_history"),
                 ("human", "{memory_records}"),
-                ("user", prompt),
+                ("system", prompt),
                 ("human", "{question}"),
                 ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. You must now list all distinct, plausible instances using rich, **visual-appearance-based** descriptions.")
             ])
@@ -958,7 +958,29 @@ def create_determine_unique_instances_tool(
                         f"Current Task: {self.current_task}\n"
             
             memory_messages = self._parse_memory_records(messages)
-            response = chained_model.invoke({"question": question, "memory_records": memory_messages})
+            # visualize_memory_messages(memory_messages)
+            # import pdb; pdb.set_trace()
+            
+            # Debug image messages
+            # system_prompt = (
+            #     "You are an expert instance summarizer.\n"
+            #     "You are given a list of memory records consisting of textual descriptions and visual observations.\n"
+            #     "Please caption all images you saw. You should give a concise image description, as well as the record id on the images. In the description, you should include the visual appearance of the object, such as color, shape, size, and any other relevant features.\n"
+            # )
+            # model = self.vlm_raw
+            # chat_prompt = ChatPromptTemplate.from_messages([
+            #     ("human", system_prompt),
+            #     ("human", "{memory_records}"),
+            # ])
+            # chained_model = chat_prompt | model
+            # response = chained_model.invoke({
+            #     "memory_records": memory_messages})
+            # import pdb; pdb.set_trace()
+            
+            response = chained_model.invoke({
+                "chat_history": messages[1:],
+                "question": question, 
+                "memory_records": memory_messages})
             
             # Build a mapping from record ID to record for fast lookup
             ids_to_records = {int(record["id"]): record for record in self.memory_records}
@@ -1076,3 +1098,38 @@ def create_determine_unique_instances_tool(
     )
     return [tool]
     
+def visualize_memory_messages(memory_messages, output_dir="debug/unique_instances"):
+    os.makedirs(output_dir, exist_ok=True)
+
+    i = 0
+    current_text = "unknown"
+
+    for msg in memory_messages:
+        if msg["type"] == "text":
+            # Save this for naming the image later
+            current_text = msg["text"].strip().replace("\n", " ")[:100]  # truncate long text
+        elif msg["type"] in ["image", "image_url"]:
+            # Decode base64 image
+            if msg["type"] == "image":
+                img_data = msg["image"].split("base64,")[-1]
+            else:
+                img_data = msg["image_url"]["url"].split("base64,")[-1]
+
+            try:
+                img_bytes = base64.b64decode(img_data)
+                img = PILImage.open(BytesIO(img_bytes)).convert("RGB")
+            except Exception as e:
+                print(f"[Warning] Failed to decode image at index {i}: {e}")
+                continue
+
+            # Use index + short text preview to name file
+            filename = f"msg_{i:03d}.png"
+            img_path = os.path.join(output_dir, filename)
+            img.save(img_path)
+
+            # Also save the text in a .txt file
+            txt_path = os.path.join(output_dir, f"msg_{i:03d}.txt")
+            with open(txt_path, "w") as f:
+                f.write(current_text)
+
+            i += 1

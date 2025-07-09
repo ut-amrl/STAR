@@ -51,7 +51,7 @@ def load_toy_memory(memory: MilvusMemory):
         {
             "time": ONE_DAY+start_t+0.0,
             "base_position": [0.0, 0.1, 0.0],
-            "base_caption": "I saw a coffee cup",
+            "base_caption": "I saw a cup",
             "start_frame": 41,
             "end_frame": 50
         },

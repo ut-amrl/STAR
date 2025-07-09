@@ -41,62 +41,20 @@ Use common-sense reasoning and visual inspection to decide whether two records r
 
 ## 🛠️ Tool Usage Guidelines
 
-You have exhausted all your tool call limits, so now you must make a response using the following tool:
-`__conversational_response`.
+You have exhausted all your tool call limits, so now you must make a response using the following tool: `__conversational_response`.
+
+You should describe:
+- How many unique object instances you found
+- How you distinguished them
+- What key features (appearance, category, etc.) differentiate them
+- Which record_ids belong to each
+- And any details about how and why you made such decision
 
 ```json
 {{
   "tool": "__conversational_response",
   "tool_input": {{
-    "response": [
-      {{
-        "instance_desc": "the blue mug with a cat logo",
-        "record_ids": "12, 14, 22"
-      }},
-      {{
-        "instance_desc": "the red mug with a chipped handle",
-        "record_ids": "5, 7"
-      }}
-    ]
-  }}
-}}
-```
-
-## ✅ What Your Output MUST Include
-Each item in your `response` must:
-- Contain an `instance_desc` that uniquely describes the object **based on its visual or textual features**.
-- Avoid vague or uninformative phrases like "seen at different locations", "seen in memory", or "present in the scene".
-- Avoid using position (e.g., coordinates) or timestamps as a primary descriptor.
-- Use appearance details such as: color, shape, texture, logos, condition (e.g., chipped, shiny), or any prominent feature you observed.
-
-### ❌ Bad:
-```json
-{{
-  "tool": "__conversational_response",
-  "tool_input": {{
-    "response": [
-      {{
-        "instance_desc": "a cup seen at different locations",
-        "record_ids": "0, 4"
-      }},
-      ...
-    ]
-  }}
-}}
-```
-
-✅ Good:
-```json
-{{
-  "tool": "__conversational_response",
-  "tool_input": {{
-    "response": [
-      {{
-        "instance_desc": "a dark green mug with a wide handle",
-        "record_ids": "0, 4"
-      }},
-      ...
-    ]
+    "response": "I found two distinct mugs. One is a blue mug with a cat logo, appearing in records 12, 14, and 22. The other is a red mug with a chipped handle, found in records 5 and 7. These objects have consistent appearance across locations and times, so I believe they are stable instances."
   }}
 }}
 ```

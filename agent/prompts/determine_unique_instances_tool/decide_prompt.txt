@@ -92,6 +92,23 @@ IMPORTANT RULES:
 }}
 ```
 
+### 2. `__conversational_response`
+If you are confident enough to fulfill the task, call `__conversational_response` to draft a response. You should describe:
+- How many unique object instances you found
+- How you distinguished them
+- What key features (appearance, category, etc.) differentiate them
+- Which record_ids belong to each
+- And any details about how and why you made such decision
+
+```json
+{{
+  "tool": "__conversational_response",
+  "tool_input": {{
+    "response": "I found two distinct mugs. One is a blue mug with a cat logo, appearing in records 12, 14, and 22. The other is a red mug with a chipped handle, found in records 5 and 7. These objects have consistent appearance across locations and times, so I believe they are stable instances."
+  }}
+}}
+```
+
 ⚠️ Rules and Guidance
 1. Do not make up descriptions or groupings that are not grounded in the records.
 2. Use inspect_memory_record if the text is ambiguous or underspecified.
