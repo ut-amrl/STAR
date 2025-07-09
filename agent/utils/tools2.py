@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 from typing import Annotated, Sequence, TypedDict
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
+from pydantic import conint
 
 from langchain.tools import StructuredTool
 from langchain_core.pydantic_v1 import BaseModel, Field
@@ -17,6 +18,7 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from memory.memory import MilvusMemory
+from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
 
 class SearchInstance:
@@ -116,6 +118,27 @@ def create_db_txt_search_with_time_tool(memory: MilvusMemory):
     )
     return [txt_time_retriever_tool]
 
+def create_db_txt_search_k_tool(memory: MilvusMemory):
+    class TextRetrieverWithKInput(BaseModel):
+        x: str = Field(
+            description="The query to search for in the memory. This should describe what you're trying to retrieve, like 'a blue mug on the table'."
+        )
+        k: conint(ge=int(1), le=int(50)) = Field(
+            default=8,
+            description="The number of top memory matches to retrieve. Must be between 1 and 50."
+        )
+
+    def _search_with_k(x: str, k: int):
+        return memory.search_by_text(x, k=k)
+
+    txt_retriever_k_tool = StructuredTool.from_function(
+        func=_search_with_k,
+        name="retrieve_top_k_from_text",
+        description="Search memory for the top-k most relevant past observations using a natural language query.",
+        args_schema=TextRetrieverWithKInput
+    )
+    return [txt_retriever_k_tool]
+
 def create_db_txt_backward_search_tool(memory: MilvusMemory):
     pass 
 
@@ -146,17 +169,13 @@ def create_recall_best_match_tool(
             self.memory = memory
             self.llm = llm
             self.llm_raw = llm_raw
+            self.gpt4_turbo_raw = ChatOpenAI(model="gpt-4-turbo", api_key=os.environ.get("OPENAI_API_KEY"))
+            self.gpt4_turbo = FunctionsWrapper(self.gpt4_turbo_raw)
             self.vlm = vlm
             self.vlm_raw = vlm_raw
             self.logger = logger
             
-            self.db_retriever_tools = create_db_txt_search_tool(memory)
-            self.recall_tool_definitions = [convert_to_openai_function(t) for t in self.db_retriever_tools]
-            self.db_retriever_with_time_tools = create_db_txt_search_with_time_tool(memory)
-            self.recall_tool_with_time_definitions = [convert_to_openai_function(t) for t in self.db_retriever_with_time_tools]
-            
-            self.tools = None
-            self.tool_definitions = None
+            self.setup_tools(memory)
             
             prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/best_match_tool/'
             self.agent_prompt = file_to_string(prompt_dir+'agent_prompt.txt')
@@ -166,12 +185,25 @@ def create_recall_best_match_tool(
             self.agent_call_count = 0
             self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
             
-            self.system_prompt = "You are a memory retrieval agent. Your task is to help the user recall all memory records that are relevant to their current goal. You have access to tools that let you search memory by description, with or without time constraints. You should first determine what information to retrieve, then use the available tools to search the memory database. After retrieving results, analyze them carefully and select only those that are relevant to the user’s task. You may call memory tools multiple times if needed, but avoid repeating previous requests. Your final output should be a list of memory records that best match the user’s intent."    
+            self.system_prompt = "You are a memory retrieval agent. Your task is to help the user recall all memory records that are relevant to their current goal. You have access to tools that let you search memory by description, with or without time constraints. You should first determine what information to retrieve, then use the available tools to search the memory database. After retrieving results, analyze them carefully and select only those that are relevant to the user task. You may call memory tools multiple times if needed, but avoid repeating previous requests. Your final output should be a list of memory records that best match the user intent."    
+        
+        def setup_tools(self, memory: MilvusMemory):
+            db_retriever_tools = create_db_txt_search_tool(memory)
+            recall_tool_definitions = [convert_to_openai_function(t) for t in db_retriever_tools]
+            db_retriever_with_time_tools = create_db_txt_search_with_time_tool(memory)
+            recall_tool_with_time_definitions = [convert_to_openai_function(t) for t in db_retriever_with_time_tools]
+            db_retriever_k_tools = create_db_txt_search_k_tool(memory)
+            recall_tool_k_definitions = [convert_to_openai_function(t) for t in db_retriever_k_tools]
+            
+            self.tools = db_retriever_tools + db_retriever_with_time_tools + db_retriever_k_tools
+            self.tool_definitions = recall_tool_definitions + recall_tool_with_time_definitions + recall_tool_k_definitions
+
         
         def agent(self, state: AgentState):
             messages = state["messages"]
             
-            model = self.llm
+            # model = self.llm
+            model = self.gpt4_turbo
             
             if self.agent_call_count > 2:
                 prompt = self.agent_gen_only_prompt
@@ -185,11 +217,15 @@ def create_recall_best_match_tool(
                 ("system", self.system_prompt),
                 ("user", prompt),
                 ("human", "{question}"),
+                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
             ])
             chained_model = chat_prompt | model
-            question  = f"Task Context: {self.context}\n" \
+            question  = f"User Task: {self.user_task}\n" \
+                        f"History Summary: {self.history_summary}\n" \
+                        f"Current Task: {self.current_task}\n" \
                         f"Instance user is looking for: {self.instance_description}\n" \
-                        "Could you please help me recall the best matching memory records based on this information using tools you have?"
+                        f"{self.memory.get_memory_stats_for_llm()}\n" \
+                        "Could you please help me gather information from your memory records based on this information using tools you have?"
             
             response = chained_model.invoke({"question": question, "chat_history": messages[1:]})
         
@@ -217,12 +253,16 @@ def create_recall_best_match_tool(
                     ("system", self.system_prompt),
                     ("system", prompt),
                     ("human", "{question}"),
+                    ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
                 ]
             )
             chained_model = chat_prompt | model
-            question = f"Task Context: {self.context}\n" \
-                       f"Instance user is looking for: {self.instance_description}\n" \
-                        "Based on the information retrieved from your previous tool calls, could you list out all memory record IDs that best match the user intent?"
+            question = f"User Task: {self.user_task}\n" \
+                        f"History Summary: {self.history_summary}\n" \
+                        f"Current Task: {self.current_task}\n" \
+                        f"Instance user is looking for: {self.instance_description}\n" \
+                        f"{self.memory.get_memory_stats_for_llm()}\n" \
+                        "Based on the information retrieved from your previous tool calls, could you list out all memory record IDs that will best help agent fulfilling its current task?"
                         
             response = chained_model.invoke({"question": question, "chat_history": messages[1:]})
             record_ids = [int(i.strip()) for i in response.content.split(",") if i.strip().isdigit()]
@@ -261,80 +301,76 @@ def create_recall_best_match_tool(
             
             workflow.set_entry_point("agent")
             self.graph = workflow.compile()
-
-        def run(self, context: str, instance_description: str, search_start_time: Optional[str] = None, search_end_time: Optional[str] = None) -> List[Dict]:
+            
+        def run(self, 
+                user_task: str, 
+                history_summary: str, 
+                current_task: str, 
+                instance_description: str) -> List[Dict]:
             if self.logger:
                 self.logger.info(
-                    f"[BEST_MATCH] Running tool with context: {context}, "
-                    f"instance_description: {instance_description}, "
-                    f"search_start_time: {search_start_time}, search_end_time: {search_end_time}"
+                    f"[BEST_MATCH] Running tool with user_task: {user_task}, "
+                    f"current_task: {current_task}, "
+                    f"instance_description: {instance_description}"
                 )
             
-            if (search_start_time is None) != (search_end_time is None):
-                raise ValueError("Both search_start_time and search_end_time must be provided together, or both must be None.")
-            with_Time = (search_start_time is not None and search_end_time is not None)
-            if with_Time:
-                self.tools = self.db_retriever_with_time_tools
-                self.tool_definitions = self.recall_tool_with_time_definitions
-            else:
-                self.tools = self.db_retriever_tools
-                self.tool_definitions = self.recall_tool_definitions
+            self.setup_tools(self.memory)
             
             self.build_graph()
 
             self.agent_call_count = 0
             self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
 
-            if search_start_time and search_end_time:
-                query = f"Between {search_start_time} and {search_end_time}, have you observed {instance_description}? If so, when?"
-            else:
-                query = f"Have you observed {instance_description}?"
-            inputs = { "messages": [
-                    (("user", query))
+            self.user_task = user_task
+            self.history_summary = history_summary
+            self.current_task = current_task
+            self.instance_description = instance_description
+            
+            query = f"User Task: {user_task}\n" \
+                    f"History Summary: {history_summary}\n" \
+                    f"Current Task: {current_task}\n" \
+                    f"Instance user is looking for: {instance_description}\n" \
+                    "Please gather information from your memory database that can help recall information relevant to your current task."
+            
+            inputs = {
+                "messages": [
+                    ("user", query),
                 ]
             }
-            
-            self.context = context
-            self.instance_description = instance_description
-            self.search_start_time = search_start_time
-            self.search_end_time = search_end_time
-            
             state = self.graph.invoke(inputs)
             return state.get("output", [])
 
     tool_runner = BestMatchAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
     
     class BestMatchInput(BaseModel):
-        context: str = Field(
-            description="High-level context or purpose for calling this tool. \
-                        For example, 'The user is about to interact with the object', or 'This is for confirming past observations before navigation', or 'This is to figure out which instance user is referring to' \
-                        This helps the agent reason about what the goal is beyond just finding the object."
+        user_task: str = Field(
+            description="The high-level task the user wants to perform. For example, 'bring me the book I was reading yesterday'."
+        )
+        history_summary: str = Field(
+            description="A summary of the prior reasoning or dialog history that provides context for this recall."
+        )
+        current_task: str = Field(
+            description="The current subtask being worked on. For example, 'retrieve all possible matching observations for analysis'."
         )
         instance_description: str = Field(
-            description="Describe the object you're trying to recall from memory. \
-                         Example: 'a red suitcase near the kitchen entrance'"
-        )
-        search_start_time: Optional[str] = Field(
-            default=None,
-            description="(Optional) Start time in 'YYYY-MM-DD HH:MM:SS'. Results after this time will be considered."
-        )
-        search_end_time: Optional[str] = Field(
-            default=None,
-            description="(Optional) End time in 'YYYY-MM-DD HH:MM:SS'. Results before this time will be considered."
+            description="A description of the object or event you want to recall from memory. E.g., 'red suitcase', or 'any instance of the blue mug on the table'."
         )
         
-    return [StructuredTool.from_function(
-        func=lambda context, instance_description, search_start_time=None, search_end_time=None: 
-            tool_runner.run(context, instance_description, search_start_time, search_end_time),
-        name="recall_best_match",
-        description="Recalls the single best-matching memory observation based on description and optional time range.",
+    best_match_tool = StructuredTool.from_function(
+        func=lambda user_task, history_summary, current_task, instance_description: 
+            tool_runner.run(user_task, history_summary, current_task, instance_description),
+        name="recall_all",
+        description="Recall all memory records that match a given object or scene description. Use this when you want to see the full pattern or history of an object across time.",
         args_schema=BestMatchInput
-    )]
+    )
+    return [best_match_tool]
 
 def create_recall_last_seen_tool(
     memory: MilvusMemory,
     llm,
+    llm_raw,
     vlm,
+    vlm_raw,
     logger=None
 ) -> StructuredTool:
     
@@ -343,10 +379,131 @@ def create_recall_last_seen_tool(
 def create_recall_all_tool(
     memory: MilvusMemory,
     llm,
+    llm_raw,
     vlm,
+    vlm_raw,
     logger=None
 ) -> StructuredTool:
-    pass
+    
+    def from_agent_to(state: AgentState):
+        messages = state["messages"]
+        last_message = messages[-1]
+        # If there is no function call, then we finish
+        if not last_message.tool_calls:
+            return "generate"
+        else:
+            return "action"
+    
+    class AgentState(TypedDict):
+        messages: Annotated[Sequence[BaseMessage], add_messages]
+        output: Annotated[Sequence, replace_messages] = None
+    
+    class RecallAllAgent:
+        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
+            self.memory = memory
+            self.llm = llm
+            self.llm_raw = llm_raw
+            self.vlm = vlm
+            self.vlm_raw = vlm_raw
+            self.logger = logger
+            
+            self.setup_tools(memory)
+            
+            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/recall_all_tool/'
+            self.agent_prompt = file_to_string(prompt_dir+'agent_prompt.txt')
+            self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
+            
+            self.agent_call_count = 0
+            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
+            
+        def setup_tools(self, memory: MilvusMemory):
+            self.tools = create_db_txt_search_k_tool(memory)
+            self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
+            
+        def agent(self, state: AgentState):
+            pass
+        
+        def generate(self, state: AgentState):
+            pass
+        
+        def build_graph(self):
+            workflow = StateGraph(AgentState)
+            
+            workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
+            workflow.add_node("action", ToolNode(self.tools))
+            workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
+            
+            workflow.add_conditional_edges(
+                "agent",
+                from_agent_to,
+                {
+                    "action": "action",
+                    "generate": "generate",
+                },
+            )
+            workflow.add_edge('action', 'agent')
+            workflow.add_edge("generate", END)
+            
+            workflow.set_entry_point("agent")
+            self.graph = workflow.compile()
+        
+        def run(self, 
+                user_task: str, 
+                history_summary: str, 
+                current_task: str, 
+                instance_description: str, 
+                search_start_time: Optional[str] = None, 
+                search_end_time: Optional[str] = None) -> List[Dict]:
+            
+            if self.logger:
+                self.logger.info(
+                    f"[RECALL_ALL] Running tool with user_task: {user_task}, "
+                    f"current_task: {current_task}, "
+                    f"instance_description: {instance_description}, "
+                    f"search_start_time: {search_start_time}, search_end_time: {search_end_time}"
+                )
+                
+            self.user_task = user_task
+            self.history_summary = history_summary
+            self.current_task = current_task
+            self.instance_description = instance_description
+            self.search_start_time = search_start_time
+            self.search_end_time = search_end_time
+            
+            # TODO implement the actual logic here
+            return []
+        
+    class RecallAllInput(BaseModel):
+        user_task: str = Field(
+            description="The high-level task the user wants to perform. For example, 'bring me the book I was reading yesterday'."
+        )
+        history_summary: str = Field(
+            description="A summary of the prior reasoning or dialog history that provides context for this recall."
+        )
+        current_task: str = Field(
+            description="The current subtask being worked on. For example, 'retrieve all possible matching observations for analysis'."
+        )
+        instance_description: str = Field(
+            description="A description of the object or event you want to recall from memory. E.g., 'red suitcase', or 'any instance of the blue mug on the table'."
+        )
+        search_start_time: Optional[str] = Field(
+            default=None,
+            description="(Optional) Start of time window, format 'YYYY-MM-DD HH:MM:SS'. Results after this time will be considered."
+        )
+        search_end_time: Optional[str] = Field(
+            default=None,
+            description="(Optional) End of time window, format 'YYYY-MM-DD HH:MM:SS'. Results before this time will be considered."
+        )
+        
+    tool_runner = RecallAllAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+    recall_all_tool = StructuredTool.from_function(
+        func=lambda user_task, history_summary, current_task, instance_description, search_start_time=None, search_end_time=None: 
+            tool_runner.run(user_task, history_summary, current_task, instance_description, search_start_time, search_end_time),
+        name="recall_all",
+        description="Recall all memory records that match a given object or scene description. Use this when you want to see the full pattern or history of an object across time.",
+        args_schema=RecallAllInput
+    )
+    return [recall_all_tool]
 
 def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
 

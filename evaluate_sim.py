@@ -92,6 +92,7 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
     except Exception as e:
         import pdb; pdb.set_trace()
         return (False, False, None)
+    import pdb; pdb.set_trace()
     
     retrieved_record = result.curr_target()
     if retrieved_record is None:

@@ -211,3 +211,104 @@ class Agent:
         }
         state = self.graph.invoke(inputs)
         import pdb; pdb.set_trace()
+        
+    ##############################
+    # Recall Last Seen (find_by_description)
+    ##############################
+    
+    def _recall_last_seen_retriever(self, 
+                                    current_task: str, 
+                                    keyword_prompt: str, 
+                                    identification_prompt: str):
+        model = self.llm
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", keyword_prompt),
+                ("human", "{question}"),
+            ]
+        )
+        model = prompt | model
+        question = current_task
+        # question = f"User Task: Find {current_goal.query_obj_cls}" 
+        response = model.invoke({"question": question})
+        keywords = eval(response.content)
+        
+        self.logger.info(f"Searching vector db for keywords: {keywords}")
+        
+        query = ', or '.join(keywords)
+        
+        record_found = []
+        for i in range(5):
+            docs = self.memory.search_last_k_by_text(is_first_time=(i==0), query=query, k=15)
+            if docs == '' or docs == None: # End of search
+                break
+            
+            # TODO verify this logic
+            explored_record_ids = set()
+            explored_positions = []
+            
+            filtered_records = []
+            for record in eval(docs):
+                if record["id"] not in explored_record_ids:
+                    filtered_records.append(record)
+            filtered_records2 = []
+            for record in filtered_records:
+                target_pos = eval(record["position"])
+                discard = False
+                for attempted_pos in explored_positions:
+                    if np.fabs(target_pos[0]-attempted_pos[0]) < 0.4 and np.fabs(target_pos[1]-attempted_pos[1]) < 0.4 and np.fabs(target_pos[2]-attempted_pos[2]) < radians(45):
+                        discard = True; break
+                if not discard:
+                    filtered_records2.append(record)
+            filtered_records = filtered_records2
+            if len(filtered_records) == 0:
+                continue
+            
+            parsed_docs = parse_db_records_for_llm(filtered_records)
+            
+            model = self.llm
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", "{docs}"),
+                    ("system", identification_prompt),
+                    ("human", "{question}"),
+                ]
+            )
+            model = prompt | model
+            question = f"User Task: {question}. Have you seen the instance user needs in your recalled moments?"
+            response = model.invoke({"question": question, "docs": parsed_docs})
+            self.logger.info(f"Retrived docs: {parsed_docs}")
+            
+            if len(response.content) == 0:
+                continue
+            if len(response.content) < 5: # TODO Fix me
+                record_ids = response.content
+                record_ids = [int(record_ids)]
+            else:
+                parsed_response = eval(response.content)
+                record_ids = parsed_response["ids"]
+                if type(record_ids) == str:
+                    record_ids = eval(record_ids)
+                record_ids = [int(i) for i in record_ids]
+            
+            self.logger.info(f"LLM response: {record_ids}")
+            
+            if len(record_ids) == 0:
+                continue
+            for record_id in record_ids:
+                docs = self.memory.get_by_id(record_id)
+                record_found += eval(docs)
+            break
+        return record_found
+    
+    def _recall_last_seen_from_txt(self, current_goal: str):
+        records = self._recall_last_seen_retriever(
+            current_goal, 
+            self.get_param_from_txt_prompt, 
+            self.find_instance_from_txt_prompt)
+        if len(records) == 0:
+            return None
+        return records[:1]
+    
+    def _recall_last_seen(self, current_task: str):
+        self._recall_last_seen_from_txt(current_task)

@@ -19,6 +19,9 @@ from agent.utils.tools import (
     create_find_by_description_with_time_tool, 
     create_best_guess_tool
 )
+from agent.utils.tools2 import (
+    create_recall_best_match_tool,
+)
 
 from memory.memory import MilvusMemory
 
@@ -113,7 +116,8 @@ class Agent:
         pick_fn: Callable[[str], PickObjectSrvResponse] = None,
         visible_objects_fn: Callable[[], GetVisibleObjectsSrvResponse] = None,
         image_path_fn: Callable[[str], str] = None,
-        llm_type: str = "gpt-4", 
+        llm_type: str = "gpt-4", # NOTE: only gpt-4 works; Tried gpt-4-turbo and gpt-4o but it is not following the instruction??? 
+        # llm_type: str = "gpt-4-turbo",
         vlm_type: str = "gpt-4o", 
         verbose: bool = False
     ):
@@ -444,46 +448,21 @@ class Agent:
     ##############################
     
     def _recall_all(self, current_goal: ObjectRetrievalPlan):
-        docs = self.memory.search_all(current_goal.query_obj_desc)
-        records = eval(docs)
-        records = sorted(records, key=lambda x: x["id"])
-        
-        batch_size = 25 # Note: LLM can only takes in about 30-40 records
-        record_ids = []
-        for i in range(0, len(records), batch_size):
-            parsed_llm_records = parse_db_records_for_llm(records[i:i+batch_size])
-            
-            model = self.llm
-            prompt = ChatPromptTemplate.from_messages(
-                [
-                    MessagesPlaceholder("chat_history"),
-                    ("system", self.recall_all_prompt),
-                    ("human", "{question}"),
-                ]
-            )
-            model = prompt | model
-            question = f"User wants you to help find {current_goal.query_obj_desc}. To identify the instance user is referring to, you need to first recall all momented where you saw objects matching this description. Can you list ALL record ids for me?"
-            
-            response = model.invoke({"question": question, "chat_history": parsed_llm_records})
-            
-            parsed_response = eval(response.content)
-            record_ids += [int(record_id) for record_id in parsed_response["selected_ids"]]
-        record_ids = downsample_consecutive_ids(record_ids, rate=2)
-        
-        records_found = []
-        for record in records:
-            if record["id"] in record_ids:
-                records_found.append(record)
-                
-        verified_records_found = []
-        for record in records_found:
-            image = get_image_from_record(record)
-            ros_image = opencv_to_ros_image(image)
-            response = request_bbox_detection_service(ros_image, current_goal.query_obj_cls)
-            if len(response.bounding_boxes.bboxes) > 0:
-                verified_records_found.append(record)
-        import pdb; pdb.set_trace()
-        records_found = verified_records_found
+        tool = create_recall_best_match_tool(
+            memory=self.memory,
+            llm=self.llm,
+            llm_raw=self.llm_raw,
+            vlm=self.vlm,
+            vlm_raw=self.vlm_raw,
+            logger=self.logger
+        )[0]
+        output = tool.run({
+            "user_task": current_goal.task,
+            "history_summary": "I have created a search instance for a toy. Now I need to gather information from my memory.",
+            "current_task": current_goal.query_obj_desc,
+            "instance_description": current_goal.query_obj_desc
+        })
+        records_found = output
         
         # debug
         debugdir = "debug/recall_all"
@@ -496,21 +475,10 @@ class Agent:
             imgpath = os.path.join(debugdir, f"{record['id']}.png")
             cv2.imwrite(imgpath, img)
             
-        # import pdb; pdb.set_trace()
+        if self.logger:
+            self.logger.info(f"Found {len(records_found)} record(s) about '{current_goal.query_obj_desc}': {records_found}")
             
-        # verified_records_found = []
-        # for record in records_found:
-        #     image = get_image_from_record(record, type="utf-8")
-        #     image_messages = [get_vlm_img_message(image, self.vlm_type)]
-            
-        #     question = f"User is looking for item: {current_goal.query_obj_desc}. Does this object appear on this image?"
-        #     response = ask_chatgpt(self.vlm, self.contain_instance_prompt, image_messages, question)
-        #     if "yes" in response.content:
-        #         verified_records_found.append(record)
-                
-        self.logger.info(f"Found {len(verified_records_found)} record(s) about '{current_goal.query_obj_desc}': {verified_records_found}")
-            
-        return verified_records_found
+        return records_found
     
     def find_by_frequency(self, state):
         current_goal = state["current_goal"]

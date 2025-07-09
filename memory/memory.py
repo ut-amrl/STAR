@@ -315,3 +315,55 @@ class MilvusMemory(Memory):
                    "text": item.page_content}
             rets.append(ret)
         return json.dumps(rets)
+    
+    def get_memory_stats(self):
+        self.milv_wrapper.reload()
+        
+        self.milv_wrapper.collection.flush()
+        # Get total number of records
+        num_records = self.milv_wrapper.collection.num_entities
+
+        # Pull all timestamps (cheap if low # of records)
+        results = self.milv_wrapper.collection.query(
+            expr="id >= 0",
+            output_fields=["timestamp"],
+            limit=num_records,  # Fetch all
+            consistency_level="Strong"
+        )
+
+        timestamps = [float(r["timestamp"]) for r in results if "timestamp" in r]
+        
+        if not timestamps:
+            return {
+                "num_records": 0,
+                "min_timestamp": None,
+                "max_timestamp": None
+            }
+
+        return {
+            "num_records": num_records,
+            "min_timestamp": min(timestamps),
+            "max_timestamp": max(timestamps)
+        }
+        
+    def get_memory_stats_for_llm(self) -> str:
+        stats = self.get_memory_stats()
+        
+        if stats["num_records"] == 0 or stats["min_timestamp"] is None or stats["max_timestamp"] is None:
+            return "Memory is currently empty. No records have been stored."
+
+        num = stats["num_records"]
+        start_dt = datetime.utcfromtimestamp(stats["min_timestamp"])
+        end_dt = datetime.utcfromtimestamp(stats["max_timestamp"])
+
+        start_time_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+        end_time_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        end_date_str = end_dt.strftime("%Y-%m-%d")
+        end_day_of_week = end_dt.strftime("%A")  # e.g., "Tuesday"
+
+        return (
+            f"Your memory currently contains {num} records. "
+            f"The earliest memory was recorded at {start_time_str} UTC, "
+            f"and the most recent memory was recorded at {end_time_str} UTC. "
+            f"Today is {end_day_of_week}, {end_date_str}."
+        )
