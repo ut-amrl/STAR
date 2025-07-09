@@ -837,6 +837,7 @@ def create_determine_unique_instances_tool(
             prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/determine_unique_instances_tool/'
             self.decide_prompt = file_to_string(prompt_dir+'decide_prompt.txt')
             self.decide_gen_only_prompt = file_to_string(prompt_dir+'decide_gen_only_prompt.txt')
+            self.generate_prompt = file_to_string(prompt_dir+'generate_prompt.txt')
             
             self.decide_call_count = 0
             self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
@@ -858,14 +859,19 @@ def create_determine_unique_instances_tool(
                     continue
             memory_messages = []
             for record in self.memory_records:
-                msg = [{"type": "text", "text": parse_db_records_for_llm(record)}]
+                if int(record["id"]) in image_paths:
+                    txt = parse_db_records_for_llm(record)
+                    txt = f"\n You have inspected its visual observation. See image below for more details."
+                    msg = [{"type": "text", "text": txt}]
+                else:
+                    msg = [{"type": "text", "text": parse_db_records_for_llm(record)}]
                 memory_messages += msg
-                
+
                 if int(record["id"]) in image_paths:
                     image_path = image_paths[int(record["id"])]
                     img = PILImage.open(image_path).convert("RGB")  # RGBA to preserve color + alpha
-                    img = img.resize((512, 512), PILImage.BILINEAR)
-                    
+                    img = img.resize((384, 384), PILImage.BILINEAR)
+
                     # Draw the record ID with background
                     draw = ImageDraw.Draw(img)
                     text = f"record_id: {record['id']}"
@@ -880,11 +886,18 @@ def create_determine_unique_instances_tool(
                     )
                     draw.rectangle(bg_rect, fill=(0, 0, 0))  # Black background
                     draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
-                    
+
+                    # Save debug image
+                    debug_dir = os.path.join(os.path.dirname(__file__), "debug", "unique_instances")
+                    os.makedirs(debug_dir, exist_ok=True)
+                    debug_img_path = os.path.join(debug_dir, f"record_{record['id']}.png")
+                    img.save(debug_img_path)
+
                     buffer = BytesIO()
                     img.save(buffer, format="PNG")
                     img = base64.b64encode(buffer.getvalue()).decode("utf-8")
                     memory_messages += [get_vlm_img_message(img, type="gpt")]
+                    
             return memory_messages
         
         def decide(self, state: AgentState):
@@ -898,6 +911,7 @@ def create_determine_unique_instances_tool(
                 model = model.bind_tools(self.tool_definitions)
                 
             chat_prompt = ChatPromptTemplate.from_messages([
+                MessagesPlaceholder(variable_name="chat_history"),
                 ("human", "{memory_records}"),
                 ("user", prompt),
                 ("human", "{question}"),
@@ -908,7 +922,10 @@ def create_determine_unique_instances_tool(
                         f"History Summary: {self.history_summary}\n" \
                         f"Current Task: {self.current_task}\n"
             memory_messages = self._parse_memory_records(messages)
-            response = chained_model.invoke({"question": question, "memory_records": memory_messages})
+            response = chained_model.invoke({
+                "chat_history": messages[1:],
+                "question": question, 
+                "memory_records": memory_messages})
             
             if self.logger:
                 self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - Tool calls present: {bool(getattr(response, 'tool_calls', None))}")
@@ -927,7 +944,7 @@ def create_determine_unique_instances_tool(
             
             keys_to_check_for = ["instance_desc", "record_ids"]
             
-            prompt = self.decide_gen_only_prompt
+            prompt = self.generate_prompt
             chat_prompt = ChatPromptTemplate.from_messages([
                 ("human", "{memory_records}"),
                 ("user", prompt),
@@ -943,6 +960,8 @@ def create_determine_unique_instances_tool(
             memory_messages = self._parse_memory_records(messages)
             response = chained_model.invoke({"question": question, "memory_records": memory_messages})
             
+            # Build a mapping from record ID to record for fast lookup
+            ids_to_records = {int(record["id"]): record for record in self.memory_records}
             parsed = eval(response.content)
             if type(parsed) is not list:
                 raise ValueError("Expected a list of unique instances, but got something else. Retrying...")
@@ -962,11 +981,12 @@ def create_determine_unique_instances_tool(
                 # Check that the parsed list matches the expected format (at least one int, no junk)
                 if not record_ids or ",".join(str(i) for i in record_ids) != ",".join(x.strip() for x in record_ids_str.split(",") if x.strip()):
                     raise ValueError(f"record_ids format is invalid: '{record_ids_str}'")
+                # Check that all record_ids exist in ids_to_records
+                for rid in record_ids:
+                    if rid not in ids_to_records:
+                        raise ValueError(f"record_id {rid} not found in memory_records. Retrying...")
                 item["record_ids"] = record_ids
                 
-            ids_to_records = [
-                {int(record["id"]): record} for record in self.memory_records
-            ]
             output = []
             for item in parsed:
                 output_item = {}

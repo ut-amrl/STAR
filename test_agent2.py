@@ -44,14 +44,14 @@ def load_toy_memory(memory: MilvusMemory):
         {
             "time": start_t+3.0,
             "base_position": [1.1, 1.0, 1.0],
-            "base_caption": "I saw a coffee cup",
+            "base_caption": "I saw a cup",
             "start_frame": 31,
             "end_frame": 40
         },
         {
             "time": ONE_DAY+start_t+0.0,
             "base_position": [0.0, 0.1, 0.0],
-            "base_caption": "I saw a white cup",
+            "base_caption": "I saw a coffee cup",
             "start_frame": 41,
             "end_frame": 50
         },
@@ -195,7 +195,9 @@ def run_determine_unique_instances_tool(memory: MilvusMemory):
         "instance_description": "cup",
         "memory_records": memory_records
     })
-    print("Tool output:\n", output)
+    print("Tool output:\n")
+    for item in output:
+        print(item)
     import pdb; pdb.set_trace()
 
 if __name__ == "__main__":

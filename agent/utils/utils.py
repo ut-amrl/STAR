@@ -10,6 +10,7 @@ from PIL import Image as PILImage
 import numpy as np
 import math
 from typing import Callable
+from datetime import datetime
 
 # LangeChain imports
 from langchain_core.messages import ToolMessage
@@ -295,11 +296,21 @@ def parse_db_records_for_llm(messages):
         
     if is_str:
         messages = [messages]
-    processed_records = [
-        {"record_id": record["id"],
-        "text": f"I was at ({eval(record['position'])[0]:.2f}, {eval(record['position'])[1]:.2f}, {eval(record['position'])[2]:.2f}). {record['text']}"} 
-        for record in messages
-    ]
+    
+    processed_records = []
+    for record in messages:
+        # Parse position
+        pos = eval(record['position'])
+        # Format timestamp
+        dt = datetime.fromtimestamp(record['timestamp'])
+        dt_str = dt.strftime("%y-%m-%d, %H:%M:%S")
+        # Compose text
+        text = f"I was at ({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}) at {dt_str}. {record['text']}"
+        processed_records.append({
+            "record_id": record["id"],
+            "text": text
+        })
+
     parsed_processed_records = [json.dumps(record) for record in processed_records]
     parsed_processed_records = [
         f"[RETRIEVED OBSERVATION] {record}" for record in parsed_processed_records

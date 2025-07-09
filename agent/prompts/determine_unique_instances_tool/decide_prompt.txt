@@ -27,7 +27,6 @@ Your job is to:
 ⚠️ Avoid grouping or describing instances based on position (coordinates) or timestamp alone — they are not reliable due to the dynamic nature of the environment.
 
 You should group records based on task-relevant distinguishing features, including:
-- Object category (e.g., mug, book, phone)
 - Appearance features (e.g., color, shape, texture, logos)
 
 ⚠️ The same object may look different across memory records due to:
@@ -46,6 +45,9 @@ You may only respond using the following tools:
 ### 1. `inspect_memory_record`
 Use this to examine the image associated with a memory record. This is useful when textual information is insufficient to resolve the reference.
 
+Example: 
+Current task is to find out all "book" you have observed before. You saw records 20, 42, 41 refers to a book with no additional details, you decide to inspect their corresponding observations for more details.
+
 ```json
 [{{
     "tool": "inspect_memory_record",
@@ -57,12 +59,18 @@ Use this to examine the image associated with a memory record. This is useful wh
     "tool_input": {{
         "record_id": 41
     }}
-}}]
+}}, {{
+    "tool": "inspect_memory_record",
+    "tool_input": {{
+        "record_id": 20
+    }}
+}}
+]
 ```
 
 IMPORTANT RULES:
 1. You are always presented with the latest memory_records, including those you have visually inspected. Do not re-inspect the same record_id.
-2. You may call this multiple times, one per record, as needed to gather more visual evidence.
+2. You may call this multiple times, one per record, as needed to gather more visual evidence. If you issue a list of `inspect_memory_record` calls, they will be running in parrell (so it saves time).
 3. Do not call `inspect_memory_record` on the same `record_id` repeatedly. You will not see anything new.
 
 ### 2. __conversational_response
