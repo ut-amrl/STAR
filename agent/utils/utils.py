@@ -565,3 +565,26 @@ def caption_gpt(task: str, record: dict, model: ChatOpenAI = None, image_path_fn
     question = f"This is the original caption of the video: {old_caption}.\nUser task: {task}.\nCould you recaption the video in light of the user task?"
     response = ask_chatgpt(model, prompt, image_messages, question)
     return response.content
+
+import json
+import re
+
+def parse_json(text: str):
+    # 1. Extract from ```json ... ``` if present
+    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+    if match:
+        json_str = match.group(1)
+    else:
+        json_str = text.strip()
+    
+    # 2. Try parsing with json.loads
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Fallback to eval (use with caution — safe only if you trust the input)
+    try:
+        return eval(json_str, {"__builtins__": {}})
+    except Exception as e:
+        raise ValueError(f"Could not parse response as JSON or Python dict: {e}")

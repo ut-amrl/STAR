@@ -944,24 +944,45 @@ def create_determine_unique_instances_tool(
             keys_to_check_for = ["instance_desc", "record_ids"]
             
             prompt = self.generate_prompt
-            chat_prompt = ChatPromptTemplate.from_messages([
-                MessagesPlaceholder(variable_name="chat_history"),
-                ("human", "{memory_records}"),
-                ("system", prompt),
-                ("human", "{question}"),
-                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. You must now list all distinct, plausible instances using rich, **visual-appearance-based** descriptions.")
-            ])
-            model = self.vlm
-            chained_model = chat_prompt | model
+            # chat_prompt = ChatPromptTemplate.from_messages([
+            #     # MessagesPlaceholder(variable_name="chat_history"),
+            #     ("system", prompt),
+            #     ("user", "{memory_records}"),
+            #     ("user", "{question}"),
+            #     ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. You must now list all distinct, plausible instances using rich, **visual-appearance-based** descriptions.")
+            # ])
+            # model = self.vlm
+            # chained_model = chat_prompt | model
             question  = f"User Task: {self.user_task}\n" \
                         f"History Summary: {self.history_summary}\n" \
                         f"Current Task: {self.current_task}\n"
             
             memory_messages = self._parse_memory_records(messages)
+            
+            ###### Debug image messages #######
+            # def dump_memory_messages(memory_messages, save_dir="debug/dumped_memory_messages"):
+            #     os.makedirs(save_dir, exist_ok=True)
+            #     msg_list = []
+            #     for i, msg in enumerate(memory_messages):
+            #         if msg["type"] == "text":
+            #             with open(os.path.join(save_dir, f"msg_{i:03d}.txt"), "w") as f:
+            #                 f.write(msg["text"])
+            #             msg_list.append({"type": "text", "file": f"msg_{i:03d}.txt"})
+            #         elif msg["type"] in ["image", "image_url"]:
+            #             img_data = msg["image"] if "image" in msg else msg["image_url"]["url"]
+            #             encoded = img_data.split("base64,")[-1]
+            #             with open(os.path.join(save_dir, f"msg_{i:03d}.png"), "wb") as f:
+            #                 f.write(base64.b64decode(encoded))
+            #             msg_list.append({"type": "image", "file": f"msg_{i:03d}.png"})
+            #     with open(os.path.join(save_dir, "messages.json"), "w") as f:
+            #         json.dump(msg_list, f, indent=2)
+
+            # dump_memory_messages(memory_messages)
+            # import pdb; pdb.set_trace()
+            
             # visualize_memory_messages(memory_messages)
             # import pdb; pdb.set_trace()
             
-            # Debug image messages
             # system_prompt = (
             #     "You are an expert instance summarizer.\n"
             #     "You are given a list of memory records consisting of textual descriptions and visual observations.\n"
@@ -976,15 +997,34 @@ def create_determine_unique_instances_tool(
             # response = chained_model.invoke({
             #     "memory_records": memory_messages})
             # import pdb; pdb.set_trace()
+            ###### Debug image messages #######
             
-            response = chained_model.invoke({
-                "chat_history": messages[1:],
-                "question": question, 
-                "memory_records": memory_messages})
+            # response = chained_model.invoke({
+            #     # "chat_history": messages[1:],
+            #     "question": question, 
+            #     "memory_records": memory_messages})
             
+            from openai import OpenAI
+            client = OpenAI() 
+            messages = [
+                {"role": "system", "content": prompt},  # text only
+                {"role": "user", "content": memory_messages + [{"type": "text", "text": question}]},
+                {"role": "system", "content": "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. You must now list all distinct, plausible instances using rich, **visual-appearance-based** descriptions."}
+            ]
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages
+            )
+            try:
+                stripped_response = response.choices[0].message.content.strip()
+                parsed = parse_json(stripped_response)
+                parsed = parsed["tool_input"]["response"]
+            except Exception as e:
+                raise ValueError(f"Failed to parse response: {e}. Response content: {response.choices[0].message.content}. Retrying...")
+                
             # Build a mapping from record ID to record for fast lookup
             ids_to_records = {int(record["id"]): record for record in self.memory_records}
-            parsed = eval(response.content)
+            # parsed = eval(response.content)
             if type(parsed) is not list:
                 raise ValueError("Expected a list of unique instances, but got something else. Retrying...")
             for item in parsed:
