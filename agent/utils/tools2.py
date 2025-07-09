@@ -1058,8 +1058,8 @@ def create_determine_unique_instances_tool(
                     output_item["records"].append(ids_to_records[id])
                 output.append(output_item)
         
-            return {"messages": [response], "output": output}
-
+            # return {"messages": [response], "output": output}
+            return {"output": output}
         
         def build_graph(self):
             workflow = StateGraph(AgentState)
