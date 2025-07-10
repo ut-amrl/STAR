@@ -638,7 +638,7 @@ def create_determine_search_instance_tool(
                 model = model.bind_tools(self.tool_definitions)
                 
             chat_prompt = ChatPromptTemplate.from_messages([
-                ("human", "{memory_records}"),
+                HumanMessage(content=memory_messages),
                 # ("human", self.previous_tool_requests),
                 ("user", prompt),
                 ("human", "{question}"),
@@ -670,7 +670,7 @@ def create_determine_search_instance_tool(
             
             prompt = self.decide_gen_only_prompt
             chat_prompt = ChatPromptTemplate.from_messages([
-                ("human", "{memory_records}"),
+                HumanMessage(content=memory_messages),
                 ("user", prompt),
                 ("human", "{question}"),
                 ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
