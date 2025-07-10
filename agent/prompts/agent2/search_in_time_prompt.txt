@@ -26,7 +26,6 @@ All subsequent tools (e.g., instance creation, reasoning) will act on this worki
 |-----------|---------|
 | `recall_best_match(query)` | Retrieve memory records that best match a vague or descriptive reference (e.g., "the book I read yesterday") |
 | `recall_last_seen(query)` | Find the most recent memory of a clearly identified object |
-| `recall_all(query)` | Retrieve **all** relevant records for a broad query (e.g., "books on the table") — useful when patterns or aggregation are needed |
 | `determine_unique_instances_from_latest_working_memory(query)` | From the working memory, infer one or more **unique instance candidates**, based on frequency, visual similarity, or consistent co-location |
 | `create_or_update_memory_search_instance()` | Define **what object** is being searched for, based on the working memory (e.g., "the purple book always near the mug") |
 | `create_or_update_real_world_search_instance()` | Define **where to search**, using spatial/temporal info from working memory (e.g., last seen at kitchen table) |

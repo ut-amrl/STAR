@@ -6,7 +6,8 @@ from collections import defaultdict
 from tqdm import tqdm
 
 from evaluation.eval_utils import *
-from agent.agent import Agent
+# from agent.agent import Agent
+from agent.agent2 import Agent
 from memory.memory import MilvusMemory, MemoryItem
 from agent.utils.memloader import remember
 from agent.utils.skills import *
@@ -132,14 +133,15 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
     return (obj_retrieval_success, mem_retrieval_success, retrieved_instance)
     
 def evaluate(args):
-    agent = Agent(
-        agent_type="sim",
-        navigate_fn=navigate,
-        find_object_fn=find_object,
-        observe_fn=observe,
-        pick_fn=pick,
-        image_path_fn=get_image_path_for_simulation,
-    )
+    # agent = Agent(
+    #     agent_type="sim",
+    #     navigate_fn=navigate,
+    #     find_object_fn=find_object,
+    #     observe_fn=observe,
+    #     pick_fn=pick,
+    #     image_path_fn=get_image_path_for_simulation,
+    # )
+    agent = Agent("full")
     
     data_metadata = load_virtualhome_data_metadata(args.data_dir)
     versions = [""]

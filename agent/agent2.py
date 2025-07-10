@@ -71,7 +71,7 @@ class Agent:
             ("system", "{fact_prompt}"),
             ("system", memory_search_instance_msg),
             ("system", world_search_instance_msg),
-            ("human", "Please determine the next action to take!"),
+            ("system", "Please determine the next action to take! Remember you can only call the provided tools, and stick strictly to the JSON format."),
         ])
         fact_prompt = ("Here are some facts about the current situation:\n" 
                           "1. The current date is: {today_str}.\n"
@@ -82,7 +82,6 @@ class Agent:
             "fact_prompt": fact_prompt, 
             "history_summary": history_summary,
         })
-        import pdb; pdb.set_trace()
         
         keys_to_check_for = ["history_summary", "current_task", "tool_call", "tool_input"]
         parsed = eval(response.content)
@@ -94,7 +93,6 @@ class Agent:
             "create_or_update_real_world_search_instance",
             "recall_best_match",
             "recall_last_seen",
-            "recall_all",
             "search_current_target_instance_in_real_world"
         ]:
             raise ValueError(f"Invalid tool call: {parsed['tool_call']}. Retrying...")
@@ -145,9 +143,37 @@ class Agent:
                 "current_task": tool_call_metadata["current_task"],
                 "memory_records": self.working_memory[-1]
             })
+        elif tool_call == "create_or_update_real_world_search_instance":
+            output = self.create_or_update_real_world_instance_tool.run({
+                "user_task": self.task.task_desc,
+                "history_summary": tool_call_metadata["history_summary"],
+                "current_task": tool_call_metadata["current_task"],
+                "memory_records": self.working_memory[-1]
+            })
+        elif tool_call == "recall_best_match":
+            output = self.recall_best_match_tool.run({
+                "user_task": self.task.task_desc,
+                "history_summary": tool_call_metadata["history_summary"],
+                "current_task": tool_call_metadata["current_task"],
+                "instance_description": tool_call_metadata["tool_input"]
+            })
+            import pdb; pdb.set_trace()
+        elif tool_call == "recall_last_seen":
+            import pdb; pdb.set_trace()
+        elif tool_call == "determine_unique_instances_from_latest_working_memory":
+            output = self.determine_unique_instances_tool.run({
+                "user_task": self.task.task_desc,
+                "history_summary": tool_call_metadata["history_summary"],
+                "current_task": tool_call_metadata["current_task"],
+                "instance_description": tool_call_metadata["tool_input"],
+                "memory_records": self.working_memory[-1]
+            })
+        elif tool_call == "search_current_target_instance_in_real_world": # Terminate
             import pdb; pdb.set_trace()
         else:
             import pdb; pdb.set_trace()
+
+        import pdb; pdb.set_trace()
 
         tool_response_summary = "----------------\n"
         tool_response_summary += f"Tool Response: {output}\n"
@@ -179,7 +205,8 @@ class Agent:
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
         
-        self.best_match_tool = create_recall_best_match_tool(
+        # Recall Tools
+        self.recall_best_match_tool = create_recall_best_match_tool(
             memory=memory,
             llm=self.llm,
             llm_raw=self.llm_raw,
@@ -187,6 +214,16 @@ class Agent:
             vlm_raw=self.vlm_raw,
             logger=self.logger
         )[0]
+        # self.recall_last_seen_tool = create_recall_last_seen_tool(
+        #     memory=memory,
+        #     llm=self.llm,
+        #     llm_raw=self.llm_raw,
+        #     vlm=self.vlm,
+        #     vlm_raw=self.vlm_raw,
+        #     logger=self.logger
+        # )[0]
+        
+        # Decision Making Tools
         determin_search_instance_tools = create_determine_search_instance_tool(
             memory=memory,
             llm=self.llm,
@@ -197,16 +234,23 @@ class Agent:
         )
         self.create_or_update_memory_search_instance_tool = determin_search_instance_tools[0]
         self.create_or_update_real_world_instance_tool = determin_search_instance_tools[1]
+        self.determine_unique_instances_tool = create_determine_unique_instances_tool(
+            memory=memory,
+            llm=self.llm,
+            llm_raw=self.llm_raw,
+            vlm=self.vlm,
+            vlm_raw=self.vlm_raw,
+            logger=self.logger
+        )[0]
         
             
-    def run(self, task_data: dict):
-        self.task = Task(task_data["task_desc"])
-        self.today_str = task_data.get("today_str", "2025-01-01")
+    def run(self, question: str, today: str, graph_type: str):
+        self.task = Task(question)
         
         self.build_graph()
         
         inputs = { "messages": [
-                (("user", task_data["task_desc"]))
+                (("user", self.task.task_desc)),
             ]
         }
         state = self.graph.invoke(inputs)

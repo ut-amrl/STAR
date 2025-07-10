@@ -205,9 +205,6 @@ if __name__ == "__main__":
     memory.reset()
     load_toy_memory(memory)
     
-    run_determine_unique_instances_tool(memory)
-    run_recall_best_match_tool(memory)
-    
     agent = Agent("full")
     agent.set_memory(memory)
     task_metadata = {
@@ -216,6 +213,8 @@ if __name__ == "__main__":
     }
     agent.run(task_metadata)
     
+    run_determine_unique_instances_tool(memory)
+    run_recall_best_match_tool(memory)
     # run_recall_best_match_tool2(memory)
     # run_determine_search_intance_tool(memory)
     

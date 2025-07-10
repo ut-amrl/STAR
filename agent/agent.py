@@ -22,6 +22,7 @@ from agent.utils.tools import (
 from agent.utils.tools2 import (
     create_recall_best_match_tool,
     create_determine_unique_instances_tool,
+    create_determine_search_instance_tool
 )
 
 from memory.memory import MilvusMemory
@@ -500,7 +501,27 @@ class Agent:
             "instance_description": current_goal.query_obj_desc,
             "memory_records": records
         })
-        import pdb; pdb.set_trace()
+        
+        groupd_records = output
+        tool = create_determine_search_instance_tool(
+            memory=self.memory,
+            llm=self.llm,
+            llm_raw=self.llm_raw,
+            vlm=self.vlm,
+            vlm_raw=self.vlm_raw,
+            logger=self.logger
+        )[0]
+        output = tool.run({
+            "user_task": current_goal.task,
+            "history_summary": "I have collected past observations of toys on the sofa. Now I need to determine which instance user is referring to based on the past observations.",
+            "current_task": current_goal.query_obj_desc,
+            "memory_records": groupd_records
+        })
+        
+        records = output.get("past_observations", [])
+        current_goal.find_in_mem = len(records) > 0 and output.get("found_in_memory", False)
+        current_goal.candidate_records_in_mem.append(records[0])
+        return self._prepare_find_from_specific_instance(current_goal)
         
         record_ids = [record["id"] for record in records]
         selected_record_ids = record_ids # downsample_consecutive_ids(record_ids, rate=3)

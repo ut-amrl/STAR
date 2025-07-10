@@ -592,40 +592,56 @@ def create_determine_search_instance_tool(
                     continue
                 try:
                     val = eval(msg.content)
-                    for k,v in val.items():
+                    for k, v in val.items():
                         image_paths[int(k)] = v
                 except Exception:
                     continue
+
             memory_messages = []
-            for record in self.memory_records:
-                msg = [{"type": "text", "text": parse_db_records_for_llm(record)}]
-                memory_messages += msg
-                
-                if int(record["id"]) in image_paths:
-                    image_path = image_paths[int(record["id"])]
-                    img = PILImage.open(image_path).convert("RGB")  # RGBA to preserve color + alpha
-                    img = img.resize((512, 512), PILImage.BILINEAR)
-                    
-                    # Draw the record ID with background
-                    draw = ImageDraw.Draw(img)
-                    text = f"record_id: {record['id']}"
-                    font = ImageFont.load_default()
-                    text_size = draw.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
-                    padding = 4
-                    bg_rect = (
-                        text_size[0] - padding,
-                        text_size[1] - padding,
-                        text_size[2] + padding,
-                        text_size[3] + padding
-                    )
-                    draw.rectangle(bg_rect, fill=(0, 0, 0))  # Black background
-                    draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
-                    
-                    buffer = BytesIO()
-                    img.save(buffer, format="PNG")
-                    img = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                    memory_messages += [get_vlm_img_message(img, type="gpt")]
+            is_grouped = (
+                isinstance(self.memory_records, list)
+                and all(isinstance(x, dict) and "instance_desc" in x for x in self.memory_records)
+            )
+
+            if is_grouped:
+                for i, group in enumerate(self.memory_records):
+                    instance_desc = group.get("instance_desc", "(no description)")
+                    records = group.get("records", [])
+                    memory_messages.append({"type": "text", "text": f"--- Instance {i+1}: {instance_desc} ---"})
+                    for record in records:
+                        memory_messages += self._record_to_message(record, image_paths)
+            else:
+                for record in self.memory_records:
+                    memory_messages += self._record_to_message(record, image_paths)
+
             return memory_messages
+
+        def _record_to_message(self, record: Dict, image_paths: Dict[int, str]) -> List[Dict]:
+            msgs = [{"type": "text", "text": parse_db_records_for_llm(record)}]
+            if int(record["id"]) in image_paths:
+                image_path = image_paths[int(record["id"])]
+                img = PILImage.open(image_path).convert("RGB")
+                img = img.resize((512, 512), PILImage.BILINEAR)
+                
+                draw = ImageDraw.Draw(img)
+                text = f"record_id: {record['id']}"
+                font = ImageFont.load_default()
+                text_size = draw.textbbox((0, 0), text, font=font)
+                padding = 4
+                bg_rect = (
+                    text_size[0] - padding,
+                    text_size[1] - padding,
+                    text_size[2] + padding,
+                    text_size[3] + padding
+                )
+                draw.rectangle(bg_rect, fill=(0, 0, 0))
+                draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
+
+                buffer = BytesIO()
+                img.save(buffer, format="PNG")
+                img_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                msgs.append(get_vlm_img_message(img_b64, type="gpt"))
+            return msgs
             
         def decide(self, state: AgentState):
             messages = state["messages"]
@@ -637,23 +653,26 @@ def create_determine_search_instance_tool(
                 prompt = self.decide_prompt
                 model = model.bind_tools(self.tool_definitions)
                 
+            memory_messages = self._parse_memory_records(messages)
             chat_prompt = ChatPromptTemplate.from_messages([
                 HumanMessage(content=memory_messages),
                 # ("human", self.previous_tool_requests),
                 ("user", prompt),
                 ("human", "{question}"),
-                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
+                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. If you are not sure, call the most appropriate tool to make a best answer.")
             ])
             chained_model = chat_prompt | model
             question  = f"User Task: {self.user_task}\n" \
                         f"History Summary: {self.history_summary}\n" \
                         f"Current Task: {self.current_task}\n"
                         
-            memory_messages = self._parse_memory_records(messages)
             response = chained_model.invoke({"question": question, "memory_records": memory_messages})
         
             if self.logger:
-                self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] decide() - Tool calls present: {bool(getattr(response, 'tool_calls', None))}")
+                if getattr(response, 'tool_calls'):
+                    self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - Tool calls present: {response.tool_calls}")
+                else:
+                    self.logger.info("[DETERMINE_UNIQUE_INSTANCES] decide() - {response.content}.")
         
             if hasattr(response, "tool_calls") and response.tool_calls:
                 for tool_call in response.tool_calls:
@@ -669,11 +688,13 @@ def create_determine_search_instance_tool(
             keys_to_check_for = ["found_in_memory", "instance_desc", "record_id"]
             
             prompt = self.decide_gen_only_prompt
+            
+            memory_messages = self._parse_memory_records(messages)
             chat_prompt = ChatPromptTemplate.from_messages([
                 HumanMessage(content=memory_messages),
                 ("user", prompt),
                 ("human", "{question}"),
-                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
+                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. If you are not sure, call the most appropriate tool to make a best answer.")
             ])
             model = self.vlm
             chained_model = chat_prompt | model
@@ -681,7 +702,6 @@ def create_determine_search_instance_tool(
                         f"History Summary: {self.history_summary}\n" \
                         f"Current Task: {self.current_task}\n"
                         
-            memory_messages = self._parse_memory_records(messages)
             response = chained_model.invoke({"question": question, "memory_records": memory_messages})
 
             parsed = eval(response.content)
@@ -697,10 +717,21 @@ def create_determine_search_instance_tool(
             if not parsed["found_in_memory"]:
                 instance_viz_path = None
             else:
-                for record in self.memory_records:
-                    if int(record["id"]) == int(parsed["record_id"]):
-                        target_record = record
-                        break
+                if self.memory_records and isinstance(self.memory_records[0], dict) and "instance_desc" in self.memory_records[0]:
+                    # Grouped format
+                    for group in self.memory_records:
+                        for record in group.get("records", []):
+                            if int(record["id"]) == int(parsed["record_id"]):
+                                target_record = record
+                                break
+                        if target_record:
+                            break
+                else:
+                    # Flat format
+                    for record in self.memory_records:
+                        if int(record["id"]) == int(parsed["record_id"]):
+                            target_record = record
+                            break
                 if target_record is None:
                     raise ValueError(f"Could not find record with ID {parsed['record_id']} in memory records. Retrying...")
                 image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
@@ -714,7 +745,6 @@ def create_determine_search_instance_tool(
             output["past_observations"] = [target_record] if target_record else []
                 
             if self.logger:
-                self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] generate() - Parsed output: {output}")
                 self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] generate() - Output keys: found_in_memory={output['found_in_memory']}, instance_desc={output['instance_desc']}, instance_viz_path={output['instance_viz_path']}")
                 
             return {"messages": [response], "output": output}
@@ -783,7 +813,10 @@ def create_determine_search_instance_tool(
         )
         memory_records: Optional[List[Dict]] = Field(
             default=None,
-            description="(Optional) A list of memory records retrieved earlier. Each record includes a caption, time, position, and possibly an image path."
+            description="(Optional) Memory records retrieved earlier. Can be in one of two formats:\n"
+                        "1. A flat list of memory records, where each item includes fields like caption, time, position, and possibly an image path.\n"
+                        "2. A grouped list, where each item includes an 'instance_description' (a string) and 'records' (a list of memory records as above) "
+                        "representing related observations for a specific instance."
         )
         
     memory_instance_tool_runner = DetermineSearchInstanceAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
@@ -854,65 +887,56 @@ def create_determine_unique_instances_tool(
                     continue
                 try:
                     val = eval(msg.content)
-                    for k,v in val.items():
+                    for k, v in val.items():
                         image_paths[int(k)] = v
                 except Exception:
                     continue
-            # import pdb; pdb.set_trace()
+
             memory_messages = []
-            for record in self.memory_records:
-                if int(record["id"]) in image_paths:
-                    txt = parse_db_records_for_llm(record)
-                    txt += f"\n You have inspected its visual observation. See image below for more details."
-                    msg = [{"type": "text", "text": txt}]
-                else:
-                    msg = [{"type": "text", "text": parse_db_records_for_llm(record)}]
-                memory_messages += msg
+            is_grouped = (
+                isinstance(self.memory_records, list)
+                and all(isinstance(x, dict) and "instance_desc" in x for x in self.memory_records)
+            )
 
-                if int(record["id"]) in image_paths:
-                    image_path = image_paths[int(record["id"])]
-                    img = PILImage.open(image_path).convert("RGB")  # RGBA to preserve color + alpha
-                    img = img.resize((512, 512), PILImage.BILINEAR)
+            if is_grouped:
+                for i, group in enumerate(self.memory_records):
+                    instance_desc = group.get("instance_desc", "(no description)")
+                    records = group.get("records", [])
+                    memory_messages.append({"type": "text", "text": f"--- Instance {i+1}: {instance_desc} ---"})
+                    for record in records:
+                        memory_messages += self._record_to_message(record, image_paths)
+            else:
+                for record in self.memory_records:
+                    memory_messages += self._record_to_message(record, image_paths)
 
-                    # Draw the record ID with background
-                    draw = ImageDraw.Draw(img)
-                    text = f"record_id: {record['id']}"
-                    font = ImageFont.load_default()
-                    text_size = draw.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
-                    padding = 4
-                    bg_rect = (
-                        text_size[0] - padding,
-                        text_size[1] - padding,
-                        text_size[2] + padding,
-                        text_size[3] + padding
-                    )
-                    draw.rectangle(bg_rect, fill=(0, 0, 0))  # Black background
-                    draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
-
-                    # Save debug image
-                    # debug_dir = os.path.join("debug", "unique_instances")
-                    # os.makedirs(debug_dir, exist_ok=True)
-                    # debug_img_path = os.path.join(debug_dir, f"record_{record['id']}.png")
-                    # img.save(debug_img_path)
-
-                    buffer = BytesIO()
-                    img.save(buffer, format="PNG")
-                    encoded_img = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                    memory_messages.append(get_vlm_img_message(encoded_img, type="gpt"))
-                    
-            # from openai import OpenAI
-            # client = OpenAI()
-            # messages = [
-            #     {"role": "user", "content": memory_messages},
-            # ]
-            # response = client.chat.completions.create(
-            #     model="gpt-4o",
-            #     messages=messages,
-            #     max_tokens=1  # just to measure prompt length
-            # )
-            # print("#Tokens: ", response.usage.total_tokens)
-                    
             return memory_messages
+
+        def _record_to_message(self, record: Dict, image_paths: Dict[int, str]) -> List[Dict]:
+            msgs = [{"type": "text", "text": parse_db_records_for_llm(record)}]
+            if int(record["id"]) in image_paths:
+                image_path = image_paths[int(record["id"])]
+                img = PILImage.open(image_path).convert("RGB")
+                img = img.resize((512, 512), PILImage.BILINEAR)
+                
+                draw = ImageDraw.Draw(img)
+                text = f"record_id: {record['id']}"
+                font = ImageFont.load_default()
+                text_size = draw.textbbox((0, 0), text, font=font)
+                padding = 4
+                bg_rect = (
+                    text_size[0] - padding,
+                    text_size[1] - padding,
+                    text_size[2] + padding,
+                    text_size[3] + padding
+                )
+                draw.rectangle(bg_rect, fill=(0, 0, 0))
+                draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
+
+                buffer = BytesIO()
+                img.save(buffer, format="PNG")
+                img_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                msgs.append(get_vlm_img_message(img_b64, type="gpt"))
+            return msgs
         
         def decide(self, state: AgentState):
             messages = state["messages"]
@@ -963,7 +987,10 @@ def create_determine_unique_instances_tool(
             #     raise ValueError(f"Failed to parse response: {e}. Response content: {response.choices[0].message.content}. Retrying...")
             
             if self.logger:
-                self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - Tool calls present: {bool(getattr(response, 'tool_calls', None))}")
+                if getattr(response, 'tool_calls'):
+                    self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - Tool calls present: {response.tool_calls}")
+                else:
+                    self.logger.info("[DETERMINE_UNIQUE_INSTANCES] decide() - {response.content}.")
                 
             if hasattr(response, "tool_calls") and response.tool_calls:
                 for tool_call in response.tool_calls:
@@ -1092,6 +1119,11 @@ def create_determine_unique_instances_tool(
                 for id in item["record_ids"]:
                     output_item["records"].append(ids_to_records[id])
                 output.append(output_item)
+                
+            if self.logger:
+                self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] generate() - Output contains {len(output)} unique instances.")
+                for i, inst in enumerate(output):
+                    self.logger.info(f"Instance {i+1}: desc={inst['instance_desc']}, records={len(inst['records'])}")
         
             # return {"messages": [response], "output": output}
             return {"output": output}
