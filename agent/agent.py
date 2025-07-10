@@ -21,6 +21,7 @@ from agent.utils.tools import (
 )
 from agent.utils.tools2 import (
     create_recall_best_match_tool,
+    create_determine_unique_instances_tool,
 )
 
 from memory.memory import MilvusMemory
@@ -483,6 +484,24 @@ class Agent:
     def find_by_frequency(self, state):
         current_goal = state["current_goal"]
         records = self._recall_all(current_goal)
+        
+        tool = create_determine_unique_instances_tool(
+            memory=self.memory,
+            llm=self.llm,
+            llm_raw=self.llm_raw,
+            vlm=self.vlm,
+            vlm_raw=self.vlm_raw,
+            logger=self.logger
+        )[0]
+        output = tool.run({
+            "user_task": current_goal.task,
+            "history_summary": "I have collected some past observations of toys on the sofa. To determine which instance user is referring to, I need to analyze the past observations to figure out which toys have been on the sofa.",
+            "current_task": current_goal.query_obj_desc,
+            "instance_description": current_goal.query_obj_desc,
+            "memory_records": records
+        })
+        import pdb; pdb.set_trace()
+        
         record_ids = [record["id"] for record in records]
         selected_record_ids = record_ids # downsample_consecutive_ids(record_ids, rate=3)
         

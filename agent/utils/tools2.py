@@ -15,6 +15,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from memory.memory import MilvusMemory
@@ -857,6 +858,7 @@ def create_determine_unique_instances_tool(
                         image_paths[int(k)] = v
                 except Exception:
                     continue
+            # import pdb; pdb.set_trace()
             memory_messages = []
             for record in self.memory_records:
                 if int(record["id"]) in image_paths:
@@ -870,7 +872,7 @@ def create_determine_unique_instances_tool(
                 if int(record["id"]) in image_paths:
                     image_path = image_paths[int(record["id"])]
                     img = PILImage.open(image_path).convert("RGB")  # RGBA to preserve color + alpha
-                    img = img.resize((384, 384), PILImage.BILINEAR)
+                    img = img.resize((512, 512), PILImage.BILINEAR)
 
                     # Draw the record ID with background
                     draw = ImageDraw.Draw(img)
@@ -898,6 +900,18 @@ def create_determine_unique_instances_tool(
                     encoded_img = base64.b64encode(buffer.getvalue()).decode("utf-8")
                     memory_messages.append(get_vlm_img_message(encoded_img, type="gpt"))
                     
+            # from openai import OpenAI
+            # client = OpenAI()
+            # messages = [
+            #     {"role": "user", "content": memory_messages},
+            # ]
+            # response = client.chat.completions.create(
+            #     model="gpt-4o",
+            #     messages=messages,
+            #     max_tokens=1  # just to measure prompt length
+            # )
+            # print("#Tokens: ", response.usage.total_tokens)
+                    
             return memory_messages
         
         def decide(self, state: AgentState):
@@ -910,9 +924,11 @@ def create_determine_unique_instances_tool(
                 prompt = self.decide_prompt
                 model = model.bind_tools(self.tool_definitions)
                 
+            memory_messages = self._parse_memory_records(messages)
             chat_prompt = ChatPromptTemplate.from_messages([
                 MessagesPlaceholder(variable_name="chat_history"),
-                ("human", "{memory_records}"),
+                # ("human", "{memory_records}"),
+                HumanMessage(content=memory_messages),
                 ("system", prompt),
                 ("human", "{question}"),
                 ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
@@ -921,11 +937,30 @@ def create_determine_unique_instances_tool(
             question  = f"User Task: {self.user_task}\n" \
                         f"History Summary: {self.history_summary}\n" \
                         f"Current Task: {self.current_task}\n"
-            memory_messages = self._parse_memory_records(messages)
             response = chained_model.invoke({
                 "chat_history": messages[1:],
                 "question": question, 
-                "memory_records": memory_messages})
+                # "memory_records": memory_messages
+            })
+            
+            # from openai import OpenAI
+            # client = OpenAI() 
+            # messages = [
+            #     {"role": "system", "content": prompt},  # text only
+            #     {"role": "user", "content": memory_messages + [{"type": "text", "text": question}]},
+            #     {"role": "system", "content": "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls."}
+            # ]
+            # response = client.chat.completions.create(
+            #     model="gpt-4o",
+            #     messages=messages
+            # )
+            # import pdb; pdb.set_trace()
+            # try:
+            #     stripped_response = response.choices[0].message.content.strip()
+            #     parsed = parse_json(stripped_response)
+            #     parsed = parsed["tool_input"]["response"]
+            # except Exception as e:
+            #     raise ValueError(f"Failed to parse response: {e}. Response content: {response.choices[0].message.content}. Retrying...")
             
             if self.logger:
                 self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - Tool calls present: {bool(getattr(response, 'tool_calls', None))}")

@@ -268,6 +268,8 @@ def debug_vid(vid, debugdir: str):
 def get_vlm_img_message(img, type: str = "qwen"):
     if "qwen" in type:
         return {"type": "image", "image": f"data:image/png;base64,{img}"}
+    # elif "gpt" in type:
+        # return {"type": "input_image", "image_url": f"data:image/png;base64,{img}"}
     else:
         return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}}
         
