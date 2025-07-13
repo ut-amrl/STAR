@@ -22,6 +22,61 @@ from sensor_msgs.msg import Image
 # Custom imports
 from memory.memory import MilvusMemory, MemoryItem
 
+class SearchInstance:
+    def __init__(self, type: str = "memory"):
+        self.type: str = type  # "mem" for memory, "world" for world
+        self.inst_desc: str = ""
+        self.inst_viz_path: str = None
+        self.annotated_inst_viz = None
+        self.annotated_bbox = None
+        
+        self.found: str = "unknown"  # "unknown", "yes", "no"
+        self.past_observations: List[Dict] = []  # TODO likely needs to be refactored
+        
+    def __str__(self):
+        return f"SearchInstance(inst_desc={self.inst_desc}, inst_viz_path={self.inst_viz_path}, found_in_{self.type}={self.found})"
+    
+    def to_message(self):
+        message = []
+        
+        if self.type == "memory":
+            txt_msg = [{"type": "text", "text": f"Current Memory Search Instance and its most update-to-update status: {self.__str__()}"}]
+        else:
+            txt_msg = [{"type": "text", "text": f"Current World Search Instance and its most update-to-update status: {self.__str__()}"}]
+        
+        message += txt_msg
+        
+        if self.inst_viz_path:
+            try:
+                img = PILImage.open(self.inst_viz_path).convert("RGB")  # RGBA to preserve color + alpha
+            except Exception:
+                # If the image cannot be opened, skip adding the image message
+                return message
+            
+            # Draw the record ID with background
+            draw = ImageDraw.Draw(img)
+            text = f"Current Search Instance: {self.inst_desc}"
+            font = ImageFont.load_default()
+            text_size = draw.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
+            padding = 4
+            bg_rect = (
+                text_size[0] - padding,
+                text_size[1] - padding,
+                text_size[2] + padding,
+                text_size[3] + padding
+            )
+            draw.rectangle(bg_rect, fill=(0, 0, 0))  # Black background
+            draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
+            
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+            img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            img_msg = [get_vlm_img_message(img, type="gpt")]
+            
+            message += img_msg
+        
+        return message
+
 class UnionFind:
     def __init__(self, size):
         self.parent = list(range(size))

@@ -22,61 +22,114 @@ from memory.memory import MilvusMemory
 from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
 
-class SearchInstance:
-    def __init__(self, type: str = "memory"):
-        self.type: str = type  # "mem" for memory, "world" for world
-        self.inst_desc: str = ""
-        self.inst_viz_path: str = None
-        self.annotated_inst_viz = None
-        self.annotated_bbox = None
-        
-        self.found: str = "unknown"  # "unknown", "yes", "no"
-        self.past_observations: List[Dict] = []  # TODO likely needs to be refactored
-        
-    def __str__(self):
-        return f"SearchInstance(inst_desc={self.inst_desc}, inst_viz_path={self.inst_viz_path}, found_in_{self.type}={self.found})"
-    
-    def to_message(self):
-        message = []
-        
-        if self.type == "memory":
-            txt_msg = [{"type": "text", "text": f"Current Memory Search Instance and its most update-to-update status: {self.__str__()}"}]
-        else:
-            txt_msg = [{"type": "text", "text": f"Current World Search Instance and its most update-to-update status: {self.__str__()}"}]
-        
-        message += txt_msg
-        
-        if self.inst_viz_path:
-            try:
-                img = PILImage.open(self.inst_viz_path).convert("RGB")  # RGBA to preserve color + alpha
-            except Exception:
-                # If the image cannot be opened, skip adding the image message
-                return message
-            
-            # Draw the record ID with background
-            draw = ImageDraw.Draw(img)
-            text = f"Current Search Instance: {self.inst_desc}"
-            font = ImageFont.load_default()
-            text_size = draw.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
-            padding = 4
-            bg_rect = (
-                text_size[0] - padding,
-                text_size[1] - padding,
-                text_size[2] + padding,
-                text_size[3] + padding
+def create_memory_search_tools(memory: MilvusMemory):
+
+    class TextRetrieverInputWithTime(BaseModel):
+        x: str = Field(
+            description=(
+                "A natural language description of the scene or object to search for in memory. "
+                "This description will be embedded and used for vector similarity search against past memory captions. "
+                "**Do not use this field to search for time or location directly — use dedicated time and position tools for that.** "
+                "Examples of valid input include 'a person sitting at a table' or 'a green car near the garage'."
             )
-            draw.rectangle(bg_rect, fill=(0, 0, 0))  # Black background
-            draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
-            
-            buffer = BytesIO()
-            img.save(buffer, format="PNG")
-            img = base64.b64encode(buffer.getvalue()).decode("utf-8")
-            img_msg = [get_vlm_img_message(img, type="gpt")]
-            
-            message += img_msg
-        
-        return message
-        
+        )
+        start_time: Optional[str] = Field(
+            default=None,
+            description="Start search time in YYYY-MM-DD HH:MM:SS format. If provided, only search for observations after this time."
+        )
+        end_time: Optional[str] = Field(
+            default=None,
+            description="End search time in YYYY-MM-DD HH:MM:SS format. If provided, only search for observations before this time."
+        )
+        k: conint(ge=int(1), le=int(50)) = Field(
+            default=8,
+            description="The number of top similar memory results to return. These are ranked by vector similarity between your query and memory captions."
+        )
+
+    class PositionRetrieverInputWithTime(BaseModel):
+        position: List[float] = Field(
+            description="The 3D position [x, y, z] to search around in memory. Each value should be a float."
+        )
+        start_time: Optional[str] = Field(
+            default=None,
+            description="Start search time in YYYY-MM-DD HH:MM:SS format. If provided, only search for observations after this time."
+        )
+        end_time: Optional[str] = Field(
+            default=None,
+            description="End search time in YYYY-MM-DD HH:MM:SS format. If provided, only search for observations before this time."
+        )
+        k: conint(ge=int(1), le=int(50)) = Field(
+            default=8,
+            description="The number of top similar memory results to return. These are ranked by vector similarity between your query and memory captions."
+        )
+
+    class TimeRetrieverInput(BaseModel):
+        time: str = Field(
+            description="The specific timestamp to search near, in YYYY-MM-DD HH:MM:SS format. Returns the most relevant observations near that moment."
+        )
+        k: conint(ge=int(1), le=int(50)) = Field(
+            default=8,
+            description="The number of top similar memory results to return. These are ranked by vector similarity between your query and memory captions."
+        )
+
+    txt_time_tool = StructuredTool.from_function(
+        func=lambda x, start_time=None, end_time=None, k=8: memory.search_by_txt_and_time(x, start_time, end_time, k),
+        name="search_in_memory_by_text_within_time_range",
+        description="Search memory by text caption with optional time constraints. Retrieves memories based on text relevance.",
+        args_schema=TextRetrieverInputWithTime
+    )
+
+    pos_time_tool = StructuredTool.from_function(
+        func=lambda position, start_time=None, end_time=None, k=8: memory.search_by_position_and_time(position, start_time, end_time, k),
+        name="search_in_memory_by_position_within_time_range",
+        description="Search memory based on 3D position with optional time constraints. Retrieves memories spatially near the given position.",
+        args_schema=PositionRetrieverInputWithTime
+    )
+
+    time_tool = StructuredTool.from_function(
+        func=lambda time, k=8: memory.search_by_time(time, k),
+        name="search_in_memory_by_time",
+        description="Search memory for observations that occurred close to a specific timestamp.",
+        args_schema=TimeRetrieverInput
+    )
+
+    return [txt_time_tool, pos_time_tool, time_tool]
+
+def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
+
+    class MemoryInspectionInput(BaseModel):
+        record_id: int = Field(
+            description="The ID of the memory record you want to inspect. The image associated with this record will be returned in base64 (utf-8) format."
+        )
+
+    def _inspect_memory_record(record_id: int) -> str:
+        # Should return base64-encoded (utf-8) image string for the record
+        docs = memory.get_by_id(record_id)
+        if docs is None or len(docs) == 0:
+            return "" # "No record found with the given ID."
+        record = eval(docs)[0]
+
+        image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
+        vidpath = record["vidpath"]
+        start_frame = record["start_frame"]
+        end_frame = record["end_frame"]
+        start_frame, end_frame = int(start_frame), int(end_frame)
+        frame = (start_frame + end_frame) // 2
+        imgpath = image_path_fn(vidpath, frame)
+        return {record_id : imgpath}
+
+        # img = get_image_from_record(record, type="utf-8", resize=True)
+        # img_msg = get_vlm_img_message(img, type="gpt")
+        # return [img_msg]
+
+    inspection_tool = StructuredTool.from_function(
+        func=_inspect_memory_record,
+        name="inspect_memory_record",
+        description="Given a memory record ID, return its associated visual observation as a base64-encoded image string.",
+        args_schema=MemoryInspectionInput
+    )
+
+    return [inspection_tool]
 
 def create_db_txt_search_tool(memory: MilvusMemory):
     class TextRetrieverInput(BaseModel):
@@ -508,42 +561,6 @@ def create_recall_all_tool(
         args_schema=RecallAllInput
     )
     return [recall_all_tool]
-
-def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
-
-    class MemoryInspectionInput(BaseModel):
-        record_id: int = Field(
-            description="The ID of the memory record you want to inspect. The image associated with this record will be returned in base64 (utf-8) format."
-        )
-
-    def _inspect_memory_record(record_id: int) -> str:
-        # Should return base64-encoded (utf-8) image string for the record
-        docs = memory.get_by_id(record_id)
-        if docs is None or len(docs) == 0:
-            return "" # "No record found with the given ID."
-        record = eval(docs)[0]
-
-        image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
-        vidpath = record["vidpath"]
-        start_frame = record["start_frame"]
-        end_frame = record["end_frame"]
-        start_frame, end_frame = int(start_frame), int(end_frame)
-        frame = (start_frame + end_frame) // 2
-        imgpath = image_path_fn(vidpath, frame)
-        return {record_id : imgpath}
-
-        # img = get_image_from_record(record, type="utf-8", resize=True)
-        # img_msg = get_vlm_img_message(img, type="gpt")
-        # return [img_msg]
-
-    inspection_tool = StructuredTool.from_function(
-        func=_inspect_memory_record,
-        name="inspect_memory_record",
-        description="Given a memory record ID, return its associated visual observation as a base64-encoded image string.",
-        args_schema=MemoryInspectionInput
-    )
-
-    return [inspection_tool]
 
 def create_determine_search_instance_tool(
     memory: MilvusMemory,
