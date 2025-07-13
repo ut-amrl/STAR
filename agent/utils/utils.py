@@ -6,7 +6,9 @@ from io import BytesIO
 from typing import Sequence
 import json
 import cv2
+from typing import List, Dict, Optional
 from PIL import Image as PILImage
+from PIL import ImageDraw, ImageFont
 import numpy as np
 import math
 from typing import Callable
@@ -76,6 +78,15 @@ class SearchInstance:
             message += img_msg
         
         return message
+    
+class Task:
+    def __init__(self, task_desc: str):
+        self.task_desc: str = task_desc
+        self.memory_search_instance = None
+        self.world_search_instance = None
+        
+        self.searched_in_space: list = []
+        self.searched_in_time: list = []
 
 class UnionFind:
     def __init__(self, size):

@@ -5,15 +5,6 @@ from agent.utils.debug import get_logger
 from agent.utils.function_wrapper import FunctionsWrapper # TODO need to clean up FunctionsWrapper
 from agent.utils.tools2 import *
 
-class Task:
-    def __init__(self, task_desc: str):
-        self.task_desc: str = task_desc
-        self.memory_search_instance = None
-        self.world_search_instance = None
-        
-        self.searched_in_space: list = []
-        self.searched_in_time: list = []
-
 class Agent:
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
