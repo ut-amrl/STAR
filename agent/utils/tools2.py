@@ -30,7 +30,9 @@ def create_memory_search_tools(memory: MilvusMemory):
                 "A natural language description of the scene or object to search for in memory. "
                 "This description will be embedded and used for vector similarity search against past memory captions. "
                 "**Do not use this field to search for time or location directly — use dedicated time and position tools for that.** "
-                "Examples of valid input include 'a person sitting at a table' or 'a green car near the garage'."
+                "Examples of valid input include 'a person sitting at a table' or 'a green car near the garage'. "
+                "**Note:** This performs approximate semantic search using text embeddings and always returns the top-k most similar results, "
+                "even if none of them are exact or relevant matches."
             )
         )
         start_time: Optional[str] = Field(

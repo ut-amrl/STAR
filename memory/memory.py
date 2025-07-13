@@ -247,7 +247,11 @@ class MilvusMemory(Memory):
         docs = self._memory_to_json(docs)
         return docs
     
-    def search_by_txt_and_time(self, query: str, start_time: str, end_time: str, k:int = 8) -> str:
+    def search_by_txt_and_time(self, 
+                               query: str, 
+                               start_time: str = None, 
+                               end_time: str = None, 
+                               k:int = 8) -> str:
         # self.milv_wrapper.reload()
         
         query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
@@ -267,7 +271,11 @@ class MilvusMemory(Memory):
         docs = self._memory_to_json(docs)
         return docs
     
-    def search_by_position_and_time(self, position: List[float], start_time: str, end_time: str, k: int = 8) -> str:
+    def search_by_position_and_time(self, 
+                                    position: List[float], 
+                                    start_time: str = None, 
+                                    end_time: str = None, 
+                                    k: int = 8) -> str:
         # Only use position for search (ignore theta)
         position_query = position
         expr_time = self._get_search_time_range(start_time, end_time)
