@@ -285,6 +285,19 @@ class MilvusMemory(Memory):
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
         return docs
+    
+    def search_by_time(self, time_str: str, k: int = 8) -> str:
+        time_ts = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").timestamp()
+        time_vector = [time_ts, 0.0]
+
+        results = self.milv_wrapper.search(
+            embedding=time_vector,
+            k=k,
+            anns_field="time",
+            expr="timestamp >= 0"
+        )
+        docs = self._parse_query_results(results)
+        return self._memory_to_json(docs)
 
     def search_last_k_by_text(self, is_first_time: bool, query: str, k: int = 10) -> str:
         if self.last_seen_id is not None and self.last_seen_id == 0:
