@@ -10,7 +10,7 @@ You will be given:
 - A description of the target object or event
 - (Optionally) a time window
 
-Your job is to gather information using tools you have. Then, depend on the task, filter out all useful, relevant records, which will be used for downstream tasks.
+Your job is to gather **complete, task-relevant** information using tools you have. Then, depend on the task, filter out all useful, relevant records, which will be used for downstream tasks.
 ---
 
 ## Tool Usage Guidelines

@@ -33,6 +33,11 @@ You are not responsible for completing the user’s high-level task. Your job is
 You have exhausted all your tool call limits, so now you must make a response using the following tool:
 `__conversational_response`.
 
+The `found_in_memory` field must be one of:
+- `"yes"`: you identified the intended object instance from memory
+- `"no"`: you searched but could not find a matching instance, even after inspecting memory records
+- `"unknown"`: if from the `history_summary`, the agent has not done anything yet, this flag should be "unknown" as you do not know if the instance appears in memory or not (no "search in memory" yet)
+
 Example 1:
 User Task: Bring me the book I was reading yesterday
 History Summary: User asks me to find the book they were reading yesterday. I didn't make any call yet. "I want to describe the object in text and include a visual snapshot so I can later find where I saw it last.
@@ -44,7 +49,7 @@ memory_records: []
     "tool": "__conversational_response", 
     "tool_input": {{
         "response": {{
-            "found_in_memory": false,
+            "found_in_memory": "unknown",
             "instance_desc": "the book user was reading yesterday",
             "record_id": ""
         }}
@@ -53,6 +58,25 @@ memory_records: []
 ```
 
 Example 2:
+User Task: Bring me a book
+History Summary: User asks me to find the book they were reading yesterday. I have created the search instance and searched in memory.
+Current Task: Determine where we should go to find the book
+memory_records: [] <-- Since history indicates that we have performed search before, but the memory is still empty. This suggest we are not finding a book in memory.
+
+```json
+{{
+    "tool": "__conversational_response", 
+    "tool_input": {{
+        "response": {{
+            "found_in_memory": "no",
+            "instance_desc": "the book user was reading yesterday",
+            "record_id": ""
+        }}
+    }}
+}}
+```
+
+Example 3:
 User Task: Bring me the book I was reading yesterday
 History Summary: I first search for 'the book I was reading yesterday' and obtained a list of record. Now, I need to determine which instance user is referring to by calling this tool. I want to obtain a text description and a visual observation of the instance so I can search where I saw it last time.
 Current Task: Resolve which instance user is referring to and propose new search target.
@@ -65,7 +89,7 @@ memory_records: [...]
     "tool": "__conversational_response", 
     "tool_input": {{
         "response": {{
-            "found_in_memory": true,
+            "found_in_memory": "yes",
             "instance_desc": "the purple book with a math symbol",
             "record_id": 42
         }}

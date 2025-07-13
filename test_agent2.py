@@ -12,6 +12,7 @@ from agent.utils.tools2 import (
     create_determine_unique_instances_tool
 )
 from agent.utils.function_wrapper import FunctionsWrapper
+from agent.utils.debug import get_logger
 
 def load_toy_memory(memory: MilvusMemory):
     ONE_DAY = 24 * 60 * 60  # seconds in o
@@ -23,7 +24,6 @@ def load_toy_memory(memory: MilvusMemory):
             "time": start_t+0.0,
             "base_position": [0.0, 0.0, 0.0],
             "base_caption": "I saw a cup",
-            # "base_caption": "I saw an object. It has coffee in it.",
             "start_frame": 0,
             "end_frame": 10
         },
@@ -78,6 +78,8 @@ def run_recall_best_match_tool(memory: MilvusMemory):
     llm = FunctionsWrapper(llm_raw)
     vlm_raw =  ChatOpenAI(model='gpt-4o', api_key=os.environ.get("OPENAI_API_KEY"))
     vlm = FunctionsWrapper(vlm_raw)
+    
+    logger = get_logger("recall_best_match_tool")
         
     tool = create_recall_best_match_tool(
         memory=memory,
@@ -85,7 +87,7 @@ def run_recall_best_match_tool(memory: MilvusMemory):
         llm_raw=llm_raw,
         vlm=vlm,
         vlm_raw=vlm_raw,
-        logger=None
+        logger=logger
     )[0]
     output = tool.run({
         "user_task": "Bring me a cup",
@@ -176,13 +178,15 @@ def run_determine_unique_instances_tool(memory: MilvusMemory):
     vlm_raw =  ChatOpenAI(model='gpt-4o', api_key=os.environ.get("OPENAI_API_KEY"))
     vlm = FunctionsWrapper(vlm_raw)
     
+    logger = get_logger("determine_unique_instances_tool")
+    
     tool = create_determine_unique_instances_tool(
         memory=memory,
         llm=llm,
         llm_raw=llm_raw,
         vlm=vlm,
         vlm_raw=vlm_raw,
-        logger=None
+        logger=logger
     )[0]
     
     memory_records = memory.get_all()
@@ -204,6 +208,11 @@ if __name__ == "__main__":
     memory = MilvusMemory("test", obs_savepth=None)
     memory.reset()
     load_toy_memory(memory)
+    
+    run_recall_best_match_tool(memory)
+    import pdb; pdb.set_trace()
+    run_determine_unique_instances_tool(memory)
+    import pdb; pdb.set_trace()
     
     agent = Agent("full")
     agent.set_memory(memory)

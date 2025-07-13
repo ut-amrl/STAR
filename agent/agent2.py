@@ -1,14 +1,15 @@
 import os
 from langchain_openai import ChatOpenAI
 
+from agent.utils.debug import get_logger
 from agent.utils.function_wrapper import FunctionsWrapper # TODO need to clean up FunctionsWrapper
 from agent.utils.tools2 import *
 
 class Task:
     def __init__(self, task_desc: str):
         self.task_desc: str = task_desc
-        self.memory_search_instance = SearchInstance()
-        self.world_search_instance = SearchInstance()
+        self.memory_search_instance = None
+        self.world_search_instance = None
         
         self.searched_in_space: list = []
         self.searched_in_time: list = []
@@ -28,7 +29,7 @@ class Agent:
         allow_common_sense: bool = False,
         verbose: bool = False,
     ):
-        self.logger = None  # Placeholder for a logger, can be set later
+        self.logger = get_logger()
         
         self.agent_type: str = agent_type
         self.allow_recaption: bool = allow_recaption
@@ -38,6 +39,7 @@ class Agent:
         
         self.task: Task = None
         
+        # self.llm_raw = ChatOpenAI(model="gpt-4-turbo", api_key=os.environ.get("OPENAI_API_KEY"))
         self.llm_raw = ChatOpenAI(model="gpt-4", api_key=os.environ.get("OPENAI_API_KEY"))
         self.llm = FunctionsWrapper(self.llm_raw)
         self.vlm_raw =  ChatOpenAI(model='gpt-4o', api_key=os.environ.get("OPENAI_API_KEY"))
@@ -62,25 +64,56 @@ class Agent:
         model = self.vlm
         
         history_summary = state["search_in_time_history"]
-        memory_search_instance_msg = self.task.memory_search_instance.to_message(type="mem")
-        world_search_instance_msg = self.task.world_search_instance.to_message(type="world")
+        if self.task.memory_search_instance is None:
+            memory_search_instance_msg = "None"
+        else:
+            memory_search_instance_msg = self.task.memory_search_instance.to_message()
+        if self.task.world_search_instance is None:
+            world_search_instance_msg = "None"
+        else:
+            world_search_instance_msg = self.task.world_search_instance.to_message()
         
-        chat_prompt = ChatPromptTemplate.from_messages([
-            ("human", "{history_summary}"),
+        escaped_history_summary = []
+        for msg in history_summary:
+            if hasattr(msg, "content") and isinstance(msg.content, str):
+                msg.content = msg.content.replace("{", "{{").replace("}", "}}")
+            escaped_history_summary.append(msg)
+        
+        working_memory = str(self.working_memory[-1]).replace("{", "{{").replace("}", "}}")
+        
+        messages = []
+        messages += [("human", "This is previous tool calls and the responses (Please summary them in `history_summary`):")]
+        messages += history_summary
+        messages += [
+            ("human", "Please follow the instructions below to determine the next action to take:"),
             ("human", self.search_in_time_prompt),
             ("system", "{fact_prompt}"),
-            ("system", memory_search_instance_msg),
-            ("system", world_search_instance_msg),
-            ("system", "Please determine the next action to take! Remember you can only call the provided tools, and stick strictly to the JSON format."),
-        ])
-        fact_prompt = ("Here are some facts about the current situation:\n" 
-                          "1. The current date is: {today_str}.\n"
-                          "2. The user task is: {self.task.task_desc}.\n")
+            ("system", "Huamn will provide you with the current search instances in memory and real world. If you call any recall_* tool, they will use the current memory_search_instance as the target instance to search in memory, and world_search_instance as the target instance to search in real world."),
+            ("human", memory_search_instance_msg),
+            ("human", world_search_instance_msg),
+            ("human", f"Here is the current working memory: {working_memory}"),
+            ("system", "Please determine the next action to take! Remember you can only call the provided tools, and stick strictly to the JSON format. Reason carefully about memory search instance, world search instance, and tool call history before making a decision."),
+        ]
+        
+        print("memory_search_instance_msg: ", memory_search_instance_msg)
+        chat_prompt = ChatPromptTemplate.from_messages(messages)
+        # chat_prompt = ChatPromptTemplate.from_messages([
+        #     ("human", "This is previous tool calls and the responses (Please summary them in `history_summary`):"),
+        #     MessagesPlaceholder("history_summary"),
+        #     ("human", "Please follow the instructions below to determine the next action to take:"),
+        #     ("human", self.search_in_time_prompt),
+        #     ("system", "{fact_prompt}"),
+        #     ("human", memory_search_instance_msg),
+        #     ("human", world_search_instance_msg),
+        #     ("human", f"Here is the current working memory: {self.working_memory[-1]}"),
+        #     ("system", "Please determine the next action to take! Remember you can only call the provided tools, and stick strictly to the JSON format."),
+        # ])
+        fact_prompt = "Here are some facts about the current situation:\n" + f"1. The current date is: {self.today_str}.\n" + f"2. The user task is: {self.task.task_desc}.\n"
         chained_model = chat_prompt | model
         
         response = chained_model.invoke({
             "fact_prompt": fact_prompt, 
-            "history_summary": history_summary,
+            # "history_summary": history_summary,
         })
         
         keys_to_check_for = ["history_summary", "current_task", "tool_call", "tool_input"]
@@ -91,6 +124,7 @@ class Agent:
         if parsed["tool_call"] not in [
             "create_or_update_memory_search_instance",
             "create_or_update_real_world_search_instance",
+            "determine_unique_instances_from_latest_working_memory",
             "recall_best_match",
             "recall_last_seen",
             "search_current_target_instance_in_real_world"
@@ -124,6 +158,9 @@ class Agent:
                             f"Current Task: {parsed_response['current_task']}\n" \
                             f"Tool Call: {tool_call_str}\n"
         tool_call_summary += "----------------\n" 
+        
+        if self.logger:
+            self.logger.info(f"[SEARCH_IN_TIME] search_in_time() - Current Task: {parsed_response['current_task']}; Tool Call: {tool_call_str}")
     
         return {"messages": [response], 
                 # "search_in_time_history": [tool_call_summary], 
@@ -143,6 +180,12 @@ class Agent:
                 "current_task": tool_call_metadata["current_task"],
                 "memory_records": self.working_memory[-1]
             })
+            if self.task.memory_search_instance is None:
+                self.task.memory_search_instance = SearchInstance("memory")
+            self.task.memory_search_instance.found = output.get("found_in_memory", "unknown")
+            self.task.memory_search_instance.inst_desc = output.get("instance_desc", "")
+            self.task.memory_search_instance.inst_viz_path = output.get("instance_viz_path", None)
+            self.task.memory_search_instance.past_observations = output.get("past_observations", [])
         elif tool_call == "create_or_update_real_world_search_instance":
             output = self.create_or_update_real_world_instance_tool.run({
                 "user_task": self.task.task_desc,
@@ -150,6 +193,12 @@ class Agent:
                 "current_task": tool_call_metadata["current_task"],
                 "memory_records": self.working_memory[-1]
             })
+            if self.task.world_search_instance is None:
+                self.task.world_search_instance = SearchInstance("world")
+            self.task.world_search_instance.found = output.get("found_in_world", "unknown")
+            self.task.world_search_instance.inst_desc = output.get("instance_desc", "")
+            self.task.world_search_instance.inst_viz_path = output.get("instance_viz_path", None)
+            self.task.world_search_instance.past_observations = output.get("past_observations", [])
         elif tool_call == "recall_best_match":
             output = self.recall_best_match_tool.run({
                 "user_task": self.task.task_desc,
@@ -157,7 +206,7 @@ class Agent:
                 "current_task": tool_call_metadata["current_task"],
                 "instance_description": tool_call_metadata["tool_input"]
             })
-            import pdb; pdb.set_trace()
+            self.working_memory.append(output)  # Update working memory with the output
         elif tool_call == "recall_last_seen":
             import pdb; pdb.set_trace()
         elif tool_call == "determine_unique_instances_from_latest_working_memory":
@@ -168,6 +217,7 @@ class Agent:
                 "instance_description": tool_call_metadata["tool_input"],
                 "memory_records": self.working_memory[-1]
             })
+            self.working_memory.append(output)  # Update working memory with the output
         elif tool_call == "search_current_target_instance_in_real_world": # Terminate
             import pdb; pdb.set_trace()
         else:
@@ -178,6 +228,10 @@ class Agent:
         tool_response_summary = "----------------\n"
         tool_response_summary += f"Tool Response: {output}\n"
         tool_response_summary += "----------------\n"
+        
+        if self.logger:
+            self.logger.info(f"[SEARCH_IN_TIME] search_in_time_action() - Tool Response: {output}")
+            
         return {"search_in_time_history": [str(output)], 
                 "last_response": output,}
     
@@ -193,8 +247,8 @@ class Agent:
         """
         workflow = StateGraph(Agent.AgentState)
         
-        workflow.add_node("search_in_time", lambda state: self.search_in_time(state))
-        workflow.add_node("search_in_time_action", lambda state: self.search_in_time_action(state))
+        workflow.add_node("search_in_time", lambda state: try_except_continue(state, self.search_in_time))
+        workflow.add_node("search_in_time_action", lambda state: try_except_continue(state, self.search_in_time_action))
         
         workflow.add_edge("search_in_time", "search_in_time_action")
         workflow.add_edge("search_in_time_action", "search_in_time")
@@ -246,6 +300,7 @@ class Agent:
             
     def run(self, question: str, today: str, graph_type: str):
         self.task = Task(question)
+        self.today_str = today
         
         self.build_graph()
         

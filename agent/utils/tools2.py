@@ -23,23 +23,23 @@ from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
 
 class SearchInstance:
-    def __init__(self):
+    def __init__(self, type: str = "memory"):
+        self.type: str = type  # "mem" for memory, "world" for world
         self.inst_desc: str = ""
         self.inst_viz_path: str = None
         self.annotated_inst_viz = None
         self.annotated_bbox = None
         
-        self.found_in_world: bool = False
-        self.found_in_memory: bool = False
+        self.found: str = "unknown"  # "unknown", "yes", "no"
         self.past_observations: List[Dict] = []  # TODO likely needs to be refactored
         
     def __str__(self):
-        return f"SearchInstance(inst_desc={self.inst_desc}, inst_viz_path={self.inst_viz_path}, found_in_memory={self.found_in_memory})"
+        return f"SearchInstance(inst_desc={self.inst_desc}, inst_viz_path={self.inst_viz_path}, found_in_{self.type}={self.found})"
     
-    def to_message(self, type: str = "mem"):
+    def to_message(self):
         message = []
         
-        if type == "mem":
+        if self.type == "memory":
             txt_msg = [{"type": "text", "text": f"Current Memory Search Instance and its most update-to-update status: {self.__str__()}"}]
         else:
             txt_msg = [{"type": "text", "text": f"Current World Search Instance and its most update-to-update status: {self.__str__()}"}]
@@ -231,7 +231,10 @@ def create_recall_best_match_tool(
             response = chained_model.invoke({"question": question, "chat_history": messages[1:]})
         
             if self.logger:
-                self.logger.info(f"[BEST_MATCH] Received agent response. Tool calls: {bool(response.tool_calls)}")
+                if getattr(response, 'tool_calls'):
+                    self.logger.info(f"[BEST_MATCH] Received agent response with tool calls: {response.tool_calls}")   
+                else:
+                    self.logger.info(f"[BEST_MATCH] Received agent response: {response.content}.")
         
             if hasattr(response, "tool_calls") and response.tool_calls:
                 for tool_call in response.tool_calls:
@@ -670,9 +673,9 @@ def create_determine_search_instance_tool(
         
             if self.logger:
                 if getattr(response, 'tool_calls'):
-                    self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - Tool calls present: {response.tool_calls}")
+                    self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] decide() - Tool calls present: {response.tool_calls}")
                 else:
-                    self.logger.info("[DETERMINE_UNIQUE_INSTANCES] decide() - {response.content}.")
+                    self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] decide() - {response.content}.")
         
             if hasattr(response, "tool_calls") and response.tool_calls:
                 for tool_call in response.tool_calls:
@@ -686,6 +689,7 @@ def create_determine_search_instance_tool(
         def generate(self, state: AgentState):
             messages = state["messages"]
             keys_to_check_for = ["found_in_memory", "instance_desc", "record_id"]
+            valid_found_values = {"yes", "no", "unknown"}
             
             prompt = self.decide_gen_only_prompt
             
@@ -709,14 +713,15 @@ def create_determine_search_instance_tool(
                 if key not in parsed:
                     raise ValueError("Missing required keys during generate. Retrying...")
             
+            found_value = parsed["found_in_memory"]
+            if found_value not in valid_found_values:
+                raise ValueError(f"Invalid value for found_in_memory: '{found_value}'. Must be one of {valid_found_values}.")
             output = {
-                "found_in_memory": parsed["found_in_memory"],
+                "found_in_memory": found_value,
                 "instance_desc": parsed["instance_desc"],
             }
             target_record = None
-            if not parsed["found_in_memory"]:
-                instance_viz_path = None
-            else:
+            if found_value == "yes":
                 if self.memory_records and isinstance(self.memory_records[0], dict) and "instance_desc" in self.memory_records[0]:
                     # Grouped format
                     for group in self.memory_records:
@@ -734,13 +739,16 @@ def create_determine_search_instance_tool(
                             break
                 if target_record is None:
                     raise ValueError(f"Could not find record with ID {parsed['record_id']} in memory records. Retrying...")
+
                 image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
-                vidpath = record["vidpath"]
-                start_frame = record["start_frame"]
-                end_frame = record["end_frame"]
-                start_frame, end_frame = int(start_frame), int(end_frame)
+                vidpath = target_record["vidpath"]
+                start_frame = int(target_record["start_frame"])
+                end_frame = int(target_record["end_frame"])
                 frame = (start_frame + end_frame) // 2
                 instance_viz_path = image_path_fn(vidpath, frame)
+            else:
+                instance_viz_path = None
+
             output["instance_viz_path"] = instance_viz_path
             output["past_observations"] = [target_record] if target_record else []
                 
@@ -990,7 +998,7 @@ def create_determine_unique_instances_tool(
                 if getattr(response, 'tool_calls'):
                     self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - Tool calls present: {response.tool_calls}")
                 else:
-                    self.logger.info("[DETERMINE_UNIQUE_INSTANCES] decide() - {response.content}.")
+                    self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - {response.content}.")
                 
             if hasattr(response, "tool_calls") and response.tool_calls:
                 for tool_call in response.tool_calls:
