@@ -67,6 +67,7 @@ class MilvusWrapper:
             FieldSchema(name='text_embedding', dtype=DataType.FLOAT_VECTOR, description='embedding vectors', dim=dim),
             FieldSchema(name='position', dtype=DataType.FLOAT_VECTOR, description='position of robot', dim=3),
             FieldSchema(name='theta', dtype=DataType.FLOAT, description='rotation of robot', dim=1),
+            FieldSchema(name='pose_embedding', dtype=DataType.FLOAT_VECTOR, description='position + theta', dim=4),
             FieldSchema(name='time', dtype=DataType.FLOAT_VECTOR, description='time', dim=2),
             FieldSchema(name='timestamp', dtype=DataType.DOUBLE, description='unix timestamp', dim=1),
             FieldSchema(name='caption', dtype=DataType.VARCHAR, description='caption string', max_length=3000),
@@ -84,6 +85,14 @@ class MilvusWrapper:
             'params':{"nlist":1024}
         }
         collection.create_index(field_name="text_embedding", index_params=index_params)
+        
+        index_params = {
+            'metric_type': 'L2',
+            'index_type': "IVF_FLAT",
+            'params': {"nlist": 1024}
+        }
+        collection.create_index(field_name="pose_embedding", index_params=index_params)
+
 
         index_params = {
             'metric_type':'L2',
@@ -118,7 +127,11 @@ class MilvusWrapper:
         res = [res]
         return res
         
-    def search(self, query_embedding, k:int, expr:str="timestamp >= 0"):
+    def search(self, 
+               embedding, 
+               k:int, 
+               expr:str="timestamp >= 0",
+               anns_field="text_embedding"):
         param = {
                 "metric_type": "L2",
                 "params": {
@@ -127,8 +140,8 @@ class MilvusWrapper:
             }
         BATCH_SIZE = 2
         res = self.collection.search(
-            data=[query_embedding],
-            anns_field="text_embedding",
+            data=[embedding],
+            anns_field=anns_field,
             param=param,
             batch_size=BATCH_SIZE,
             limit=k,
@@ -140,7 +153,12 @@ class MilvusWrapper:
         
         
 class MilvusMemory(Memory):
-    def __init__(self, db_collection_name: str, obs_savepth: str, db_ip='127.0.0.1', db_port=19530):
+    def __init__(self, 
+                 db_collection_name: str, 
+                 obs_savepth: str, 
+                 db_ip='127.0.0.1', 
+                 db_port=19530,
+                 drop_collection: bool = True):
         self.last_id = 0
         self.last_seen_id = None
         
@@ -153,15 +171,7 @@ class MilvusMemory(Memory):
         self.embedder = HuggingFaceEmbeddings(model_name="BAAI/bge-large-en-v1.5")
         self.working_memory = []
         
-        # self.text_vector_db = Milvus(
-        #     self.embedder,
-        #     connection_args={"host": self.db_ip, "port": self.db_port},
-        #     collection_name=self.db_collection_name,
-        #     vector_field='text_embedding',
-        #     text_field='caption',
-        # )
-        
-        self.reset(drop_collection=False)
+        self.reset(drop_collection=drop_collection)
         
     def reset(self, drop_collection:bool =True, delete_all_files:bool =False):
         if drop_collection:
@@ -195,6 +205,9 @@ class MilvusMemory(Memory):
         
         memory_dict['timestamp'] = memory_dict['time']
         memory_dict['time'] =  [memory_dict['time'], 0] # This is used for similarity search
+        
+        pose_vec = item.position + [item.theta]
+        memory_dict["pose_embedding"] = pose_vec
         
         if 'text_embedding' not in memory_dict.keys():
             memory_dict["text_embedding"] = self.embedder.embed_query(memory_dict['caption'])
@@ -236,12 +249,39 @@ class MilvusMemory(Memory):
     
     def search_by_txt_and_time(self, query: str, start_time: str, end_time: str, k:int = 8) -> str:
         # self.milv_wrapper.reload()
+        
         query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
+        expr_time = self._get_search_time_range(start_time, end_time)
+
         # TODO need to verify start_time and end_time str before calling this function
-        start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp()
-        end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").timestamp()
-        expr=f"timestamp >= {start_dt} and timestamp <= {end_dt}"
-        results = self.milv_wrapper.search(query_embedding=query_embedding, k=k, expr=expr)
+        # start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp()
+        # end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").timestamp()
+        # expr=f"timestamp >= {start_dt} and timestamp <= {end_dt}"
+        
+        results = self.milv_wrapper.search(
+            embedding=query_embedding, 
+            k=k, 
+            expr=expr_time,
+            anns_field="text_embedding")
+        docs = self._parse_query_results(results)
+        docs = self._memory_to_json(docs)
+        return docs
+    
+    def search_by_position_and_time(self, position: List[float], start_time: str, end_time: str, k: int = 8) -> str:
+        # Only use position for search (ignore theta)
+        position_query = position
+        expr_time = self._get_search_time_range(start_time, end_time)
+
+        # start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp()
+        # end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").timestamp()
+        # expr = f"timestamp >= {start_dt} and timestamp <= {end_dt}"
+
+        results = self.milv_wrapper.search(
+            embedding=position_query, 
+            k=k, 
+            expr=expr_time,
+            anns_field="position"  # <- the 3D vector field you already index
+        )
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
         return docs
@@ -260,7 +300,7 @@ class MilvusMemory(Memory):
         if end_id <= 1: # end of search
             return None
         n_retrieval = max((k // 4), 5)
-        results = self.milv_wrapper.search(query_embedding=query_embedding, k=n_retrieval, expr=f"id >= {start_id} and id < {end_id}")
+        results = self.milv_wrapper.search(embedding=query_embedding, k=n_retrieval, expr=f"id >= {start_id} and id < {end_id}")
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
         self.last_seen_id = start_id
@@ -275,7 +315,7 @@ class MilvusMemory(Memory):
     def search_all(self, query: str) -> str:
         self.milv_wrapper.reload()
         query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
-        results = self.milv_wrapper.search(query_embedding=query_embedding, k=100)
+        results = self.milv_wrapper.search(embedding=query_embedding, k=100)
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
         return docs
@@ -316,6 +356,21 @@ class MilvusMemory(Memory):
             rets.append(ret)
         return json.dumps(rets)
     
+    def _get_search_time_range(self, start_time: Optional[str], end_time: Optional[str]) -> tuple[float, float]:
+        """Return a Milvus expr string or None if no constraint is needed."""
+        if start_time is None and end_time is None:
+            return "timestamp >= 0"  # No time constraint
+
+        stats = self.get_memory_stats()
+
+        min_ts = stats["min_timestamp"] - 60
+        max_ts = stats["max_timestamp"] + 60
+
+        start_ts = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp() if start_time else min_ts
+        end_ts = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").timestamp() if end_time else max_ts
+
+        return f"timestamp >= {start_ts} and timestamp <= {end_ts}"
+        
     def get_memory_stats(self):
         self.milv_wrapper.reload()
         
