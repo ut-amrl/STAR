@@ -7,7 +7,8 @@ from tqdm import tqdm
 
 from evaluation.eval_utils import *
 # from agent.agent import Agent
-from agent.agent2 import Agent
+# from agent.agent2 import Agent
+from agent.agent_lowlevel import Agent
 from memory.memory import MilvusMemory, MemoryItem
 from agent.utils.memloader import remember
 from agent.utils.skills import *
@@ -141,7 +142,8 @@ def evaluate(args):
     #     pick_fn=pick,
     #     image_path_fn=get_image_path_for_simulation,
     # )
-    agent = Agent("full")
+    # agent = Agent("full")
+    agent = Agent()
     
     data_metadata = load_virtualhome_data_metadata(args.data_dir)
     versions = [""]

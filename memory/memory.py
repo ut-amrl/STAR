@@ -341,6 +341,19 @@ class MilvusMemory(Memory):
         docs = self._memory_to_json(docs)
         return docs
     
+    def count_records_by_time(self, start_time: str = None, end_time: str = None) -> int:
+        """
+        Return the number of records in memory between start_time and end_time.
+        """
+        expr_time = self._get_search_time_range(start_time, end_time)
+        
+        results = self.milv_wrapper.collection.query(
+            expr=expr_time,
+            output_fields=["id"],  # Use minimal field for efficiency
+            consistency_level="Strong"
+        )
+        return len(results)
+    
     def get_all(self) -> str: 
         results = self.milv_wrapper.search_by_expr(expr=f"id >= 0", k=self.last_id)
         docs = self._parse_query_results(results)

@@ -1,4 +1,5 @@
 import os
+import ast
 import copy
 import traceback, sys
 import base64
@@ -23,6 +24,39 @@ from sensor_msgs.msg import Image
 
 # Custom imports
 from memory.memory import MilvusMemory, MemoryItem
+
+class SearchProposal:
+    def __init__(self, 
+                 summary: str, 
+                 instance_description: str,
+                 position: List[float], 
+                 theta: float, 
+                 record: dict):
+        self.summary: str = summary
+        self.instance_description: str = instance_description  # Description of the object instance
+        self.position: List[float] = position  # [x, y, z]
+        self.theta: float = theta  # Orientation in radians
+        self.record: dict = record  # Original record from the database
+        
+    def __str__(self):
+        pos_str = f"({self.position[0]:.2f}, {self.position[1]:.2f}, {self.position[2]:.2f})"
+        theta_deg = math.degrees(self.theta)
+        return (f"SearchProposal: '{self.summary}' at position {pos_str}, "
+                f"theta={theta_deg:.1f}°: {self.record}")
+    
+    def to_message(self):
+        pass
+    
+    def get_viz_path(self):
+        image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
+        
+        vidpath = self.record["vidpath"]
+        start_frame = self.record["start_frame"]
+        end_frame = self.record["end_frame"]
+        frame = (start_frame + end_frame) // 2
+        
+        return image_path_fn(vidpath, frame)
+    
 
 class SearchInstance:
     def __init__(self, type: str = "memory"):
@@ -82,11 +116,99 @@ class SearchInstance:
 class Task:
     def __init__(self, task_desc: str):
         self.task_desc: str = task_desc
+        self.search_proposal = None
         self.memory_search_instance = None
         self.world_search_instance = None
         
         self.searched_in_space: list = []
         self.searched_in_time: list = []
+
+def get_image_message_for_record(record_id: int, viz_path: str):
+    try:
+        img = PILImage.open(viz_path).convert("RGB")
+    except Exception as e:
+        return [{"type": "text", "text": f"Cannot obtain image for record {record_id}: {e}"}]
+    
+    # Draw the record ID with background
+    draw = ImageDraw.Draw(img)
+    text = f"Record: {record_id}"
+    font = ImageFont.load_default()
+    text_size = draw.textbbox((0, 0), text, font=font)  # (left, top, right, bottom)
+    padding = 4
+    bg_rect = (
+        text_size[0] - padding,
+        text_size[1] - padding,
+        text_size[2] + padding,
+        text_size[3] + padding
+    )
+    draw.rectangle(bg_rect, fill=(0, 0, 0))  # Black background
+    draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
+    
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    img_msg = [get_vlm_img_message(img, type="gpt")]
+    
+    txt_msg = [{"type": "text", "text": f"This is the image observation made at Record {record_id}:"}]
+    return txt_msg + img_msg
+
+def is_image_inspection_result(content: str) -> bool:
+    try:
+        normalized = content.replace("{{", "{").replace("}}", "}")
+        parsed = ast.literal_eval(normalized)
+
+        if not isinstance(parsed, dict):
+            return False
+
+        # Ensure all keys are digits and values are .png strings
+        for k, v in parsed.items():
+            if not isinstance(k, str) or not k.isdigit():
+                return False
+            if not isinstance(v, str) or not v.lower().endswith(".png"):
+                return False
+
+        return True
+
+    except Exception:
+        return False
+
+def parse_and_pretty_print_tool_message(content: str) -> str:
+    
+    def is_memory_record_list(obj) -> bool:
+        return (
+            isinstance(obj, list)
+            and all(isinstance(entry, dict) for entry in obj)
+            and all(key in obj[0] for key in ("id", "timestamp", "position", "theta", "text"))
+        )
+    
+    try:
+        # Some messages are double-braced {{}} for safety → fix before parsing
+        data = ast.literal_eval(content)
+        
+        if not is_memory_record_list(data):
+            return content  # Don't try to format if not the expected structure
+        
+        # Sort chronologically
+        data = sorted(data, key=lambda d: float(d["timestamp"]))
+        
+        lines = []
+        for d in data:
+            timestamp = float(d["timestamp"])
+            readable_time = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+            pos = eval(d["position"]) if isinstance(d["position"], str) else d["position"]
+            pos_str = f"({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f})"
+            theta = d["theta"]
+            text = d["text"]
+
+            lines.append(
+                f"• [Record {d['id']}] It was {readable_time}, and I was at position {pos_str} "
+                f"and angle θ = {theta:.2f}. I saw the following: {text}."
+            )
+        final_output = "\n".join(lines)
+        return final_output.replace("{", "{{").replace("}", "}}")
+
+    except Exception as e:
+        return content.replace("{", "{{").replace("}", "}}")  # Fallback if not parsable
 
 class UnionFind:
     def __init__(self, size):

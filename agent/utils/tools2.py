@@ -22,6 +22,53 @@ from memory.memory import MilvusMemory
 from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
 
+def create_memory_terminate_tool() -> List[StructuredTool]:
+
+    class MemoryTerminateInput(BaseModel):
+        summary: str = Field(
+            description="A short explanation of what is being retrieved and why"
+        )
+        instance_description: str = Field(
+            description="A physical description of the object instance to retrieve, focusing on its appearance (e.g., 'a purple cup', 'a transparent glass with golden handle')"
+        )
+        position: List[float] = Field(
+            description="3D target coordinate for the object retrieval task, as [x, y, z]"
+        )
+        theta: float = Field(
+            description="Orientation angle in radians"
+        )
+        record_ids: List[int] = Field(
+            description="A list of memory record IDs that support the decision"
+        )
+
+    def _terminate_fn(
+        summary: str,
+        instance_description: str,
+        position: List[float],
+        theta: float,
+        record_ids: List[int],
+    ) -> bool:
+        # Dummy implementation: always return True
+        return True
+
+    terminate_tool = StructuredTool.from_function(
+        func=_terminate_fn,
+        name="terminate",
+        description=(
+            "Use this to **finalize the task** once you are confident about what to retrieve and where to go.\n\n"
+            "- Required fields:\n"
+            "  - `position`: 3D target coordinate (e.g., `[x, y, z]`)\n"
+            "  - `theta`: Orientation angle in radians\n"
+            "  - `record_ids`: A list of record IDs that support your conclusion\n"
+            "  - `summary`: A short explanation of what is being retrieved and why\n\n"
+            "- Constraint: Must be called **alone** (no other tools should be used in the same step)."
+        ),
+        args_schema=MemoryTerminateInput,
+    )
+
+    return [terminate_tool]
+        
+
 def create_memory_search_tools(memory: MilvusMemory):
 
     class TextRetrieverInputWithTime(BaseModel):
@@ -73,6 +120,16 @@ def create_memory_search_tools(memory: MilvusMemory):
             default=8,
             description="The number of top similar memory results to return. These are ranked by vector similarity between your query and memory captions."
         )
+        
+    class TimeRangeCountInput(BaseModel):
+        start_time: Optional[str] = Field(
+            default=None,
+            description="Start time of the interval to count records from, in YYYY-MM-DD HH:MM:SS format. Optional."
+        )
+        end_time: Optional[str] = Field(
+            default=None,
+            description="End time of the interval to count records to, in YYYY-MM-DD HH:MM:SS format. Optional."
+        )
 
     txt_time_tool = StructuredTool.from_function(
         func=lambda x, start_time=None, end_time=None, k=8: memory.search_by_txt_and_time(x, start_time, end_time, k),
@@ -94,8 +151,15 @@ def create_memory_search_tools(memory: MilvusMemory):
         description="Search memory for observations that occurred close to a specific timestamp.",
         args_schema=TimeRetrieverInput
     )
+    
+    count_tool = StructuredTool.from_function(
+        func=lambda start_time=None, end_time=None: memory.count_records_by_time(start_time, end_time),
+        name="get_record_count_within_time_range",
+        description="Return the number of memory records within a given time range. If no time bounds are provided, count all records.",
+        args_schema=TimeRangeCountInput
+    )
 
-    return [txt_time_tool, pos_time_tool, time_tool]
+    return [txt_time_tool, pos_time_tool, time_tool, count_tool]
 
 def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
 

@@ -290,7 +290,7 @@ class Agent:
         
             
     def run(self, question: str, today: str, graph_type: str):
-        self.task = Task(question)
+        self.set_task(question)
         self.today_str = today
         
         self.build_graph()

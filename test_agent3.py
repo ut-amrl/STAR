@@ -3,7 +3,7 @@ import time
 import argparse
 from datetime import datetime
 
-from agent.agent2 import Agent
+from agent.agent_lowlevel import *
 from memory.memory import MilvusMemory, MemoryItem
 from agent.utils.skills import *
 from agent.utils.tools2 import (
@@ -63,13 +63,44 @@ def test_time_search(memory):
     print("\n--- test_time_search ---")
     print(memory.search_by_time("2025-07-08 19:30:00", k=1))
     print(memory.search_by_time("2030-01-01 00:00:00", k=1))
+    
+def test_count_records_by_time(memory):
+    print("\n--- test_count_records_by_time ---")
+    # Full range: should include all inserted records (5 total)
+    count = memory.count_records_by_time("2025-07-08 19:30:00", "2025-07-10 19:30:00")
+    print(f"Count (full range): {count}")  # Expect: 5
+
+    # Narrow range: only the first 3 (cup, table, chair)
+    count = memory.count_records_by_time("2025-07-08 19:30:00", "2025-07-08 19:30:02")
+    print(f"Count (first 3 records): {count}")  # Expect: 3
+
+    # Range with only the last cup
+    count = memory.count_records_by_time("2025-07-09 19:30:00", "2025-07-09 19:31:00")
+    print(f"Count (last cup only): {count}")  # Expect: 1
+
+    # Empty range
+    count = memory.count_records_by_time("2025-07-11 00:00:00", "2025-07-11 01:00:00")
+    print(f"Count (no records): {count}")  # Expect: 0
+
 
 if __name__ == "__main__":
     args = parse_args()
     memory = MilvusMemory("test", obs_savepth=None)
+    load_toy_memory(memory)
 
     if args.test_memory:
-        load_toy_memory(memory)
+        test_count_records_by_time(memory)
         test_txt_search(memory)
         test_pos_search(memory)
         test_time_search(memory)
+        
+    agent = Agent()
+    agent.set_memory(memory)
+    task_metadata = {
+        "task_desc": "Find me a cup",
+        "today_str": "2025-01-02"
+    }
+    agent.run(question=task_metadata["task_desc"], 
+              today=task_metadata["today_str"], 
+              graph_type="")
+    
