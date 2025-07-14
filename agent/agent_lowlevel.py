@@ -83,7 +83,6 @@ class Agent:
                             content = get_image_message_for_record(id, path)
                             message = HumanMessage(content=content)
                             state["search_in_time_history"].append(message)
-                        import pdb; pdb.set_trace()
                     
                     if self.logger:
                         self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
@@ -111,8 +110,8 @@ class Agent:
         question = f"User Task: {self.task.task_desc}\n" \
                    f"What should you do next?"
         fact_prompt = f"Here are some facts for your context:\n" \
-                      f"1. The current date is {self.today_str}.\n" \
-                      f"2. {self.memory.get_memory_stats_for_llm()}"
+                      f"{self.memory.get_memory_stats_for_llm()}"
+                      
         response = chained_model.invoke({
             "chat_history": chat_history,
             "fact_prompt": fact_prompt,
@@ -197,7 +196,7 @@ class Agent:
         
     def run(self, question: str, today: str, graph_type: str):
         if self.logger:
-            self.logger.info(f"User question: {question}. Today's is: {today}.")
+            self.logger.info(f"User question: {question}. Today's date is: {today}.")
         
         self.set_task(question)
         self.today_str = today

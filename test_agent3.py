@@ -1,7 +1,7 @@
 import datetime
 import time
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 
 from agent.agent_lowlevel import *
 from memory.memory import MilvusMemory, MemoryItem
@@ -22,7 +22,7 @@ def parse_args():
 
 def load_toy_memory(memory: MilvusMemory):
     ONE_DAY = 24 * 60 * 60
-    start_t = datetime.strptime("2025-07-08 19:30:00", "%Y-%m-%d %H:%M:%S").timestamp()
+    start_t = datetime.strptime("2025-07-08 19:30:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
     
     records = [
         {"time": start_t+0.0, "base_position": [0.0, 0.0, 0.0], "base_caption": "I saw a cup", "start_frame": 0, "end_frame": 10},
@@ -97,8 +97,12 @@ if __name__ == "__main__":
     agent = Agent()
     agent.set_memory(memory)
     task_metadata = {
-        "task_desc": "Find me a cup",
-        "today_str": "2025-01-02"
+        # "task_desc": "Find me a cup",
+        # "task_desc": "Find me a white cup",
+        # "task_desc": "Bring me a cup you saw yesterday.",
+        "task_desc": "Bring me a white cup you saw yesterday.",
+        # "task_desc": "Bring me my favorite cup.",
+        "today_str": "2025-07-09"
     }
     agent.run(question=task_metadata["task_desc"], 
               today=task_metadata["today_str"], 

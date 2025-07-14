@@ -13,7 +13,7 @@ from PIL import ImageDraw, ImageFont
 import numpy as np
 import math
 from typing import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 
 # LangeChain imports
 from langchain_core.messages import ToolMessage
@@ -194,7 +194,7 @@ def parse_and_pretty_print_tool_message(content: str) -> str:
         lines = []
         for d in data:
             timestamp = float(d["timestamp"])
-            readable_time = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+            readable_time = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             pos = eval(d["position"]) if isinstance(d["position"], str) else d["position"]
             pos_str = f"({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f})"
             theta = d["theta"]
