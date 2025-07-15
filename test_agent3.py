@@ -83,7 +83,6 @@ def test_count_records_by_time(memory):
     count = memory.count_records_by_time("2025-07-11 00:00:00", "2025-07-11 01:00:00")
     print(f"Count (no records): {count}")  # Expect: 0
 
-
 if __name__ == "__main__":
     args = parse_args()
     memory = MilvusMemory("test", obs_savepth=None)

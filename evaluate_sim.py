@@ -159,7 +159,7 @@ def evaluate(args):
     agent = Agent(
         navigate_fn=navigate,
         find_object_fn=find_object,
-        pick_fn=pick,
+        pick_fn=pick_by_instance_id,
     )
     
     data_metadata = load_virtualhome_data_metadata(args.data_dir)

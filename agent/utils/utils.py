@@ -131,9 +131,9 @@ class SearchInstance:
 class Task:
     def __init__(self, task_desc: str):
         self.task_desc: str = task_desc
-        self.search_proposal = None
-        self.memory_search_instance = None
-        self.world_search_instance = None
+        self.search_proposal: SearchProposal = None
+        self.memory_search_instance: SearchInstance = None
+        self.world_search_instance: SearchInstance = None
         
         self.searched_in_space: list = []
         self.searched_in_time: list = []

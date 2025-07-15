@@ -9,4 +9,3 @@ tests
 evaluation/*outputs
 test.py
 scripts/local
-test_agent3.py

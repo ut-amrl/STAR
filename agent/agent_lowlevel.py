@@ -118,7 +118,7 @@ class Agent:
         tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
         
         # Select prompt template
-        max_search_in_time_cnt = 15
+        max_search_in_time_cnt = 20
         if self.search_in_time_cnt < max_search_in_time_cnt:
             prompt = self.search_in_time_prompt
         else:
@@ -221,7 +221,10 @@ class Agent:
         if self.logger:
             self.logger.info(f"[SEARCH IN SPACE] Navigation successful to position {self.task.search_proposal.position} with theta {self.task.search_proposal.theta}.")
         
-        find_response = self.find_object_fn(self.task.search_proposal.instance_description) 
+        find_response = self.find_object_fn(
+            self.task.search_proposal.instance_description,
+            self.task.search_proposal.get_viz_path()
+        ) 
         if not find_response:
             if self.logger:
                 self.logger.error(f"[SEARCH IN SPACE] Object not found in the current view.")
@@ -229,7 +232,10 @@ class Agent:
         if self.logger:
             self.logger.info(f"[SEARCH IN SPACE] Object found in the current view: {find_response}.")
             
-        pick_response = self.pick_fn(self.task.search_proposal.instance_description)
+        pick_response = self.pick_fn(
+            self.task.search_proposal.instance_description,
+            find_response.id
+        )
         if not pick_response.success:
             if self.logger:
                 self.logger.error(f"[SEARCH IN SPACE] Pick operation failed!")
