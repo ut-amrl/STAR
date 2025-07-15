@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass, asdict
 from typing import List, Optional
 import inspect 
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import json
 
@@ -295,7 +295,7 @@ class MilvusMemory(Memory):
         return docs
     
     def search_by_time(self, time_str: str, k: int = 8) -> str:
-        time_ts = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").timestamp()
+        time_ts = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
         time_vector = [time_ts, 0.0]
 
         results = self.milv_wrapper.search(
@@ -400,8 +400,8 @@ class MilvusMemory(Memory):
         min_ts = stats["min_timestamp"] - 60
         max_ts = stats["max_timestamp"] + 60
 
-        start_ts = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp() if start_time else min_ts
-        end_ts = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").timestamp() if end_time else max_ts
+        start_ts = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp() if start_time else min_ts
+        end_ts = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp() if end_time else max_ts
 
         return f"timestamp >= {start_ts} and timestamp <= {end_ts}"
         

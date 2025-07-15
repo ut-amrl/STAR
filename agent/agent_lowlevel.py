@@ -262,7 +262,9 @@ class Agent:
                 (("user", self.task.task_desc)),
             ]
         }
-        state = self.graph.invoke(inputs)
+        
+        config = {"recursion_limit": 50}
+        state = self.graph.invoke(inputs, config=config)
         
         if self.logger:
             self.logger.info("")

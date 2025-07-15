@@ -18,6 +18,7 @@ from agent.utils.debug import get_logger
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--test-memory', action='store_true', help='Run memory tests')
+    parser.add_argument('--test-agent', action='store_true', help='Run agent tests')
     return parser.parse_args()
 
 def load_toy_memory(memory: MilvusMemory):
@@ -51,7 +52,7 @@ def test_txt_search(memory):
     print(memory.search_by_txt_and_time("cup", "2025-07-08 19:30:00", "2025-07-09 19:30:00", k=3))
     print(memory.search_by_txt_and_time("cat", "2025-07-08 19:30:00", "2025-07-09 19:30:00", k=1))
     print(memory.search_by_txt_and_time("cup", "2025-07-08 19:30:00", "2025-07-09 19:30:00"))
-    print(memory.search_by_txt_and_time("cup", start_time="2025-07-08 19:30:00"))
+    print(memory.search_by_txt_and_time("cup", start_time="2025-07-08 19:30:00", k=1))
     print(memory.search_by_txt_and_time("cup", end_time="2025-07-08 19:30:00"))
 
 def test_pos_search(memory):
@@ -94,17 +95,18 @@ if __name__ == "__main__":
         test_pos_search(memory)
         test_time_search(memory)
         
-    agent = Agent()
-    agent.set_memory(memory)
-    task_metadata = {
-        # "task_desc": "Find me a cup",
-        # "task_desc": "Find me a white cup",
-        # "task_desc": "Bring me a cup you saw yesterday.",
-        "task_desc": "Bring me a white cup you saw yesterday.",
-        # "task_desc": "Bring me my favorite cup.",
-        "today_str": "2025-07-09"
-    }
-    agent.run(question=task_metadata["task_desc"], 
-              today=task_metadata["today_str"], 
-              graph_type="")
+    if args.test_agent:
+        agent = Agent()
+        agent.set_memory(memory)
+        task_metadata = {
+            # "task_desc": "Find me a cup",
+            # "task_desc": "Find me a white cup",
+            # "task_desc": "Bring me a cup you saw yesterday.",
+            "task_desc": "Bring me a white cup you saw yesterday.",
+            # "task_desc": "Bring me my favorite cup.",
+            "today_str": "2025-07-09"
+        }
+        agent.run(question=task_metadata["task_desc"], 
+                today=task_metadata["today_str"], 
+                graph_type="")
     
