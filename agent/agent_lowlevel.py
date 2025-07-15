@@ -57,10 +57,13 @@ class Agent:
         
         prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "agent3")
         self.search_in_time_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_prompt.txt"))
+        self.search_in_time_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
         
         self.temporal_tools, self.spatial_tools = None, None
         self.temporal_tool_definitions = None
         self.spatial_tool_definitions = None
+        
+        self.search_in_time_cnt = 0
         
     def set_task(self, task_desc: str):
         self.task = Task(task_desc)
@@ -113,17 +116,35 @@ class Agent:
         # Extract tool names from self.temporal_tool_definitions
         tool_names = [tool['name'] for tool in self.temporal_tool_definitions]
         tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
-
-        chat_prompt = ChatPromptTemplate.from_messages([
+        
+        # Select prompt template
+        max_search_in_time_cnt = 15
+        if self.search_in_time_cnt < max_search_in_time_cnt:
+            prompt = self.search_in_time_prompt
+        else:
+            prompt = self.search_in_time_gen_only_prompt
+            
+        chat_template = [
             ("human", f"User has asked you to fulfill this task: {self.task.task_desc}. You are a memory-capable robot assistant. Your goal is to **help the user retrieve a physical object in the real world** by reasoning over **past observations stored in memory**. Right now, you need to decide what to do next based on the chat history of the tools you called previously as well as tool responses. "),
             ("human", "This is previous tool calls and the responses:"),
             MessagesPlaceholder("chat_history"),
-            ("human", self.search_in_time_prompt),
+            ("human", prompt),
             ("system", "{fact_prompt}"),
             ("human", "{question}"),
-            ("system", "Please determine the next action to take! Remember you can only call the provided tools, and stick strictly to the JSON format. Reason carefully about memory search instance, world search instance, and tool call history before making a decision. If you want to pause a second to think about what to do, use `__conversational_reponse` to draft your reply."),
-            ("system", f"As a reminder, you can only call the following tools: \n{tool_list_str}"),
-        ])
+            ("system", "You should now decide the **next action** based on everything you've seen so far. Use the available tools to continue your memory search, or finalize your decision if you're confident."),
+        ]
+        if self.search_in_time_cnt < max_search_in_time_cnt:
+            chat_template += [
+                ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}"),
+                ("system", f"🔄 You are allowed up to **{max_search_in_time_cnt} iterations** total. This is iteration **#{self.search_in_time_cnt}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
+            ]
+        else:
+            chat_template += [
+                ("system", f"You must strictly follow the JSON output format. Since you have already reached the maximum number of iterations, you should finalize your decision now by calling `terminate` tool with right JSON format."),
+            ]
+
+        chat_prompt = ChatPromptTemplate.from_messages(chat_template)
+        
         chained_model = chat_prompt | model
         question = f"User Task: {self.task.task_desc}\n" \
                    f"What should you do next?"
@@ -145,6 +166,7 @@ class Agent:
             else:
                 self.logger.info(f"[SEARCH IN TIME] {response}")
 
+        self.search_in_time_cnt += 1
         return {"messages": [response], "search_in_time_history": [response]}
     
     def prepare_search_in_space(self, state: AgentState):
@@ -251,10 +273,13 @@ class Agent:
         
     def run(self, question: str, today: str, graph_type: str):
         if self.logger:
+            self.logger.info("=============== START ===============")
             self.logger.info(f"User question: {question}. Today's date is: {today}.")
         
         self.set_task(question)
         self.today_str = today
+        
+        self.search_in_time_cnt = 0
         
         self.build_graph()
         
@@ -267,7 +292,7 @@ class Agent:
         state = self.graph.invoke(inputs, config=config)
         
         if self.logger:
-            self.logger.info("")
+            self.logger.info("=============== END ===============")
         
         return self.task.search_proposal
         

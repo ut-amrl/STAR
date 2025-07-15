@@ -259,17 +259,18 @@ def evaluate(args):
                     }
                 elif args.eval_type == "execution":
                     # obj_success, mem_success, retrieved_instance = evaluate_one_execution_task(args, agent, task, annotations)
-                    # result = {
-                    #     "task": task["task"],
-                    #     "task_type": task_type,
-                    #     "instance_name": task["instance_name"],
-                    #     "instance_class": task["instance_class"],
-                    #     "success": obj_success,
-                    #     "mem_success": mem_success or obj_success,  # If object retrieval is successful, memory retrieval is also considered successful
-                    #     "retrieved_instance": retrieved_instance,
-                    #     "target_instance": task["instance_name"],
-                    # } # TODO figure out why ground truth sometimes missed the target instance
-                    result = evaluate_one_task(args, agent, task, annotations)
+                    obj_success, mem_success, retrieved_instance = evaluate_one_task(args, agent, task, annotations)
+                    
+                    result = {
+                        "task": task["task"],
+                        "task_type": task_type,
+                        "instance_name": task["instance_name"],
+                        "instance_class": task["instance_class"],
+                        "success": obj_success,
+                        "mem_success": mem_success or obj_success,  # If object retrieval is successful, memory retrieval is also considered successful
+                        "retrieved_instance": retrieved_instance,
+                        "target_instance": task["instance_name"],
+                    } # TODO figure out why ground truth sometimes missed the target instance
                 else:
                     raise ValueError(f"Unknown evaluation type: {args.eval_type}")
                 
