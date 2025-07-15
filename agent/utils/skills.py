@@ -66,6 +66,17 @@ def pick(query_text: str) -> PickObjectSrvResponse: # TODO need to change functi
     except rospy.ServiceException as e:
         print("Service call failed:", e)
         
+def pick_by_instance_id(query_text: str, instance_id: str) -> PickObjectSrvResponse:
+    rospy.wait_for_service("/moma/pick_object")
+    try:
+        pick_service = rospy.ServiceProxy("/moma/pick_object", PickObjectSrv)
+        response = pick_service(
+            instance_id=instance_id,
+            query_text=query_text
+        )
+        return response
+    except rospy.ServiceException as e:
+        print("Service call failed:", e)
 
 def get_visible_objects() -> GetVisibleObjectsSrvResponse:
     """
@@ -94,7 +105,7 @@ def detect_objects_owlv2(query_image: Image, query_cls: str) -> SemanticObjectDe
     except rospy.ServiceException as e:
         print("Service call failed:", e)
     
-def find_object(query_text: str) -> FindObjectSrvResponse:
+def find_object(query_text: str, viz_path: str = None) -> FindObjectSrvResponse:
     """
     Find an object by class.
     """
@@ -103,6 +114,7 @@ def find_object(query_text: str) -> FindObjectSrvResponse:
         find_object_service = rospy.ServiceProxy("/moma/find_object", FindObjectSrv)
         req = FindObjectSrvRequest()
         req.query_text = query_text
+        req.ref_image = get_image_from_path(viz_path, type="ros") if viz_path else None
         response = find_object_service(req)
         return response
     except rospy.ServiceException as e:

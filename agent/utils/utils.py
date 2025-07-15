@@ -407,6 +407,23 @@ def get_image(
         ValueError("Invalid image data type: only support opencv, PIL, or utf-8")
     return img
 
+def get_image_from_path(imgpath: str, type: str):
+    if type.lower() == "opencv":
+        img = cv2.imread(imgpath)
+    elif type.lower() == "pil":
+        img = PILImage.open(imgpath)
+    elif type.lower() == "utf-8":
+        with open(imgpath, "rb") as imgfile:
+            data = imgfile.read()
+            img = base64.b64encode(data)
+            img = copy.copy(img.decode("utf-8"))
+    elif type.lower() == "ros":
+        openvc_img = cv2.imread(imgpath)
+        img = opencv_to_ros_image(openvc_img)
+    else:
+        raise ValueError("Invalid image data type: only support opencv, PIL, utf-8, or ros") 
+    return img
+
 def get_image_from_record(
     record: dict, 
     type: str = "opencv", 
