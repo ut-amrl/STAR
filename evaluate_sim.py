@@ -132,6 +132,19 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
         import pdb; pdb.set_trace()
         
     return (obj_retrieval_success, mem_retrieval_success, retrieved_instance)
+
+def evaluate_one_task(args, agent: Agent, task: dict, annotations):
+    result = agent.run(
+        question=task['task'],
+        today=f"{args.current_pretty_date}",
+        graph_type="",
+    )
+
+    if result.has_picked is None or result.instance_name is None:
+        return (False, False, None)
+    obj_retrieval_success = task["instance_name"].lower() in result.instance_name.lower()
+    mem_retrieval_success = obj_retrieval_success
+    return (obj_retrieval_success, mem_retrieval_success, result.instance_name)
     
 def evaluate(args):
     # agent = Agent(
@@ -143,7 +156,11 @@ def evaluate(args):
     #     image_path_fn=get_image_path_for_simulation,
     # )
     # agent = Agent("full")
-    agent = Agent()
+    agent = Agent(
+        navigate_fn=navigate,
+        find_object_fn=find_object,
+        pick_fn=pick,
+    )
     
     data_metadata = load_virtualhome_data_metadata(args.data_dir)
     versions = [""]
@@ -241,17 +258,18 @@ def evaluate(args):
                         "success": success,
                     }
                 elif args.eval_type == "execution":
-                    obj_success, mem_success, retrieved_instance = evaluate_one_execution_task(args, agent, task, annotations)
-                    result = {
-                        "task": task["task"],
-                        "task_type": task_type,
-                        "instance_name": task["instance_name"],
-                        "instance_class": task["instance_class"],
-                        "success": obj_success,
-                        "mem_success": mem_success or obj_success,  # If object retrieval is successful, memory retrieval is also considered successful
-                        "retrieved_instance": retrieved_instance,
-                        "target_instance": task["instance_name"],
-                    } # TODO figure out why ground truth sometimes missed the target instance
+                    # obj_success, mem_success, retrieved_instance = evaluate_one_execution_task(args, agent, task, annotations)
+                    # result = {
+                    #     "task": task["task"],
+                    #     "task_type": task_type,
+                    #     "instance_name": task["instance_name"],
+                    #     "instance_class": task["instance_class"],
+                    #     "success": obj_success,
+                    #     "mem_success": mem_success or obj_success,  # If object retrieval is successful, memory retrieval is also considered successful
+                    #     "retrieved_instance": retrieved_instance,
+                    #     "target_instance": task["instance_name"],
+                    # } # TODO figure out why ground truth sometimes missed the target instance
+                    result = evaluate_one_task(args, agent, task, annotations)
                 else:
                     raise ValueError(f"Unknown evaluation type: {args.eval_type}")
                 

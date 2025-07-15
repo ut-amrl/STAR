@@ -31,18 +31,21 @@ class SearchProposal:
                  instance_description: str,
                  position: List[float], 
                  theta: float, 
-                 record: dict):
+                 records: List[dict]):
         self.summary: str = summary
         self.instance_description: str = instance_description  # Description of the object instance
         self.position: List[float] = position  # [x, y, z]
         self.theta: float = theta  # Orientation in radians
-        self.record: dict = record  # Original record from the database
+        self.records: List[dict] = records  # Original record from the database
+        
+        self.instance_name: str = None
+        self.has_picked: bool = False
         
     def __str__(self):
         pos_str = f"({self.position[0]:.2f}, {self.position[1]:.2f}, {self.position[2]:.2f})"
         theta_deg = math.degrees(self.theta)
         return (f"SearchProposal: '{self.summary}' at position {pos_str}, "
-                f"theta={theta_deg:.1f}°: {self.record}")
+                f"theta={theta_deg:.1f}°: {self.records}")
     
     def to_message(self):
         pass
@@ -50,12 +53,24 @@ class SearchProposal:
     def get_viz_path(self):
         image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
         
-        vidpath = self.record["vidpath"]
-        start_frame = self.record["start_frame"]
-        end_frame = self.record["end_frame"]
+        record = self.records[0]
+        vidpath = record["vidpath"]
+        start_frame = record["start_frame"]
+        end_frame = record["end_frame"]
         frame = (start_frame + end_frame) // 2
         
         return image_path_fn(vidpath, frame)
+    
+    def to_output(self):
+        return {
+            "instance_name": self.instance_name,
+            "has_picked": self.has_picked,
+            "summary": self.summary,
+            "instance_description": self.instance_description,
+            "position": self.position,
+            "theta": self.theta,
+            "records": self.records,
+        }
     
 
 class SearchInstance:

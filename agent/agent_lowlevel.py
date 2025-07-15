@@ -7,6 +7,15 @@ from agent.utils.debug import get_logger
 from agent.utils.function_wrapper import FunctionsWrapper # TODO need to clean up FunctionsWrapper
 from agent.utils.tools2 import *
 
+import roslib; roslib.load_manifest('amrl_msgs')
+from amrl_msgs.srv import (
+    GetImageSrvResponse,
+    GetImageAtPoseSrvResponse, 
+    PickObjectSrvResponse,
+    GetVisibleObjectsSrvResponse,
+    SemanticObjectDetectionSrvResponse
+)
+
 class Agent:
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -24,8 +33,18 @@ class Agent:
         return "search_in_time_action"
     
     def __init__(self,
-                 verbose: bool = False):
+                 verbose: bool = False,
+                 navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
+                 find_object_fn: Callable[[str], List[List[int]]] = None,
+                 observe_fn: Callable[[], GetImageSrvResponse] = None,
+                 pick_fn: Callable[[str], PickObjectSrvResponse] = None
+    ):
         self.verbose = verbose
+        
+        self.navigate_fn = navigate_fn
+        self.find_object_fn = find_object_fn
+        self.observe_fn = observe_fn
+        self.pick_fn = pick_fn
         
         self.logger = get_logger()
         
@@ -34,7 +53,6 @@ class Agent:
         self.llm_raw = ChatOpenAI(model="o3", temperature=1, api_key=os.environ.get("OPENAI_API_KEY"))
         self.llm = FunctionsWrapper(self.llm_raw)
         self.vlm_raw = ChatOpenAI(model="o3", temperature=1, api_key=os.environ.get("OPENAI_API_KEY"))
-        # self.vlm_raw = ChatOpenAI(model="gpt-4o", api_key=os.environ.get("OPENAI_API_KEY"))
         self.vlm = FunctionsWrapper(self.vlm_raw)
         
         prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "agent3")
@@ -142,27 +160,64 @@ class Agent:
                     instance_description = fn_args.get("instance_description", "")
                     position = fn_args["position"]
                     theta = fn_args["theta"]
-                    records_id = [int(x) for x in fn_args["record_ids"]]
-                    record = eval(self.memory.get_by_id(records_id[0]))[0]
-                    record["position"] = eval(record["position"])
                     
-                    self.search_proposal = SearchProposal(summary=summary,
+                    records = []
+                    record_ids = [int(x) for x in fn_args["record_ids"]]
+                    for record_id in record_ids:
+                        record = eval(self.memory.get_by_id(record_id))[0]
+                        record["position"] = eval(record["position"])
+                        records.append(record)
+                    
+                    self.task.search_proposal = SearchProposal(summary=summary,
                                                           instance_description=instance_description,
                                                           position=position,
                                                           theta=theta,
-                                                          record=record,)
+                                                          records=records,)
                     if self.logger:
-                        self.logger.info(f"[PREPARE SEARCH IN SPACE] Search proposal prepared: {self.search_proposal}")
+                        self.logger.info(f"[PREPARE SEARCH IN SPACE] Search proposal prepared: {self.task.search_proposal}")
                     return
+                
         # TODO: Should never go here; add fallback logic
         import pdb; pdb.set_trace()
     
     def search_in_space(self, state: AgentState):
-        if not self.search_proposal:
+        if not self.task.search_proposal:
             # TODO: Handle the case where search proposal is not set
-            pass
-        import pdb; pdb.set_trace()
-    
+            if self.logger:
+                self.logger.warning("[SEARCH IN SPACE] No search proposal set. Cannot proceed with search in space.")
+            return
+        
+        nav_response = self.navigate_fn(
+            self.task.search_proposal.position,
+            self.task.search_proposal.theta
+        )
+        if not nav_response.success:
+            if self.logger:
+                self.logger.error(f"[SEARCH IN SPACE] Navigation failed!")
+            import pdb; pdb.set_trace() # NOTE: This should not happen
+            return
+        if self.logger:
+            self.logger.info(f"[SEARCH IN SPACE] Navigation successful to position {self.task.search_proposal.position} with theta {self.task.search_proposal.theta}.")
+        
+        find_response = self.find_object_fn(self.task.search_proposal.instance_description) 
+        if not find_response:
+            if self.logger:
+                self.logger.error(f"[SEARCH IN SPACE] Object not found in the current view.")
+            return
+        if self.logger:
+            self.logger.info(f"[SEARCH IN SPACE] Object found in the current view: {find_response}.")
+            
+        pick_response = self.pick_fn(self.task.search_proposal.instance_description)
+        if not pick_response.success:
+            if self.logger:
+                self.logger.error(f"[SEARCH IN SPACE] Pick operation failed!")
+        
+        self.task.search_proposal.instance_name = pick_response.instance_uid
+        self.task.search_proposal.has_picked = pick_response.success
+        if self.logger:
+            self.logger.info(f"[SEARCH IN SPACE] Pick operation successful: {self.task.search_proposal.instance_name} (has_picked={self.task.search_proposal.has_picked}).")
+        return
+            
     def build_graph(self):
         """
         Build the graph for the agent.
@@ -208,5 +263,9 @@ class Agent:
             ]
         }
         state = self.graph.invoke(inputs)
-        import pdb; pdb.set_trace()
+        
+        if self.logger:
+            self.logger.info("")
+        
+        return self.task.search_proposal
         

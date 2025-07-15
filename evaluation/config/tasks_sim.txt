@@ -1,4 +1,11 @@
 classonly/3107f9ad.json
+classonly/336c6a49.json
+classonly/581abdb5.json
+classonly/6a43ff0f.json
+classonly/aea375cb.json
+classonly/c9c393f4.json
+classonly/d8719199.json
+classonly/fdcec80d.json
 unambiguous/1636832e.json
 spatial/1cb8c743.json
 spatial_temporal/169b086f.json 
