@@ -22,6 +22,49 @@ from memory.memory import MilvusMemory
 from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
 
+def create_pause_and_think_tool() -> List[StructuredTool]:
+
+    class PauseAndThinkInput(BaseModel):
+        recent_activity: str = Field(
+            description="What the agent has been doing recently (e.g., which tools were used, what the goal was, what queries were attempted)"
+        )
+        current_findings: str = Field(
+            description="What the agent currently knows or believes to be true, based on previous tool results or reasoning"
+        )
+        open_questions: str = Field(
+            description="What is still unclear, ambiguous, or unresolved — areas where more information or disambiguation is needed"
+        )
+        next_step_plan: str = Field(
+            description="What the agent intends to do next and why — a plan to resolve uncertainties, confirm identity, or proceed toward task completion"
+        )
+
+    def _pause_and_think_fn(
+        recent_activity: str,
+        current_findings: str,
+        open_questions: str,
+        next_step_plan: str,
+    ) -> bool:
+        # Dummy implementation: always return True
+        return True
+
+    pause_tool = StructuredTool.from_function(
+        func=_pause_and_think_fn,
+        name="pause_and_think",
+        description=(
+            "Use this to pause and reflect on your reasoning so far. This tool helps you summarize what you’ve done, what you’ve learned, what’s still uncertain, and what you plan to do next.\n\n"
+            "- You should call this tool **frequently**, especially when:\n"
+            "  • You’ve made several tool calls and want to consolidate your progress\n"
+            "  • You’re about to change strategies or time ranges\n"
+            "  • You’ve found some relevant records but haven’t reached a confident conclusion yet\n"
+            "- You can call this tool even when things are going well — it helps you stay organized and deliberate.\n"
+            "- Must include four fields: `recent_activity`, `current_findings`, `open_questions`, and `next_step_plan`.\n"
+            "- Must be called **alone** in a single iteration.\n"
+        ),
+        args_schema=PauseAndThinkInput,
+    )
+
+    return [pause_tool]
+
 def create_memory_terminate_tool() -> List[StructuredTool]:
 
     class MemoryTerminateInput(BaseModel):

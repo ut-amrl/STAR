@@ -74,14 +74,16 @@ class Agent:
         search_tools = create_memory_search_tools(memory)
         inspect_tools = create_memory_inspection_tool(memory)
         response_tools = create_memory_terminate_tool()
-        self.temporal_tools = search_tools + inspect_tools + response_tools
+        reflection_tools = create_pause_and_think_tool()
+        
+        self.temporal_tools = search_tools + inspect_tools + response_tools + reflection_tools
         self.temporal_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_tools]
             
     def search_in_time(self, state: AgentState):
         messages = state["messages"]
         
         last_message = messages[-1]
-        if last_message.tool_calls:
+        if isinstance(last_message, ToolMessage):
             # ===  Step 1: Find last AIMessage with tool_calls
             idx = len(messages) - 1
             last_ai_idx = None
@@ -109,15 +111,12 @@ class Agent:
                         
                         if self.logger:
                             self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
-        else: # __conversational_response
-            state["search_in_time_history"].append(last_message)
-            if self.logger:
-                self.logger.info(f"[SEARCH IN TIME] Agent Response: {last_message.content}")
         
         chat_history = state.get("search_in_time_history", [])
         
         model = self.vlm
-        model = model.bind_tools(self.temporal_tool_definitions)
+        if self.search_in_time_cnt < max_search_in_time_cnt:
+            model = model.bind_tools(self.temporal_tool_definitions)
         
         # Extract tool names from self.temporal_tool_definitions
         tool_names = [tool['name'] for tool in self.temporal_tool_definitions]
@@ -137,7 +136,7 @@ class Agent:
             ("system", prompt),
             ("system", "{fact_prompt}"),
             ("human", "{question}"),
-            ("system", "You should now decide the **next action** based on everything you've seen so far. Use the available tools to continue your memory search, or finalize your decision if you're confident."),
+            ("system", "You should now decide the **next action** based on everything you've seen so far. Use the available tools to continue your memory search, or finalize your decision if you're confident. Reason carefully about what you have done, what you have known, what your current subgoal is, and what user's task is to decide what to do next."),
         ]
         if self.search_in_time_cnt < max_search_in_time_cnt:
             chat_template += [
@@ -155,7 +154,8 @@ class Agent:
         question = f"User Task: {self.task.task_desc}\n" \
                    f"Have you figured out which instance is user referring to? Do you know where this instance was last seen? Do you know how to search this item in the real-world? What should you do next?"
         fact_prompt = f"Here are some facts for your context:\n" \
-                      f"{self.memory.get_memory_stats_for_llm()}\n"
+                      f"1. {self.memory.get_memory_stats_for_llm()}\n" \
+                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n" \
                       
         response = chained_model.invoke({
             "chat_history": chat_history,
