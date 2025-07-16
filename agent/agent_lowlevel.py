@@ -102,6 +102,7 @@ class Agent:
 
             # ===  Step 2: Append all following ToolMessages into search_in_time_history
             if last_ai_idx is not None:
+                image_messages = []
                 for msg in messages[last_ai_idx+1:]:
                     if isinstance(msg, ToolMessage):
                         if isinstance(msg.content, str):
@@ -111,12 +112,14 @@ class Agent:
                         if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
                             inspection = eval(msg.content)
                             for id, path in inspection.items():
-                                content = get_image_message_for_record(id, path)
+                                content = get_image_message_for_record(id, path, msg.tool_call_id)
                                 message = HumanMessage(content=content)
-                                state["search_in_time_history"].append(message)
-                        
+                                image_messages.append(message)
                         if self.logger:
                             self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
+                
+                state["search_in_time_history"] += image_messages
+                
         
         chat_history = state.get("search_in_time_history", [])
         

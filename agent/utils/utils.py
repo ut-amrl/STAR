@@ -138,7 +138,7 @@ class Task:
         self.searched_in_space: list = []
         self.searched_in_time: list = []
 
-def get_image_message_for_record(record_id: int, viz_path: str):
+def get_image_message_for_record(record_id: int, viz_path: str, tool_call_id: str = None):
     try:
         img = PILImage.open(viz_path).convert("RGB")
     except Exception as e:
@@ -164,7 +164,11 @@ def get_image_message_for_record(record_id: int, viz_path: str):
     img = base64.b64encode(buffer.getvalue()).decode("utf-8")
     img_msg = [get_vlm_img_message(img, type="gpt")]
     
-    txt_msg = [{"type": "text", "text": f"This is the image observation made at Record {record_id}:"}]
+    if tool_call_id:
+        txt = f"This is the image observation made at Record {record_id} from path {viz_path} (image for tool_call id {tool_call_id}):"
+    else:
+        txt = f"This is the image observation made at Record {record_id} from path {viz_path}:"
+    txt_msg = [{"type": "text", "text": txt}]
     return txt_msg + img_msg
 
 def is_image_inspection_result(content: str) -> bool:
@@ -303,16 +307,19 @@ def file_to_string(filename):
         return file.read().strip()
     
 def try_except_continue(state, func):
+    from openai import BadRequestError
     while True:
         try:
             ret = func(state)
             return ret
+        except BadRequestError as e:
+            print("[ERROR] OpenAI API BadRequestError:")
+            import pdb; pdb.set_trace()
         except Exception as e:
             print("I crashed trying to run:", func)
             print("Here is my error")
             print(e)
             traceback.print_exception(*sys.exc_info())
-            return state
         
 def opencv_to_ros_image(np_image):
     ros_image = Image()

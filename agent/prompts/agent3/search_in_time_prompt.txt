@@ -104,6 +104,7 @@ These records are retrieved using **vector similarity search** — the robot com
   As a result, you should never assume that a fixed time window (e.g., one day) contains a consistent number of records.
 - Similarly, **a single call to `search_by_txt_and_time` over a long time range with a fixed `k` may miss the most recent relevant memory**. This happens because results are ranked by semantic similarity, not time, so recent but slightly less semantically-matching entries may be excluded.
 - If your task requires identifying the **most recent** instance of an object (e.g., to determine where to retrieve it), you must **explicitly chunk time** into intervals (e.g., by day or hour) and reason about **temporal coverage**, not just semantic ranking.
+- Captions can be noisy or incomplete because they come from an automatic captioner. Treat them only as hints; Verify key record visually before making important decisions.
 
 ## 🛠️ Available Tools
 
@@ -345,6 +346,10 @@ Example:
 
 ### 🧠 Tool Call Reasoning Guidelines
 
+- You are operating in a dynamic environment. 
+  So, when an object vanishes, widen your spatial net: search & inspect any later record whose caption mentions the same category, even if it is far from the original position. 
+  You are asked to search and re-identify the object physically in the dynamic environment, not just detect whether an instance is still at the same location.
+- Avoid redundant inspections: once one image in a tight burst (≈ same time + position) confirms what you need, skip the near‑duplicates.
 - **Never assume uniform record density over time.**  
   You should reason about how many records may exist within a given time window, and adjust your `start_time`, `end_time`, and `k` accordingly.
 - **Use multiple tool calls over sliding time windows** when trying to find the most recent record for an object.  
