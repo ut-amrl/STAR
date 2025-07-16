@@ -114,7 +114,16 @@ def create_memory_terminate_tool() -> List[StructuredTool]:
 
 def create_memory_search_tools(memory: MilvusMemory):
 
+    TOOL_RATIONALE_DESC = (
+        "Explain briefly why this tool is being called. The rationale should clarify how this tool helps move the reasoning forward — "
+        "what is already known, what new insight is expected from the call, and what uncertainty or open question this tool is meant to resolve. "
+        "Avoid vague or redundant justifications; focus on the unique purpose of this tool in the current context."
+    )
+
     class TextRetrieverInputWithTime(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
         x: str = Field(
             description=(
                 "A natural language description of the scene or object to search for in memory. "
@@ -139,6 +148,9 @@ def create_memory_search_tools(memory: MilvusMemory):
         )
 
     class PositionRetrieverInputWithTime(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
         position: List[float] = Field(
             description="The 3D position [x, y, z] to search around in memory. Each value should be a float."
         )
@@ -156,6 +168,9 @@ def create_memory_search_tools(memory: MilvusMemory):
         )
 
     class TimeRetrieverInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
         time: str = Field(
             description="The specific timestamp to search near, in YYYY-MM-DD HH:MM:SS format. Returns the most relevant observations near that moment."
         )
@@ -165,6 +180,9 @@ def create_memory_search_tools(memory: MilvusMemory):
         )
         
     class TimeRangeCountInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
         start_time: Optional[str] = Field(
             default=None,
             description="Start time of the interval to count records from, in YYYY-MM-DD HH:MM:SS format. Optional."
@@ -175,28 +193,28 @@ def create_memory_search_tools(memory: MilvusMemory):
         )
 
     txt_time_tool = StructuredTool.from_function(
-        func=lambda x, start_time=None, end_time=None, k=8: memory.search_by_txt_and_time(x, start_time, end_time, k),
+        func=lambda tool_rationale, x, start_time=None, end_time=None, k=8: memory.search_by_txt_and_time(x, start_time, end_time, k),
         name="search_in_memory_by_text_within_time_range",
         description="Search memory by text caption with optional time constraints. Retrieves memories based on text relevance.",
         args_schema=TextRetrieverInputWithTime
     )
 
     pos_time_tool = StructuredTool.from_function(
-        func=lambda position, start_time=None, end_time=None, k=8: memory.search_by_position_and_time(position, start_time, end_time, k),
+        func=lambda tool_rationale, position, start_time=None, end_time=None, k=8: memory.search_by_position_and_time(position, start_time, end_time, k),
         name="search_in_memory_by_position_within_time_range",
         description="Search memory based on 3D position with optional time constraints. Retrieves memories spatially near the given position.",
         args_schema=PositionRetrieverInputWithTime
     )
 
     time_tool = StructuredTool.from_function(
-        func=lambda time, k=8: memory.search_by_time(time, k),
+        func=lambda tool_rationale, time, k=8: memory.search_by_time(time, k),
         name="search_in_memory_by_time",
         description="Search memory for observations that occurred close to a specific timestamp.",
         args_schema=TimeRetrieverInput
     )
     
     count_tool = StructuredTool.from_function(
-        func=lambda start_time=None, end_time=None: memory.count_records_by_time(start_time, end_time),
+        func=lambda tool_rationale, start_time=None, end_time=None: memory.count_records_by_time(start_time, end_time),
         name="get_record_count_within_time_range",
         description="Return the number of memory records within a given time range. If no time bounds are provided, count all records.",
         args_schema=TimeRangeCountInput

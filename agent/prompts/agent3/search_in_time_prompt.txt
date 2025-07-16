@@ -81,7 +81,7 @@ Each memory record captures what the robot saw, when it saw it, and where it was
 - A **timestamp** (when the robot saw something)
 - A **3D position** (where the robot was)
 - A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_memory_image` to access it, which would be explained in details later.)
-- A **caption** (a natural language description generated from the full video captured around that time)
+- A **caption** (a natural language description generated from the full video captured around that time) - Captions can be noisy or incomplete because they come from an automatic captioner. Treat them only as hints; Verify key record visually before making important decisions.
 ⚠️ Because each observation reflects only a single viewpoint, it offers just a partial glimpse of the surrounding space. Even if two objects are in the same room, they may appear in separate records if they weren’t visible at the same time or from the same angle.
 Memory is also temporally continuous. As the robot moves, it collects observations in sequence, often capturing overlapping areas from different viewpoints. This means that nearby memory records — both in time and space — can provide complementary information about the same scene, object, their spatial relationships, or activity.
 
@@ -104,7 +104,6 @@ These records are retrieved using **vector similarity search** — the robot com
   As a result, you should never assume that a fixed time window (e.g., one day) contains a consistent number of records.
 - Similarly, **a single call to `search_by_txt_and_time` over a long time range with a fixed `k` may miss the most recent relevant memory**. This happens because results are ranked by semantic similarity, not time, so recent but slightly less semantically-matching entries may be excluded.
 - If your task requires identifying the **most recent** instance of an object (e.g., to determine where to retrieve it), you must **explicitly chunk time** into intervals (e.g., by day or hour) and reason about **temporal coverage**, not just semantic ranking.
-- Captions can be noisy or incomplete because they come from an automatic captioner. Treat them only as hints; Verify key record visually before making important decisions.
 
 ## 🛠️ Available Tools
 
