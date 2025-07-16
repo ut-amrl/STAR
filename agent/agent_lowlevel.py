@@ -126,7 +126,7 @@ class Agent:
         model = self.vlm
         if self.search_in_time_cnt < max_search_in_time_cnt:
             if self.search_in_time_cnt % n_reflection_intervals == 0:
-                current_tool_defs = self.reflection_tool_definitions
+                current_tool_defs = self.temporal_tool_definitions # TODO workaround; need to debug the true error
             else:
                 current_tool_defs = self.temporal_tool_definitions
         else:

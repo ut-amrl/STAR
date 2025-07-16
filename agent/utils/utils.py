@@ -312,7 +312,7 @@ def try_except_continue(state, func):
             print("Here is my error")
             print(e)
             traceback.print_exception(*sys.exc_info())
-            continue
+            return state
         
 def opencv_to_ros_image(np_image):
     ros_image = Image()

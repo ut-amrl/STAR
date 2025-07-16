@@ -45,7 +45,7 @@ def create_pause_and_think_tool() -> List[StructuredTool]:
         next_step_plan: str,
     ) -> bool:
         # Dummy implementation: always return True
-        return True
+        return f"This is the next step you propose: {next_step_plan}"
 
     pause_tool = StructuredTool.from_function(
         func=_pause_and_think_fn,

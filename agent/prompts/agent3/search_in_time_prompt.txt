@@ -16,7 +16,6 @@ In each iteration, act like a reasonable human would:
 You are allowed to try things, observe what comes back, and adapt — that’s the point.
 No fixed rule will cover every situation. Use your tools **strategically**, based on what you know and what you still need to find out.  
 Your goal is to reach a confident retrieval decision, **grounded in the data**, not in assumptions.
-If you feel the context window is too long and you start to lose track of things, call `__conversational_response` tool to summarize your states and findings, and stop to think what you want to do next.
 
 ## 🎯 Task Objective
 
@@ -109,7 +108,7 @@ These records are retrieved using **vector similarity search** — the robot com
 ## 🛠️ Available Tools
 
 You may call multiple `search_*` or `inspect_memory_image` tools **at the same time**.  
-However, you must only call **one** of `__conversational_response` or `terminate` at a time.
+However, you must only call **one** of rest tools at a time.
 You MUST follow the JSON format strictly.
 
 ---
@@ -298,6 +297,7 @@ You are expected to (**MUST**) call this tool often to stay strategic, deliberat
   - This tool must be called **alone** in a single iteration.
   - The output is a structured reflection — a way to think clearly before continuing.
 
+Example:
 ```json
 [
   {{
@@ -307,39 +307,6 @@ You are expected to (**MUST**) call this tool often to stay strategic, deliberat
       "current_findings": "The book the user referred to is most likely the red hardcover book seen on the kitchen counter yesterday around 14:00. Its appearance is distinct and consistent across multiple records.",
       "open_questions": "I don't yet know where this book was last seen. I need to search the rest of memory to determine whether it was moved after yesterday.",
       "next_step_plan": "I will perform a backward search through memory to find the most recent appearance of this book, so the robot can retrieve it from its last known location."
-    }}
-  }}
-]
-```
-
----
-
-### 💬 `__conversational_response`
-Use this to explain reasoning steps, summarize insights, or propose what to do next.
-
-- **Required Field**:
-  - `response`: A plain-text explanation of what you have learned or decided
-
-- **Constraints**:
-  - Must be called **alone**
-  - Should be used whenever you want to **write a message instead of calling a search**
-
-- **Notes**:
-  - This is your agent's **internal monologue made explicit**. It's crucial for managing complexity and adapting to unexpected real-world scenarios.
-  - Call this tool when:
-    - **You've gathered information and need to synthesize it** before deciding on the next action.
-    - **Search results are ambiguous, contradictory, or overwhelming**, and you need to articulate *why* they're problematic and *how* you'll refine your search.
-    - **The user's query is abstract or requires inference**, and you need to explain your strategy for deducing the answer from episodic memory.
-    - **You need to proactively manage your context window** by summarizing your current state and findings.
-    - **You want to plan a multi-step search or inspection process** strategically.
-
-Example:
-```json
-[
-  {{
-    "tool": "__conversational_response",
-    "tool_input": {{
-      "response": "Based on the search results, the user is likely referring to the green book next to the lamp seen yesterday afternoon."
     }}
   }}
 ]
