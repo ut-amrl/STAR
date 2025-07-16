@@ -80,33 +80,39 @@ class Agent:
     def search_in_time(self, state: AgentState):
         messages = state["messages"]
         
-        # ===  Step 1: Find last AIMessage with tool_calls
-        idx = len(messages) - 1
-        last_ai_idx = None
-        while idx >= 0:
-            msg = messages[idx]
-            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
-                last_ai_idx = idx
-                break
-            idx -= 1
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            # ===  Step 1: Find last AIMessage with tool_calls
+            idx = len(messages) - 1
+            last_ai_idx = None
+            while idx >= 0:
+                msg = messages[idx]
+                if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                    last_ai_idx = idx
+                    break
+                idx -= 1
 
-        # ===  Step 2: Append all following ToolMessages into search_in_time_history
-        if last_ai_idx is not None:
-            for msg in messages[last_ai_idx+1:]:
-                if isinstance(msg, ToolMessage):
-                    if isinstance(msg.content, str):
-                        msg.content = parse_and_pretty_print_tool_message(msg.content)
-                    state["search_in_time_history"].append(msg)
-                    
-                    if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
-                        inspection = eval(msg.content)
-                        for id, path in inspection.items():
-                            content = get_image_message_for_record(id, path)
-                            message = HumanMessage(content=content)
-                            state["search_in_time_history"].append(message)
-                    
-                    if self.logger:
-                        self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
+            # ===  Step 2: Append all following ToolMessages into search_in_time_history
+            if last_ai_idx is not None:
+                for msg in messages[last_ai_idx+1:]:
+                    if isinstance(msg, ToolMessage):
+                        if isinstance(msg.content, str):
+                            msg.content = parse_and_pretty_print_tool_message(msg.content)
+                        state["search_in_time_history"].append(msg)
+                        
+                        if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
+                            inspection = eval(msg.content)
+                            for id, path in inspection.items():
+                                content = get_image_message_for_record(id, path)
+                                message = HumanMessage(content=content)
+                                state["search_in_time_history"].append(message)
+                        
+                        if self.logger:
+                            self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
+        else: # __conversational_response
+            state["search_in_time_history"].append(last_message)
+            if self.logger:
+                self.logger.info(f"[SEARCH IN TIME] Agent Response: {last_message.content}")
         
         chat_history = state.get("search_in_time_history", [])
         
@@ -128,7 +134,7 @@ class Agent:
             ("human", f"User has asked you to fulfill this task: {self.task.task_desc}. You are a memory-capable robot assistant. Your goal is to **help the user retrieve a physical object in the real world** by reasoning over **past observations stored in memory**. Right now, you need to decide what to do next based on the chat history of the tools you called previously as well as tool responses. "),
             ("human", "This is previous tool calls and the responses:"),
             MessagesPlaceholder("chat_history"),
-            ("human", prompt),
+            ("system", prompt),
             ("system", "{fact_prompt}"),
             ("human", "{question}"),
             ("system", "You should now decide the **next action** based on everything you've seen so far. Use the available tools to continue your memory search, or finalize your decision if you're confident."),
@@ -147,9 +153,9 @@ class Agent:
         
         chained_model = chat_prompt | model
         question = f"User Task: {self.task.task_desc}\n" \
-                   f"What should you do next?"
+                   f"Have you figured out which instance is user referring to? Do you know where this instance was last seen? Do you know how to search this item in the real-world? What should you do next?"
         fact_prompt = f"Here are some facts for your context:\n" \
-                      f"{self.memory.get_memory_stats_for_llm()}"
+                      f"{self.memory.get_memory_stats_for_llm()}\n"
                       
         response = chained_model.invoke({
             "chat_history": chat_history,

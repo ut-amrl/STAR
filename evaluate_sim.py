@@ -213,6 +213,7 @@ def evaluate(args):
             for bagname, (date_str, time_str) in task_data["bag_time_mapping"].items():
                 try:
                     dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+                    dt = dt.replace(tzinfo=timezone.utc)
                     if bagname == task_data["bagnames"][-1]:
                         try:
                             args.current_pretty_date = dt.strftime("%A, %b %-d, %Y")  # Linux/Mac

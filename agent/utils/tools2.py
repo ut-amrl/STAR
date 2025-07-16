@@ -348,7 +348,7 @@ def create_recall_best_match_tool(
                         "Could you please help me gather information from your memory records based on this information using tools you have?"
             
             response = chained_model.invoke({"question": question, "chat_history": messages[1:]})
-        
+            import pdb; pdb.set_trace()
             if self.logger:
                 if getattr(response, 'tool_calls'):
                     self.logger.info(f"[BEST_MATCH] Received agent response with tool calls: {response.tool_calls}")   
