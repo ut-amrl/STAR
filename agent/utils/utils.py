@@ -308,7 +308,6 @@ def try_except_continue(state, func):
             ret = func(state)
             return ret
         except Exception as e:
-            import pdb; pdb.set_trace()
             print("I crashed trying to run:", func)
             print("Here is my error")
             print(e)

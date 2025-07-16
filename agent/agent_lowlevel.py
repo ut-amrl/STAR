@@ -58,6 +58,7 @@ class Agent:
         prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "agent3")
         self.search_in_time_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_prompt.txt"))
         self.search_in_time_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
+        self.search_in_time_reflection_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_reflection_prompt.txt"))
         
         self.temporal_tools, self.spatial_tools = None, None
         self.temporal_tool_definitions = None
@@ -78,6 +79,11 @@ class Agent:
         
         self.temporal_tools = search_tools + inspect_tools + response_tools + reflection_tools
         self.temporal_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_tools]
+        
+        self.reflection_tools = reflection_tools
+        self.reflection_tool_definitions = [convert_to_openai_function(t) for t in self.reflection_tools]
+        self.temporal_search_terminate_tool = response_tools
+        self.temporal_search_terminate_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_search_terminate_tool]
             
     def search_in_time(self, state: AgentState):
         messages = state["messages"]
@@ -114,18 +120,28 @@ class Agent:
         
         chat_history = state.get("search_in_time_history", [])
         
+        max_search_in_time_cnt = 20
+        n_reflection_intervals = 3
+        
         model = self.vlm
         if self.search_in_time_cnt < max_search_in_time_cnt:
-            model = model.bind_tools(self.temporal_tool_definitions)
-        
-        # Extract tool names from self.temporal_tool_definitions
-        tool_names = [tool['name'] for tool in self.temporal_tool_definitions]
+            if self.search_in_time_cnt % n_reflection_intervals == 0:
+                current_tool_defs = self.reflection_tool_definitions
+            else:
+                current_tool_defs = self.temporal_tool_definitions
+        else:
+            current_tool_defs = self.temporal_search_terminate_tool_definitions
+
+        model = model.bind_tools(current_tool_defs)
+        tool_names = [tool['name'] for tool in current_tool_defs]
         tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
-        
+
         # Select prompt template
-        max_search_in_time_cnt = 20
         if self.search_in_time_cnt < max_search_in_time_cnt:
-            prompt = self.search_in_time_prompt
+            if self.search_in_time_cnt % n_reflection_intervals == 0:
+                prompt = self.search_in_time_reflection_prompt
+            else:
+                prompt = self.search_in_time_prompt
         else:
             prompt = self.search_in_time_gen_only_prompt
             

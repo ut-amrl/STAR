@@ -16,7 +16,6 @@ In each iteration, act like a reasonable human would:
 You are allowed to try things, observe what comes back, and adapt — that’s the point.
 No fixed rule will cover every situation. Use your tools **strategically**, based on what you know and what you still need to find out.  
 Your goal is to reach a confident retrieval decision, **grounded in the data**, not in assumptions.
-If you feel the context window is too long and you start to lose track of things, call `__conversational_response` tool to summarize your states and findings, and stop to think what you want to do next.
 
 ## 🎯 Task Objective
 Given a user query (e.g., “bring me the book I was reading yesterday”), your job is to:
