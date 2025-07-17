@@ -88,6 +88,8 @@ class Agent:
     def search_in_time(self, state: AgentState):
         messages = state["messages"]
         
+        additional_search_history = []
+        
         last_message = messages[-1]
         if isinstance(last_message, ToolMessage):
             # ===  Step 1: Find last AIMessage with tool_calls
@@ -107,7 +109,8 @@ class Agent:
                     if isinstance(msg, ToolMessage):
                         if isinstance(msg.content, str):
                             msg.content = parse_and_pretty_print_tool_message(msg.content)
-                        state["search_in_time_history"].append(msg)
+                        additional_search_history.append(msg)
+                        # state["search_in_time_history"].append(msg)
                         
                         if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
                             inspection = eval(msg.content)
@@ -118,10 +121,12 @@ class Agent:
                         if self.logger:
                             self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
                 
-                state["search_in_time_history"] += image_messages
+                additional_search_history += image_messages
+                # state["search_in_time_history"] += image_messages
                 
         
         chat_history = state.get("search_in_time_history", [])
+        chat_history += additional_search_history
         
         max_search_in_time_cnt = 20
         n_reflection_intervals = 3
@@ -192,7 +197,7 @@ class Agent:
                 self.logger.info(f"[SEARCH IN TIME] {response}")
 
         self.search_in_time_cnt += 1
-        return {"messages": [response], "search_in_time_history": [response]}
+        return {"messages": [response], "search_in_time_history": additional_search_history + [response]}
     
     def prepare_search_in_space(self, state: AgentState):
         messages = state["messages"]

@@ -5,6 +5,7 @@ import inspect
 from datetime import datetime, timezone
 import re
 import json
+import ast
 
 from langchain_milvus import Milvus
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -327,11 +328,29 @@ class MilvusMemory(Memory):
         self.last_seen_id = start_id
         return docs
     
-    def get_by_id(self, id) -> str:
+    def get_by_id(self, id, return_parsed: bool = False) -> str:
         results = self.milv_wrapper.search_by_expr(expr=f"id == {id}", k=1)
         docs = self._parse_query_results(results)
         docs = self._memory_to_json(docs)
-        return docs
+        if not return_parsed:
+            return docs
+        
+        def parse_list_string(s):
+            if s is None or s.strip() == "":
+                return None
+            try:
+                result = ast.literal_eval(s)
+                if isinstance(result, list):
+                    return result
+                else:
+                    raise ValueError("Parsed object is not a list")
+            except Exception:
+                raise ValueError(f"Invalid list string: {s}")
+        
+        parsed = parse_list_string(docs)
+        if parsed is None or len(parsed) == 0:
+            return None
+        return parsed[0]
     
     def search_all(self, query: str) -> str:
         self.milv_wrapper.reload()

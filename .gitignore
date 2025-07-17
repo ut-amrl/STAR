@@ -9,3 +9,4 @@ tests
 evaluation/*outputs
 test.py
 scripts/local
+test_*.py

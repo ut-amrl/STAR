@@ -138,6 +138,21 @@ class Task:
         self.searched_in_space: list = []
         self.searched_in_time: list = []
 
+
+def get_viz_path(memory: MilvusMemory, record_id) -> str:
+    record = memory.get_by_id(record_id, return_parsed=True)
+    if record is None:
+        return None
+
+    image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
+        
+    vidpath = record["vidpath"]
+    start_frame = record["start_frame"]
+    end_frame = record["end_frame"]
+    frame = (start_frame + end_frame) // 2
+        
+    return image_path_fn(vidpath, frame)
+
 def get_image_message_for_record(record_id: int, viz_path: str, tool_call_id: str = None):
     try:
         img = PILImage.open(viz_path).convert("RGB")

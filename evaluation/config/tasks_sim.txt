@@ -35,4 +35,10 @@ spatial_temporal/3099304e.json
 spatial_temporal/96115179.json
 spatial_temporal/c285ad71.json
 spatial_temporal/cf984199.json
-frequency/1d773502.json
+frequency/66fe5ef4.json
+frequency/51d8095a.json
+frequency/09b9f2a6.json
+frequency/969f76c6.json
+frequency/8fb06ff9.json
+frequency/8932f1a1.json
+frequency/db907598.json

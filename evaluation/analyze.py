@@ -8,27 +8,36 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 EXPECTED_TASK_TYPES = [
-    # "unambiguous",
-    # "spatial",
-    # "spatial_temporal"
+    "classonly",
+    "unambiguous",
+    "spatial",
+    "spatial_temporal",
+    "frequency",
     # "unambiguous_wp_only",
     # "spatial_wp_only",
-    "spatial_temporal_wp_only",
-    "spatial_temporal_recaption_wp_only"
+    # "spatial_temporal_wp_only",
+    # "spatial_temporal_recaption_wp_only"
 ]
 TASK_TYPE_ORDER = [
+    "classonly",
+    "unambiguous",
+    "spatial",
+    "spatial_temporal",
+    "frequency",
     # "unambiguous",
     # "unambiguous_wp_only",
     # "spatial",
     # "spatial_wp_only",
     # "spatial_temporal", 
-    "spatial_temporal_wp_only", 
-    "spatial_temporal_recaption_wp_only"
+    # "spatial_temporal_wp_only", 
+    # "spatial_temporal_recaption_wp_only"
 ]
 TASK_DISPLAY_NAMES = {
+    "classonly": "unambiguous",
     "unambiguous": "attribute-based",
     "spatial": "spatial",  # leave unchanged
     "spatial_temporal": "temporal",  # if used in future
+    "frequency": "frequency",
     "unambiguous_wp_only": "attribute-based",
     "spatial_wp_only": "spatial",
     "spatial_temporal_wp_only": "temporal",
@@ -41,13 +50,13 @@ def parse_args():
     parser.add_argument(
         "--result_dir",
         type=str,
-        default="evaluation/outputs/",
+        default="evaluation/sim_outputs/",
         help="Directory containing results_{task_type}.json files (default: evaluation/outputs/)"
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="evaluation/outputs/",
+        default="evaluation/sim_outputs/",
         help="Path to save the output plot (default: evaluation/outputs/)"
     )
     return parser.parse_args()
@@ -149,12 +158,12 @@ def plot_combined_success_rates(args, stats_dict, metric_keys):
         # Labeling
         title = {
             "success": "Memory Recall Accuracy",
-            "mem_success": "Memory Recall Accuracy"
+            "mem_success": "Execution Success Rate"
         }.get(key, key.replace("_", " ").title())
 
         ylabel = {
             "success": "Memory Recall Accuracy",
-            "mem_success": "Memory Recall Accuracy"
+            "mem_success": "Execution Success Rate"
         }.get(key, "Success Rate")
 
         ax.set_title(title, fontsize=16)

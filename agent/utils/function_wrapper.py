@@ -358,7 +358,10 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
         tool_calls = []
 
         for tool in parsed_chat_result:
-            called_tool_name = tool["tool"]
+            try:
+                called_tool_name = tool["tool"]
+            except:
+                import pdb; pdb.set_trace()
             called_tool = next(
                 (fn for fn in functions if fn["name"] == called_tool_name), None
             )

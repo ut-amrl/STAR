@@ -15,7 +15,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from memory.memory import MilvusMemory
@@ -322,6 +322,316 @@ def create_db_txt_search_k_tool(memory: MilvusMemory):
 
 def create_db_txt_backward_search_tool(memory: MilvusMemory):
     pass 
+
+def create_recall_best_matches_terminate_tool(memory: MilvusMemory) -> StructuredTool:
+    
+    class BestMatchTerminateInput(BaseModel):
+        summary: str = Field(
+            description="A short explanation of what is being retrieved and why"
+        )
+        record_ids: List[int] = Field(
+            description="IDs of the best-matching records. In any case, you are encouraged to at least output 1 answer. If you believe the query object does not appear in your past memory at all, you are allowed to make your best guesses by common sense."
+        )
+    
+    def _terminate_fn(
+        summary: str,
+        record_ids: List[int]
+    ) -> str:
+        records = []
+        for record_id in record_ids:
+            record = memory.get_by_id(record_id)
+            if record:
+                records.append(record)
+        return str(records)
+
+    terminate_tool = StructuredTool.from_function(
+        func=_terminate_fn,
+        name="recall_best_matches_terminate",
+        description=(
+            "Use this to finalize the task once you are confident about what to retrieve. "
+            "You should call this tool when you have identified the best matching records based on your search and reasoning.\n\n"
+        ),
+        args_schema=BestMatchTerminateInput
+    )
+    
+    return [terminate_tool]
+    
+def create_recall_best_matches_tool(
+    memory: MilvusMemory,
+    llm,
+    llm_raw,
+    vlm,
+    vlm_raw,
+    logger=None
+):
+    class BestMatchAgent:
+        class AgentState(TypedDict):
+            messages: Annotated[Sequence[BaseMessage], add_messages]
+            agent_history: Annotated[Sequence, replace_messages]
+            
+        @staticmethod
+        def from_agent_to(state: AgentState):
+            messages = state["messages"]
+            last_message = messages[-1] if messages else None
+            
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                for call in last_message.tool_calls:
+                    if "terminate" in call.get("name"):
+                        return "next"
+            return "action"
+    
+        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
+            self.memory = memory
+            self.llm = llm
+            self.llm_raw = llm_raw
+            self.vlm = vlm
+            self.vlm_raw = vlm_raw
+            self.logger = logger
+            
+            self.setup_tools(memory)
+            
+            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/best_matches_tool/'
+            self.agent_prompt = file_to_string(prompt_dir+'agent_prompt.txt')
+            self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
+            
+            self.agent_call_count = 0
+            
+        def setup_tools(self, memory: MilvusMemory):
+            search_tools = create_memory_search_tools(memory)
+            inspect_tools = create_memory_inspection_tool(memory)
+            response_tools = create_recall_best_matches_terminate_tool(memory)
+            reflect_tools = create_pause_and_think_tool()
+            
+            self.tools = search_tools + inspect_tools + response_tools
+            self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
+            
+            self.reflect_tools = reflect_tools
+            self.reflect_tool_definitions = [convert_to_openai_function(t) for t in self.reflect_tools]
+            self.response_tools = response_tools
+            self.response_tool_definitions = [convert_to_openai_function(t) for t in self.response_tools]
+            
+        def agent(self, state: AgentState):
+            messages = state["messages"]
+            
+            last_message = messages[-1]
+            if isinstance(last_message, ToolMessage):
+                # ===  Step 1: Find last AIMessage with tool_calls
+                idx = len(messages) - 1
+                last_ai_idx = None
+                while idx >= 0:
+                    msg = messages[idx]
+                    if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                        last_ai_idx = idx
+                        break
+                    idx -= 1
+
+                # ===  Step 2: Append all following ToolMessages into search_in_time_history
+                if last_ai_idx is not None:
+                    image_messages = []
+                    for msg in messages[last_ai_idx+1:]:
+                        if isinstance(msg, ToolMessage):
+                            if isinstance(msg.content, str):
+                                msg.content = parse_and_pretty_print_tool_message(msg.content)
+                            state["agent_history"].append(msg)
+                            
+                            if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
+                                inspection = eval(msg.content)
+                                for id, path in inspection.items():
+                                    content = get_image_message_for_record(id, path, msg.tool_call_id)
+                                    message = HumanMessage(content=content)
+                                    image_messages.append(message)
+                            if self.logger:
+                                self.logger.info(f"[BEST MATCH] Tool Response: {msg.content}")
+                    
+                    state["agent_history"] += image_messages
+                    
+            chat_history = state.get("agent_history", [])
+            
+            max_agent_call_count = 8
+
+            model = self.vlm
+            if self.agent_call_count < max_agent_call_count:
+                prompt = self.agent_prompt
+                model = model.bind_tools(self.tool_definitions)
+            else:
+                prompt = self.agent_gen_only_prompt
+                model = model.bind_tools(self.response_tool_definitions)
+            
+            chat_template = [
+                ("human", "You are a memory retrieval agent. Your job is to retrieve memory records that best match the object described. Based on your tool calls and the results you've received so far, continue reasoning and searching."),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("system", prompt),
+                ("system", "{fact_prompt}"),
+                ("human", "{question}"),
+                ("human", "{caller_context_text}"),
+                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you’ve done, what you know, and what the user ultimately needs.")
+            ]
+            chat_prompt = ChatPromptTemplate.from_messages(chat_template)
+            
+            chained_model = chat_prompt | model
+            
+            question = (
+                f"The user wants to retrieve at most {self.k} memory records that best match the following description:\n"
+                f"→ {self.description.strip()}\n\n"
+                "Based on what you’ve observed and what you already know, what should you do next?"
+            )
+            fact_prompt = f"Here are some facts for your context:\n" \
+                      f"1. {self.memory.get_memory_stats_for_llm()}\n" \
+                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"
+            caller_context_text = self.caller_context if self.caller_context else "None"
+            caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
+            
+            response = chained_model.invoke({
+                "question": question,
+                "chat_history": chat_history,
+                "fact_prompt": fact_prompt,
+                "caller_context_text": caller_context_text
+            })
+            
+            if self.logger:
+                if hasattr(response, "tool_calls") and response.tool_calls:
+                    for call in response.tool_calls:
+                        args_str = ", ".join(f"{k}={repr(v)}" for k, v in call.get("args", {}).items())
+                        log_str = f"{call.get('name')}({args_str})"
+                        self.logger.info(f"[BEST MATCH] Tool call: {log_str}")
+                else:
+                    self.logger.info(f"[BEST MATCH] {response}")
+                    
+            self.agent_call_count += 1
+            return {"messages": [response], "agent_history": [response]}
+        
+        def build_graph(self):
+            workflow = StateGraph(BestMatchAgent.AgentState)
+            
+            workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
+            workflow.add_node("action", ToolNode(self.tools))
+            
+            workflow.add_edge("action", "agent")
+            workflow.add_conditional_edges(
+                "agent",
+                BestMatchAgent.from_agent_to,
+                {
+                    "next": END,
+                    "action": "action",
+                },
+            )
+            
+            workflow.set_entry_point("agent")
+            self.graph = workflow.compile()
+            
+        def run(self, 
+                description: str, 
+                visual_cue_from_record_id: Optional[int] = None,
+                search_start_time: Optional[str] = None, 
+                search_end_time: Optional[str] = None,
+                k: Optional[int] = 5,
+                caller_context: Optional[str] = None,
+            ) -> List[Dict]:
+            
+            if self.logger:
+                self.logger.info(
+                    f"[BEST_MATCH] Running tool with description: {description}, "
+                    f"visual_cue_from_record_id: {visual_cue_from_record_id}, "
+                    f"search_start_time: {search_start_time}, "
+                    f"search_end_time: {search_end_time}"
+                )
+                
+            self.description = description.strip()
+            self.visual_cue_from_record_id = visual_cue_from_record_id
+            self.search_start_time = search_start_time
+            self.search_end_time = search_end_time
+            self.k = k
+            self.caller_context = caller_context
+            
+            self.setup_tools(self.memory)
+            self.build_graph()
+            
+            self.agent_call_count = 0
+            
+            content = []
+            content += [{"type": "text", "text": f"Task: Recall at most k memory records best match objects:\n→ {description.strip()}"}]
+            if visual_cue_from_record_id:
+                content += [{"type": "text", "text": f"From previous search, you determined that this instance has appeared in record {visual_cue_from_record_id}."}]
+                content += get_image_message_for_record(
+                    visual_cue_from_record_id, 
+                    self.memory.get_viz_path(visual_cue_from_record_id), 
+                )
+            time_str = "\n\nTime constraints:"
+            if search_start_time:
+                time_str += f"\n→ Start: {search_start_time}"
+            if search_end_time:
+                time_str += f"\n→ End: {search_end_time}"
+            if not search_start_time and not search_end_time:
+                time_str += "\n→ None"
+            content += [{"type": "text", "text": time_str}]
+            
+            inputs = {
+                "messages": [
+                    HumanMessage(content=content),
+                ]
+            }
+            state = self.graph.invoke(inputs)
+            
+            output = {
+                "tool_name": "recall_best_matches",
+                "summary": "",
+                "records": []
+            }
+            
+            last_message = state["messages"][-1]
+            if isinstance(last_message, AIMessage) and hasattr(last_message, "tool_calls"):
+                tool_call = last_message.tool_calls[0] if last_message.tool_calls else None
+                if tool_call and (type(tool_call) is dict) and ("args" in tool_call.keys()) and type(tool_call["args"]) is dict:
+                    output["summary"] = tool_call["args"].get("summary", "")
+
+                    record_ids = tool_call["args"].get("record_ids", [])
+                    records = []
+                    for record_id in record_ids:
+                        record = memory.get_by_id(record_id)
+                        if record:
+                            records.append(record)
+                    output["records"] = records
+                    
+            return output
+        
+    tool_runner = BestMatchAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+            
+    class BestMatchesInput(BaseModel):
+        description: str = Field(
+            description="Text description of the object or scene to search for, e.g., 'the red mug on the kitchen table'."
+        )
+        visual_cue_from_record_id: Optional[int] = Field(
+            default=None,
+            description="ID of a memory record that contains an image of the object to be retrieved. Used as a visual cue for grounding."
+        )
+        search_start_time: Optional[str] = Field(
+            default=None,
+            description="Start time (inclusive) for searching memory. Can be an ISO string or datetime. Leave blank for no lower bound."
+        )
+        search_end_time: Optional[str] = Field(
+            default=None,
+            description="End time (inclusive) for searching memory. Can be an ISO string or datetime. Leave blank for no upper bound."
+        )
+        k: conint(ge=int(1), le=int(10)) = Field(
+            default=5,
+            description="Maximum number of records to return that best match the query. Must be between 1 and 10."
+        )
+        caller_context: Optional[str] = Field(
+            default=None,
+            description="Additional free-text context from the caller agent to help guide the retrieval — e.g., what the caller is trying to do, what it is uncertain about, or how the results will be used."
+        )
+            
+    best_match_tool = StructuredTool.from_function(
+        func=tool_runner.run,
+        name="recall_best_matches",
+        description=(
+            "Recall up to k memory records that best match a given object or scene description. "
+            "You may also provide a visual cue (via record ID) and a time window to guide retrieval. "
+        ),
+        args_schema=BestMatchesInput,
+    )
+    
+    return [best_match_tool]
 
 def create_recall_best_match_tool(
     memory: MilvusMemory,
