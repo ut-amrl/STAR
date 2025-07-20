@@ -153,7 +153,10 @@ def get_viz_path(memory: MilvusMemory, record_id) -> str:
         
     return image_path_fn(vidpath, frame)
 
-def get_image_message_for_record(record_id: int, viz_path: str, tool_call_id: str = None):
+def get_image_message_for_record(record_id: int, 
+                                 viz_path: str, 
+                                 tool_call_id: str = None,
+                                 return_assistant_text: bool = True):
     try:
         img = PILImage.open(viz_path).convert("RGB")
     except Exception as e:
@@ -184,7 +187,10 @@ def get_image_message_for_record(record_id: int, viz_path: str, tool_call_id: st
     else:
         txt = f"This is the image observation made at Record {record_id} from path {viz_path}:"
     txt_msg = [{"type": "text", "text": txt}]
-    return txt_msg + img_msg
+    if return_assistant_text:
+        return txt_msg + img_msg
+    else:
+        return img_msg
 
 def is_image_inspection_result(content: str) -> bool:
     try:

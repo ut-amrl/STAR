@@ -456,13 +456,25 @@ def create_recall_best_matches_tool(
             else:
                 prompt = self.agent_gen_only_prompt
                 model = model.bind_tools(self.response_tool_definitions)
+                
+            question_str = (
+                f"Your peer agent wants to retrieve at most {self.k} memory records that best match the following description:\n"
+                f"→ {self.description.strip()}\n"
+            )
+            if self.image_message:
+                question_str += f"Your peer agent also provides an image where the target object was last observed:\n"
+            
+            # "Based on what you’ve observed and what you already know, what should you do next?"
+            question_content = [{"type": "text", "text": question_str}]
+            if self.image_message:
+                question_content += self.image_message
             
             chat_template = [
                 ("human", "You are a memory retrieval agent. Your job is to retrieve memory records that best match the object described. Based on your tool calls and the results you've received so far, continue reasoning and searching."),
                 MessagesPlaceholder(variable_name="chat_history"),
                 ("system", prompt),
                 ("system", "{fact_prompt}"),
-                ("human", "{question}"),
+                HumanMessage(content=question_content),
                 ("human", "{caller_context_text}"),
                 ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you’ve done, what you know, and what the user ultimately needs.")
             ]
@@ -470,11 +482,6 @@ def create_recall_best_matches_tool(
             
             chained_model = chat_prompt | model
             
-            question = (
-                f"The user wants to retrieve at most {self.k} memory records that best match the following description:\n"
-                f"→ {self.description.strip()}\n\n"
-                "Based on what you’ve observed and what you already know, what should you do next?"
-            )
             fact_prompt = f"Here are some facts for your context:\n" \
                       f"1. {self.memory.get_memory_stats_for_llm()}\n" \
                       f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"
@@ -482,7 +489,6 @@ def create_recall_best_matches_tool(
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
             response = chained_model.invoke({
-                "question": question,
                 "chat_history": chat_history,
                 "fact_prompt": fact_prompt,
                 "caller_context_text": caller_context_text
@@ -538,6 +544,17 @@ def create_recall_best_matches_tool(
                 
             self.description = description.strip()
             self.visual_cue_from_record_id = visual_cue_from_record_id
+            
+            if self.visual_cue_from_record_id:
+                self.viz_path = get_viz_path(self.memory, self.visual_cue_from_record_id)
+                self.image_message = get_image_message_for_record(
+                    self.visual_cue_from_record_id, 
+                    self.viz_path, 
+                )
+            else:
+                self.viz_path = None
+                self.image_message = None
+            
             self.search_start_time = search_start_time
             self.search_end_time = search_end_time
             self.k = k
@@ -633,231 +650,32 @@ def create_recall_best_matches_tool(
     
     return [best_match_tool]
 
-def create_recall_best_match_tool(
-    memory: MilvusMemory,
-    llm,
-    llm_raw,
-    vlm,
-    vlm_raw,
-    logger=None
-) -> StructuredTool:
-    
-    class AgentState(TypedDict):
-        messages: Annotated[Sequence[BaseMessage], add_messages]
-        output: Annotated[Sequence, replace_messages] = None
-        
-    def from_agent_to(state: AgentState):
-        messages = state["messages"]
-        last_message = messages[-1]
-        # If there is no function call, then we finish
-        if not last_message.tool_calls:
-            return "generate"
-        else:
-            return "action"
-    
-    class BestMatchAgent:
-        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
-            self.memory = memory
-            self.llm = llm
-            self.llm_raw = llm_raw
-            self.gpt4_turbo_raw = ChatOpenAI(model="gpt-4-turbo", api_key=os.environ.get("OPENAI_API_KEY"))
-            self.gpt4_turbo = FunctionsWrapper(self.gpt4_turbo_raw)
-            self.vlm = vlm
-            self.vlm_raw = vlm_raw
-            self.logger = logger
-            
-            self.setup_tools(memory)
-            
-            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/best_match_tool/'
-            self.agent_prompt = file_to_string(prompt_dir+'agent_prompt.txt')
-            self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
-            self.generate_prompt = file_to_string(prompt_dir+'generate_prompt.txt')
-            
-            self.agent_call_count = 0
-            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
-            
-            self.system_prompt = "You are a memory retrieval agent. Your task is to help the user recall all memory records that are relevant to their current goal. You have access to tools that let you search memory by description, with or without time constraints. You should first determine what information to retrieve, then use the available tools to search the memory database. After retrieving results, analyze them carefully and select only those that are relevant to the user task. You may call memory tools multiple times if needed, but avoid repeating previous requests. Your final output should be a list of memory records that best match the user intent."    
-        
-        def setup_tools(self, memory: MilvusMemory):
-            db_retriever_tools = create_db_txt_search_tool(memory)
-            recall_tool_definitions = [convert_to_openai_function(t) for t in db_retriever_tools]
-            db_retriever_with_time_tools = create_db_txt_search_with_time_tool(memory)
-            recall_tool_with_time_definitions = [convert_to_openai_function(t) for t in db_retriever_with_time_tools]
-            db_retriever_k_tools = create_db_txt_search_k_tool(memory)
-            recall_tool_k_definitions = [convert_to_openai_function(t) for t in db_retriever_k_tools]
-            
-            self.tools = db_retriever_tools + db_retriever_with_time_tools + db_retriever_k_tools
-            self.tool_definitions = recall_tool_definitions + recall_tool_with_time_definitions + recall_tool_k_definitions
-
-        
-        def agent(self, state: AgentState):
-            messages = state["messages"]
-            
-            # model = self.llm
-            model = self.gpt4_turbo
-            
-            if self.agent_call_count > 2:
-                prompt = self.agent_gen_only_prompt
-            else:
-                prompt= self.agent_prompt
-                model = model.bind_tools(self.tool_definitions)
-                
-            chat_prompt = ChatPromptTemplate.from_messages([
-                MessagesPlaceholder(variable_name="chat_history"),
-                (("human"), self.previous_tool_requests),
-                ("system", self.system_prompt),
-                ("user", prompt),
-                ("human", "{question}"),
-                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
-            ])
-            chained_model = chat_prompt | model
-            question  = f"User Task: {self.user_task}\n" \
-                        f"History Summary: {self.history_summary}\n" \
-                        f"Current Task: {self.current_task}\n" \
-                        f"Instance user is looking for: {self.instance_description}\n" \
-                        f"{self.memory.get_memory_stats_for_llm()}\n" \
-                        "Could you please help me gather information from your memory records based on this information using tools you have?"
-            
-            response = chained_model.invoke({"question": question, "chat_history": messages[1:]})
-            import pdb; pdb.set_trace()
-            if self.logger:
-                if getattr(response, 'tool_calls'):
-                    self.logger.info(f"[BEST_MATCH] Received agent response with tool calls: {response.tool_calls}")   
-                else:
-                    self.logger.info(f"[BEST_MATCH] Received agent response: {response.content}.")
-        
-            if hasattr(response, "tool_calls") and response.tool_calls:
-                for tool_call in response.tool_calls:
-                    if tool_call['name'] != "__conversational_response":
-                        args = re.sub(r'^\{(.*)\}$', r'(\1)', str(tool_call['args'])) # remove curly braces
-                        self.previous_tool_requests += f" {tool_call['name']} tool with the arguments: {args}.\n"
-                        
-            self.agent_call_count += 1
-            return {"messages": [response]}
-        
-        def generate(self, state: AgentState):
-            messages = state["messages"]
-            
-            model = self.llm_raw
-            prompt = self.generate_prompt
-            chat_prompt = ChatPromptTemplate.from_messages(
-                [
-                    MessagesPlaceholder("chat_history"),
-                    (("human"), self.previous_tool_requests),
-                    ("system", self.system_prompt),
-                    ("system", prompt),
-                    ("human", "{question}"),
-                    ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
-                ]
-            )
-            chained_model = chat_prompt | model
-            question = f"User Task: {self.user_task}\n" \
-                        f"History Summary: {self.history_summary}\n" \
-                        f"Current Task: {self.current_task}\n" \
-                        f"Instance user is looking for: {self.instance_description}\n" \
-                        f"{self.memory.get_memory_stats_for_llm()}\n" \
-                        "Based on the information retrieved from your previous tool calls, could you list out all memory record IDs that will best help agent fulfilling its current task?"
-                        
-            response = chained_model.invoke({"question": question, "chat_history": messages[1:]})
-            record_ids = [int(i.strip()) for i in response.content.split(",") if i.strip().isdigit()]
-            
-            db_messages = filter_retrieved_record(messages[:])
-            retrieved_messages = {r["id"]: r for r in db_messages}
-            
-            records = []
-            for id in record_ids:
-                if id in retrieved_messages:
-                    records.append(retrieved_messages[id])
-                    
-            if self.logger:
-                self.logger.info(f"[BEST_MATCH] Generated response with {len(records)} records based on records: {records}")
-            
-            return {"messages": [response], "output": records}
-        
-        
-        def build_graph(self):
-            workflow = StateGraph(AgentState)
-            
-            workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
-            workflow.add_node("action", ToolNode(self.tools))
-            workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
-            
-            workflow.add_conditional_edges(
-                "agent",
-                from_agent_to,
-                {
-                    "action": "action",
-                    "generate": "generate",
-                },
-            )
-            workflow.add_edge('action', 'agent')
-            workflow.add_edge("generate", END)
-            
-            workflow.set_entry_point("agent")
-            self.graph = workflow.compile()
-            
-        def run(self, 
-                user_task: str, 
-                history_summary: str, 
-                current_task: str, 
-                instance_description: str) -> List[Dict]:
-            if self.logger:
-                self.logger.info(
-                    f"[BEST_MATCH] Running tool with user_task: {user_task}, "
-                    f"current_task: {current_task}, "
-                    f"instance_description: {instance_description}"
-                )
-            
-            self.setup_tools(self.memory)
-            
-            self.build_graph()
-
-            self.agent_call_count = 0
-            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
-
-            self.user_task = user_task
-            self.history_summary = history_summary
-            self.current_task = current_task
-            self.instance_description = instance_description
-            
-            query = f"User Task: {user_task}\n" \
-                    f"History Summary: {history_summary}\n" \
-                    f"Current Task: {current_task}\n" \
-                    f"Instance user is looking for: {instance_description}\n" \
-                    "Please gather information from your memory database that can help recall information relevant to your current task."
-            
-            inputs = {
-                "messages": [
-                    ("user", query),
-                ]
-            }
-            state = self.graph.invoke(inputs)
-            return state.get("output", [])
-
-    tool_runner = BestMatchAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
-    
-    class BestMatchInput(BaseModel):
-        user_task: str = Field(
-            description="The high-level task the user wants to perform. For example, 'bring me the book I was reading yesterday'."
+def create_recall_last_seen_terminate_tool(memory: MilvusMemory) -> StructuredTool:
+    class LastSeenTerminateInput(BaseModel):
+        summary: str = Field(
+            description="A short explanation of what object was retrieved and why this memory record is considered the most recent valid sighting."
         )
-        history_summary: str = Field(
-            description="A summary of the prior reasoning or dialog history that provides context for this recall."
+        record_id: int = Field(
+            description="The ID of the last seen memory record that matches the query."
         )
-        current_task: str = Field(
-            description="The current subtask being worked on. For example, 'retrieve all possible matching observations for analysis'."
-        )
-        instance_description: str = Field(
-            description="A description of the object or event you want to recall from memory. E.g., 'red suitcase', or 'any instance of the blue mug on the table'."
-        )
-        
-    best_match_tool = StructuredTool.from_function(
-        func=lambda user_task, history_summary, current_task, instance_description: 
-            tool_runner.run(user_task, history_summary, current_task, instance_description),
-        name="recall_all",
-        description="Recall all memory records that match a given object or scene description. Use this when you want to see the full pattern or history of an object across time.",
-        args_schema=BestMatchInput
+
+    def _terminate_fn(summary: str, record_id: int) -> str:
+        record = memory.get_by_id(record_id)
+        if record:
+            return str(record)
+        return "No record found with the given ID."
+
+    terminate_tool = StructuredTool.from_function(
+        func=_terminate_fn,
+        name="recall_last_seen_terminate",
+        description=(
+            "Call this tool when you have visually confirmed the most recent memory record where the target object was last seen. "
+            "If no such record exists, return an empty result."
+        ),
+        args_schema=LastSeenTerminateInput
     )
-    return [best_match_tool]
+    
+    return [terminate_tool]
 
 def create_recall_last_seen_tool(
     memory: MilvusMemory,
@@ -868,7 +686,293 @@ def create_recall_last_seen_tool(
     logger=None
 ) -> StructuredTool:
     
-    pass
+    class LastSeenAgent:
+        class AgentState(TypedDict):
+            messages: Annotated[Sequence[BaseMessage], add_messages]
+            agent_history: Annotated[Sequence, replace_messages]
+    
+        @staticmethod
+        def from_agent_to(state: AgentState):
+            messages = state["messages"]
+            last_message = messages[-1] if messages else None
+            
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                for call in last_message.tool_calls:
+                    if "terminate" in call.get("name"):
+                        return "next"
+            return "action"
+        
+        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
+            self.memory = memory
+            self.llm = llm
+            self.llm_raw = llm_raw
+            self.vlm = vlm
+            self.vlm_raw = vlm_raw
+            self.logger = logger
+            
+            self.setup_tools(memory)
+            
+            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/last_seen_tool/'
+            self.agent_prompt = file_to_string(prompt_dir+'agent_prompt.txt')
+            self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
+            
+            self.agent_call_count = 0
+        
+        def setup_tools(self, memory: MilvusMemory):
+            search_tools = create_memory_search_tools(memory)
+            inspect_tools = create_memory_inspection_tool(memory)
+            response_tools = create_recall_last_seen_terminate_tool(memory)
+            reflect_tools = create_pause_and_think_tool()
+            
+            self.tools = search_tools + inspect_tools + response_tools
+            self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
+            
+            self.reflect_tools = reflect_tools
+            self.reflect_tool_definitions = [convert_to_openai_function(t) for t in self.reflect_tools]
+            self.response_tools = response_tools
+            self.response_tool_definitions = [convert_to_openai_function(t) for t in self.response_tools]
+
+        def agent(self, state: AgentState):
+            messages = state["messages"]
+            
+            last_message = messages[-1]
+            if isinstance(last_message, ToolMessage):
+                # ===  Step 1: Find last AIMessage with tool_calls
+                idx = len(messages) - 1
+                last_ai_idx = None
+                while idx >= 0:
+                    msg = messages[idx]
+                    if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                        last_ai_idx = idx
+                        break
+                    idx -= 1
+
+                # ===  Step 2: Append all following ToolMessages into search_in_time_history
+                if last_ai_idx is not None:
+                    image_messages = []
+                    for msg in messages[last_ai_idx+1:]:
+                        if isinstance(msg, ToolMessage):
+                            if isinstance(msg.content, str):
+                                msg.content = parse_and_pretty_print_tool_message(msg.content)
+                            state["agent_history"].append(msg)
+                            
+                            if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
+                                inspection = eval(msg.content)
+                                for id, path in inspection.items():
+                                    content = get_image_message_for_record(id, path, msg.tool_call_id)
+                                    message = HumanMessage(content=content)
+                                    image_messages.append(message)
+                            if self.logger:
+                                self.logger.info(f"[LAST SEEN] Tool Response: {msg.content}")
+                    
+                    state["agent_history"] += image_messages
+                    
+            chat_history = state.get("agent_history", [])
+            
+            max_agent_call_count = 8
+
+            model = self.vlm
+            if self.agent_call_count < max_agent_call_count:
+                prompt = self.agent_prompt
+                model = model.bind_tools(self.tool_definitions)
+            else:
+                prompt = self.agent_gen_only_prompt
+                model = model.bind_tools(self.response_tool_definitions)
+                
+            question_str = (
+                f"Your peer agent wants to find when and where the following object was last seen in memory:\n"
+                f"→ {self.description.strip()}\n"
+            )
+            if self.image_message:
+                question_str += f"Your peer agent also provides an image where the target object was last observed:\n"
+            
+            # "Based on what you’ve observed and what you already know, what should you do next?"
+            question_content = [{"type": "text", "text": question_str}]
+            if self.image_message:
+                question_content += self.image_message
+            
+            chat_template = [
+                ("human", "You are a memory retrieval agent. Your job is to find the most recent memory record where the described object instance was last seen. Use tools to inspect and reason carefully before finalizing."),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("system", prompt),
+                ("system", "{fact_prompt}"),
+                HumanMessage(content=question_content),
+                ("human", "{caller_context_text}"),
+                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you’ve done, what you know, and what the user ultimately needs.")
+            ]
+            chat_prompt = ChatPromptTemplate.from_messages(chat_template)
+            
+            chained_model = chat_prompt | model
+            
+            fact_prompt = f"Here are some facts for your context:\n" \
+                      f"1. {self.memory.get_memory_stats_for_llm()}\n" \
+                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"
+            caller_context_text = self.caller_context if self.caller_context else "None"
+            caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
+            
+            response = chained_model.invoke({
+                "chat_history": chat_history,
+                "fact_prompt": fact_prompt,
+                "caller_context_text": caller_context_text
+            })
+            
+            if self.logger:
+                if hasattr(response, "tool_calls") and response.tool_calls:
+                    for call in response.tool_calls:
+                        args_str = ", ".join(f"{k}={repr(v)}" for k, v in call.get("args", {}).items())
+                        log_str = f"{call.get('name')}({args_str})"
+                        self.logger.info(f"[LAST SEEN] Tool call: {log_str}")
+                else:
+                    self.logger.info(f"[LAST SEEN] {response}")
+                    
+            self.agent_call_count += 1
+            return {"messages": [response], "agent_history": [response]}
+        
+        def build_graph(self):
+            workflow = StateGraph(LastSeenAgent.AgentState)
+            
+            workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
+            workflow.add_node("action", ToolNode(self.tools))
+            
+            workflow.add_edge("action", "agent")
+            workflow.add_conditional_edges(
+                "agent",
+                LastSeenAgent.from_agent_to,
+                {
+                    "next": END,
+                    "action": "action",
+                },
+            )
+            
+            workflow.set_entry_point("agent")
+            self.graph = workflow.compile()
+        
+        def run(self, 
+            description: str, 
+            visual_cue_from_record_id: Optional[int] = None,
+            search_start_time: Optional[str] = None, 
+            search_end_time: Optional[str] = None,
+            caller_context: Optional[str] = None,
+        ) -> List[Dict]:
+            
+            if self.logger:
+                self.logger.info(
+                    f"[LAST_SEEN] Running tool with description: {description}, "
+                    f"visual_cue_from_record_id: {visual_cue_from_record_id}, "
+                    f"search_start_time: {search_start_time}, "
+                    f"search_end_time: {search_end_time}"
+                )
+                
+            self.description = description.strip()
+            self.visual_cue_from_record_id = visual_cue_from_record_id
+            
+            if self.visual_cue_from_record_id:
+                self.viz_path = get_viz_path(self.memory, self.visual_cue_from_record_id)
+                self.image_message = get_image_message_for_record(
+                    self.visual_cue_from_record_id, 
+                    self.viz_path, 
+                )
+            else:
+                self.viz_path = None
+                self.image_message = None
+            
+            self.search_start_time = search_start_time
+            self.search_end_time = search_end_time
+            self.caller_context = caller_context
+            
+            self.setup_tools(self.memory)
+            self.build_graph()
+            
+            self.agent_call_count = 0
+            
+            content = []
+            question_str = (
+                f"Your peer agent wants to find when and where the following object was last seen in memory:\n"
+                f"→ {self.description.strip()}\n"
+            )
+            if self.image_message:
+                question_str += f"Your peer agent also provides an image where the target object was last observed:\n"
+            
+            # "Based on what you’ve observed and what you already know, what should you do next?"
+            content += [{"type": "text", "text": question_str}]
+            if self.image_message:
+                content += self.image_message
+            
+            time_str = "\n\nTime constraints:"
+            if search_start_time:
+                time_str += f"\n→ Start: {search_start_time}"
+            if search_end_time:
+                time_str += f"\n→ End: {search_end_time}"
+            if not search_start_time and not search_end_time:
+                time_str += "\n→ None"
+            content += [{"type": "text", "text": time_str}]
+            
+            inputs = {
+                "messages": [
+                    HumanMessage(content=content),
+                ]
+            }
+            state = self.graph.invoke(inputs)
+            
+            output = {
+                "tool_name": "recall_last_seen_terminate",
+                "summary": "",
+                "records": []
+            }
+            
+            last_message = state["messages"][-1]
+            if isinstance(last_message, AIMessage) and hasattr(last_message, "tool_calls"):
+                tool_call = last_message.tool_calls[0] if last_message.tool_calls else None
+                if tool_call and (type(tool_call) is dict) and ("args" in tool_call.keys()) and type(tool_call["args"]) is dict:
+                    output["summary"] = tool_call["args"].get("summary", "")
+
+                    record_id = tool_call["args"].get("record_id", -1)
+                    if record_id == -1:
+                        records = []
+                    else:
+                        record = memory.get_by_id(record_id)
+                        if record:
+                            records = [record]
+                        else:
+                            records = []
+                    output["records"] = records
+                    
+            return output
+        
+    tool_runner = LastSeenAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+
+    class LastSeenInput(BaseModel):
+        description: str = Field(
+            description="Text description of the object or scene to search for, e.g., 'the red mug on the kitchen table'."
+        )
+        visual_cue_from_record_id: Optional[int] = Field(
+            default=None,
+            description="ID of a memory record that contains an image of the object to be retrieved. Used as a visual cue for grounding."
+        )
+        search_start_time: Optional[str] = Field(
+            default=None,
+            description="Start time (inclusive) for searching memory. Can be an ISO string or datetime. Leave blank for no lower bound."
+        )
+        search_end_time: Optional[str] = Field(
+            default=None,
+            description="End time (inclusive) for searching memory. Can be an ISO string or datetime. Leave blank for no upper bound."
+        )
+        caller_context: Optional[str] = Field(
+            default=None,
+            description="Additional free-text context from the caller agent to help guide the retrieval — e.g., what the caller is trying to do, what it is uncertain about, or how the results will be used."
+        )
+        
+    last_seen_tool = StructuredTool.from_function(
+        func=tool_runner.run,
+        name="recall_last_seen",
+        description=(
+            "Recall the last seen memory record that best matches a given object or scene description. "
+        ),
+        args_schema=LastSeenInput,
+    )
+        
+    return [last_seen_tool]
+        
 
 def create_recall_all_tool(
     memory: MilvusMemory,
