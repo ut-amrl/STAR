@@ -56,6 +56,15 @@ To mitigate this, you should perform **backward-batch search**:
 - Stop early once a visually confirmed match is found.  
 This ensures both good temporal coverage and efficient inspection within context limits.
 
+## 🖼️ What Does the Reference Image Represent?
+
+If a **reference image** is provided, it comes from a **past memory record** where the target object was previously observed.  
+This image serves as a **visual grounding cue** for identifying the same physical object instance in later records — even if the appearance, lighting, or context has changed.
+You should treat this as an **instance re-identification** task:
+- Use `inspect_memory_image` to compare candidate records against the reference.
+- Prioritize matches that **visually resemble the object** in the reference image.
+- Do **not** rely solely on captions when a reference image is given — visual confirmation is essential.
+
 ## 🎯 What Does “Last Seen” Mean?
 
 A “last seen” record is the most recent point in time where the object, entity, or scene was visibly or textually confirmed to exist in the robot’s memory.

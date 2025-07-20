@@ -367,7 +367,7 @@ def create_recall_best_matches_tool(
     class BestMatchAgent:
         class AgentState(TypedDict):
             messages: Annotated[Sequence[BaseMessage], add_messages]
-            agent_history: Annotated[Sequence, replace_messages]
+            agent_history: Annotated[Sequence[BaseMessage], add_messages]
             
         @staticmethod
         def from_agent_to(state: AgentState):
@@ -413,6 +413,7 @@ def create_recall_best_matches_tool(
         def agent(self, state: AgentState):
             messages = state["messages"]
             
+            additional_search_history = []
             last_message = messages[-1]
             if isinstance(last_message, ToolMessage):
                 # ===  Step 1: Find last AIMessage with tool_calls
@@ -432,7 +433,7 @@ def create_recall_best_matches_tool(
                         if isinstance(msg, ToolMessage):
                             if isinstance(msg.content, str):
                                 msg.content = parse_and_pretty_print_tool_message(msg.content)
-                            state["agent_history"].append(msg)
+                            additional_search_history.append(msg)
                             
                             if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
                                 inspection = eval(msg.content)
@@ -441,12 +442,25 @@ def create_recall_best_matches_tool(
                                     message = HumanMessage(content=content)
                                     image_messages.append(message)
                             if self.logger:
-                                self.logger.info(f"[BEST MATCH] Tool Response: {msg.content}")
+                                self.logger.info(f"[BEST MATCHES] Tool Response: {msg.content}")
+                                
+                    # if len(image_messages) > 0:
+                    #     chat_prompt = ChatPromptTemplate.from_messages([
+                    #         MessagesPlaceholder(variable_name="chat_history"),
+                    #         ("user", "Description of the image(s) you have seen."),
+                    #     ])
+                    #     chained_model = chat_prompt | self.vlm_raw
+                    #     response = chained_model.invoke({
+                    #         "chat_history": image_messages,
+                    #     })
+                    #     print(response)
+                    #     import pdb; pdb.set_trace()
                     
-                    state["agent_history"] += image_messages
-                    
-            chat_history = state.get("agent_history", [])
+                    additional_search_history += image_messages
             
+            chat_history = state.get("agent_history", [])
+            chat_history += additional_search_history
+                    
             max_agent_call_count = 8
 
             model = self.vlm
@@ -504,7 +518,7 @@ def create_recall_best_matches_tool(
                     self.logger.info(f"[BEST MATCH] {response}")
                     
             self.agent_call_count += 1
-            return {"messages": [response], "agent_history": [response]}
+            return {"messages": [response], "agent_history": additional_search_history + [response]}
         
         def build_graph(self):
             workflow = StateGraph(BestMatchAgent.AgentState)
@@ -545,7 +559,8 @@ def create_recall_best_matches_tool(
             self.description = description.strip()
             self.visual_cue_from_record_id = visual_cue_from_record_id
             
-            if self.visual_cue_from_record_id:
+            self.visual_cue_from_record_id = visual_cue_from_record_id
+            if self.visual_cue_from_record_id is not None:
                 self.viz_path = get_viz_path(self.memory, self.visual_cue_from_record_id)
                 self.image_message = get_image_message_for_record(
                     self.visual_cue_from_record_id, 
@@ -567,11 +582,11 @@ def create_recall_best_matches_tool(
             
             content = []
             content += [{"type": "text", "text": f"Task: Recall at most k memory records best match objects:\n→ {description.strip()}"}]
-            if visual_cue_from_record_id:
-                content += [{"type": "text", "text": f"From previous search, you determined that this instance has appeared in record {visual_cue_from_record_id}."}]
+            if self.visual_cue_from_record_id is not None:
+                content += [{"type": "text", "text": f"From previous search, you determined that this instance has appeared in record {visual_cue_from_record_id}. This is the image from your previous observation. Please find most-relevant records related to this instance:"}]
                 content += get_image_message_for_record(
-                    visual_cue_from_record_id, 
-                    self.memory.get_viz_path(visual_cue_from_record_id), 
+                    self.visual_cue_from_record_id, 
+                    self.viz_path, 
                 )
             time_str = "\n\nTime constraints:"
             if search_start_time:
@@ -689,7 +704,7 @@ def create_recall_last_seen_tool(
     class LastSeenAgent:
         class AgentState(TypedDict):
             messages: Annotated[Sequence[BaseMessage], add_messages]
-            agent_history: Annotated[Sequence, replace_messages]
+            agent_history: Annotated[Sequence[BaseMessage], add_messages]
     
         @staticmethod
         def from_agent_to(state: AgentState):
@@ -735,6 +750,7 @@ def create_recall_last_seen_tool(
         def agent(self, state: AgentState):
             messages = state["messages"]
             
+            additional_search_history = []
             last_message = messages[-1]
             if isinstance(last_message, ToolMessage):
                 # ===  Step 1: Find last AIMessage with tool_calls
@@ -754,7 +770,7 @@ def create_recall_last_seen_tool(
                         if isinstance(msg, ToolMessage):
                             if isinstance(msg.content, str):
                                 msg.content = parse_and_pretty_print_tool_message(msg.content)
-                            state["agent_history"].append(msg)
+                            additional_search_history.append(msg)
                             
                             if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
                                 inspection = eval(msg.content)
@@ -763,12 +779,13 @@ def create_recall_last_seen_tool(
                                     message = HumanMessage(content=content)
                                     image_messages.append(message)
                             if self.logger:
-                                self.logger.info(f"[LAST SEEN] Tool Response: {msg.content}")
+                                self.logger.info(f"[BEST MATCHES] Tool Response: {msg.content}")
                     
-                    state["agent_history"] += image_messages
-                    
-            chat_history = state.get("agent_history", [])
+                    additional_search_history += image_messages
             
+            chat_history = state.get("agent_history", [])
+            chat_history += additional_search_history
+                    
             max_agent_call_count = 8
 
             model = self.vlm
@@ -810,11 +827,14 @@ def create_recall_last_seen_tool(
             caller_context_text = self.caller_context if self.caller_context else "None"
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
-            response = chained_model.invoke({
-                "chat_history": chat_history,
-                "fact_prompt": fact_prompt,
-                "caller_context_text": caller_context_text
-            })
+            try:
+                response = chained_model.invoke({
+                    "chat_history": chat_history,
+                    "fact_prompt": fact_prompt,
+                    "caller_context_text": caller_context_text
+                })
+            except Exception as e:
+                import pdb; pdb.set_trace()
             
             if self.logger:
                 if hasattr(response, "tool_calls") and response.tool_calls:
@@ -826,7 +846,7 @@ def create_recall_last_seen_tool(
                     self.logger.info(f"[LAST SEEN] {response}")
                     
             self.agent_call_count += 1
-            return {"messages": [response], "agent_history": [response]}
+            return {"messages": [response], "agent_history": additional_search_history + [response]}
         
         def build_graph(self):
             workflow = StateGraph(LastSeenAgent.AgentState)
@@ -866,7 +886,7 @@ def create_recall_last_seen_tool(
             self.description = description.strip()
             self.visual_cue_from_record_id = visual_cue_from_record_id
             
-            if self.visual_cue_from_record_id:
+            if self.visual_cue_from_record_id is not None:
                 self.viz_path = get_viz_path(self.memory, self.visual_cue_from_record_id)
                 self.image_message = get_image_message_for_record(
                     self.visual_cue_from_record_id, 
@@ -890,7 +910,7 @@ def create_recall_last_seen_tool(
                 f"Your peer agent wants to find when and where the following object was last seen in memory:\n"
                 f"→ {self.description.strip()}\n"
             )
-            if self.image_message:
+            if self.image_message is not None:
                 question_str += f"Your peer agent also provides an image where the target object was last observed:\n"
             
             # "Based on what you’ve observed and what you already know, what should you do next?"

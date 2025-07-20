@@ -334,8 +334,8 @@ def try_except_continue(state, func):
             ret = func(state)
             return ret
         except BadRequestError as e:
-            print("[ERROR] OpenAI API BadRequestError:")
             import pdb; pdb.set_trace()
+            print("[ERROR] OpenAI API BadRequestError:")
         except Exception as e:
             print("I crashed trying to run:", func)
             print("Here is my error")
