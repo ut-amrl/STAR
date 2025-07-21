@@ -22,6 +22,12 @@ from memory.memory import MilvusMemory
 from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
 
+TOOL_RATIONALE_DESC = (
+    "Explain briefly why this tool is being called. The rationale should clarify how this tool helps move the reasoning forward — "
+    "what is already known, what new insight is expected from the call, and what uncertainty or open question this tool is meant to resolve. "
+    "Avoid vague or redundant justifications; focus on the unique purpose of this tool in the current context."
+)
+
 def create_pause_and_think_tool() -> List[StructuredTool]:
 
     class PauseAndThinkInput(BaseModel):
@@ -113,12 +119,6 @@ def create_memory_terminate_tool() -> List[StructuredTool]:
         
 
 def create_memory_search_tools(memory: MilvusMemory):
-
-    TOOL_RATIONALE_DESC = (
-        "Explain briefly why this tool is being called. The rationale should clarify how this tool helps move the reasoning forward — "
-        "what is already known, what new insight is expected from the call, and what uncertainty or open question this tool is meant to resolve. "
-        "Avoid vague or redundant justifications; focus on the unique purpose of this tool in the current context."
-    )
 
     class TextRetrieverInputWithTime(BaseModel):
         tool_rationale: str = Field(
@@ -225,6 +225,9 @@ def create_memory_search_tools(memory: MilvusMemory):
 def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
 
     class MemoryInspectionInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
         record_id: int = Field(
             description="The ID of the memory record you want to inspect. The image associated with this record will be returned in base64 (utf-8) format."
         )
@@ -566,9 +569,9 @@ def create_recall_best_matches_tool(
                     record_ids = tool_call["args"].get("record_ids", [])
                     records = []
                     for record_id in record_ids:
-                        record = memory.get_by_id(record_id)
+                        record = eval(memory.get_by_id(record_id))
                         if record:
-                            records.append(record)
+                            records += record
                     output["records"] = records
                     
             return output
@@ -576,6 +579,9 @@ def create_recall_best_matches_tool(
     tool_runner = BestMatchAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
             
     class BestMatchesInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
         description: str = Field(
             description="Text description of the object or scene to search for, e.g., 'the red mug on the kitchen table'."
         )
@@ -905,9 +911,9 @@ def create_recall_last_seen_tool(
                     if record_id == -1:
                         records = []
                     else:
-                        record = memory.get_by_id(record_id)
+                        record = eval(memory.get_by_id(record_id))
                         if record:
-                            records = [record]
+                            records = record
                         else:
                             records = []
                     output["records"] = records
@@ -917,6 +923,9 @@ def create_recall_last_seen_tool(
     tool_runner = LastSeenAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
 
     class LastSeenInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
         description: str = Field(
             description="Text description of the object or scene to search for, e.g., 'the red mug on the kitchen table'."
         )
@@ -1249,9 +1258,9 @@ def create_recall_all_tool(
                     record_ids = tool_call["args"].get("record_ids", [])
                     records = []
                     for record_id in record_ids:
-                        record = memory.get_by_id(record_id)
+                        record = eval(memory.get_by_id(record_id))
                         if record:
-                            records.append(record)
+                            records += record
                     output["records"] = records
                     
             return output
@@ -1260,6 +1269,9 @@ def create_recall_all_tool(
     tool_runner = RecallAllAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
             
     class RecallAllInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
         description: str = Field(
             description="Text description of the object to recall, e.g., 'a red mug'. The goal is to retrieve all plausible past appearances for reasoning purposes."
         )

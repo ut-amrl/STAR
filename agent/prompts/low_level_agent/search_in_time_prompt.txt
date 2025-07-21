@@ -220,7 +220,7 @@ Example:
 ---
 
 ### 🔢 `get_record_count_within_time_range`  
-Return the number of memory records stored within a given time range.
+Return the number of memory records stored within a given time range. Since the observation records you made were not evenly distributed across time, you are able to use this tool to understand the number of total records within a time range, and from there infer reasonable `k` for searching.
 
 - **Optional Fields**:
   - `start_time`: Beginning of the range to count from (`YYYY-MM-DD HH:MM:SS`)

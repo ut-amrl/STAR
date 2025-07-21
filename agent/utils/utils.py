@@ -211,6 +211,51 @@ def is_image_inspection_result(content: str) -> bool:
 
     except Exception:
         return False
+    
+def is_recall_tool_result(content: str) -> bool:
+    return is_recall_last_seen_result(content) or \
+           is_recall_best_matches_result(content) or \
+           is_recall_all_result(content)   
+    
+def is_recall_last_seen_result(content: str) -> bool:
+    try:
+        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+        parsed = ast.literal_eval(normalized)
+
+        if not isinstance(parsed, dict):
+            return False
+
+        # Check if 'tool_name' field exists and is 'recall_last_seen'
+        return parsed.get("tool_name") == "recall_last_seen"
+
+    except Exception:
+        return False
+    
+def is_recall_best_matches_result(content: str) -> bool:
+    try:
+        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+        parsed = ast.literal_eval(normalized)
+
+        if not isinstance(parsed, dict):
+            return False
+
+        return parsed.get("tool_name") == "recall_best_matches"
+
+    except Exception:
+        return False
+    
+def is_recall_all_result(content: str) -> bool:
+    try:
+        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+        parsed = ast.literal_eval(normalized)
+
+        if not isinstance(parsed, dict):
+            return False
+
+        return parsed.get("tool_name") == "recall_all_matches"
+
+    except Exception:
+        return False
 
 def parse_and_pretty_print_tool_message(content: str) -> str:
     
@@ -220,17 +265,8 @@ def parse_and_pretty_print_tool_message(content: str) -> str:
             and all(isinstance(entry, dict) for entry in obj)
             and all(key in obj[0] for key in ("id", "timestamp", "position", "theta", "text"))
         )
-    
-    try:
-        # Some messages are double-braced {{}} for safety → fix before parsing
-        data = ast.literal_eval(content)
         
-        if not is_memory_record_list(data):
-            return content  # Don't try to format if not the expected structure
-        
-        # Sort chronologically
-        data = sorted(data, key=lambda d: float(d["timestamp"]))
-        
+    def get_pretty_memory_record_list_str(data: List[dict]) -> str:
         lines = []
         for d in data:
             timestamp = float(d["timestamp"])
@@ -244,8 +280,33 @@ def parse_and_pretty_print_tool_message(content: str) -> str:
                 f"• [Record {d['id']}] It was {readable_time}, and I was at position {pos_str} "
                 f"and angle θ = {theta:.2f}. I saw the following: {text}."
             )
-        final_output = "\n".join(lines)
-        return final_output.replace("{", "{{").replace("}", "}}")
+        return "\n".join(lines)
+    
+    try:
+        # Some messages are double-braced {{}} for safety → fix before parsing
+        data = ast.literal_eval(content)
+        
+        if is_memory_record_list(data):
+            record_list = data
+            # Sort chronologically
+            record_list = sorted(record_list, key=lambda d: float(d["timestamp"]))
+            final_output = get_pretty_memory_record_list_str(record_list)
+            return final_output.replace("{", "{{").replace("}", "}}")
+        
+        elif isinstance(data, dict) and "tool_name" in data and "records" in data and "summary" in data:
+            summary = data["summary"]
+            summary_output = f"{summary} This is all the memory records I found for you:\n"
+            
+            tool_name = data["tool_name"]
+            record_list = data["records"]
+            if tool_name == "recall_all_terminate":
+                record_list = sorted(record_list, key=lambda d: float(d["timestamp"]))
+            record_list_output = get_pretty_memory_record_list_str(record_list)
+            
+            final_output = summary_output + record_list_output
+            return final_output.replace("{", "{{").replace("}", "}}")
+        
+        return content
 
     except Exception as e:
         return content.replace("{", "{{").replace("}", "}}")  # Fallback if not parsable

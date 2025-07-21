@@ -95,7 +95,7 @@ if __name__ == "__main__":
         test_time_search(memory)
         
     if args.test_agent:
-        agent = Agent()
+        agent = LowLevelAgent()
         agent.set_memory(memory)
         task_metadata = {
             # "task_desc": "Find me a cup",

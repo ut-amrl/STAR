@@ -8,7 +8,7 @@ from tqdm import tqdm
 from evaluation.eval_utils import *
 # from agent.agent import Agent
 # from agent.agent2 import Agent
-from agent.agent_lowlevel import Agent
+from agent.agent_lowlevel import LowLevelAgent
 from memory.memory import MilvusMemory, MemoryItem
 from agent.utils.memloader import remember
 from agent.utils.skills import *
@@ -62,10 +62,15 @@ def parse_args():
         action='store_true',
         help="Whether to include recaptioning in the evaluation.",
     )
+    parser.add_argument(
+        "--agent_type",
+        type=str,
+        help="Type of agent to use (e.g., 'low_level', 'high_level').",
+    )
     args = parser.parse_args()
     return args
 
-def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict, annotations):
+def evaluate_one_mem_retrieval_task(args, agent, task: dict, annotations):
     result = agent.run(
         question=task['task'],
         today=f"Today is {args.current_pretty_date}.",
@@ -84,7 +89,7 @@ def evaluate_one_mem_retrieval_task(args, agent: Agent, task: dict, annotations)
     return ((task["instance_name"] in instances) and (task["target_bagname_memory"] in result["vidpath"]), 
             (result["start_frame"], result["end_frame"], task["instance_name"], instances))
     
-def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
+def evaluate_one_execution_task(args, agent, task: dict, annotations):
     try:
         result = agent.run(
             question=task['task'],
@@ -133,7 +138,7 @@ def evaluate_one_execution_task(args, agent: Agent, task: dict, annotations):
         
     return (obj_retrieval_success, mem_retrieval_success, retrieved_instance)
 
-def evaluate_one_task(args, agent: Agent, task: dict, annotations):
+def evaluate_one_task(args, agent, task: dict, annotations):
     result = agent.run(
         question=task['task'],
         today=f"{args.current_pretty_date}",
@@ -156,7 +161,7 @@ def evaluate(args):
     #     image_path_fn=get_image_path_for_simulation,
     # )
     # agent = Agent("full")
-    agent = Agent(
+    agent = LowLevelAgent(
         navigate_fn=navigate,
         find_object_fn=find_object,
         pick_fn=pick_by_instance_id,

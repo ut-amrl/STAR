@@ -16,7 +16,7 @@ from amrl_msgs.srv import (
     SemanticObjectDetectionSrvResponse
 )
 
-class LowLevelAgent:
+class HighLevelAgent:
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
         search_in_time_history: Annotated[Sequence[BaseMessage], add_messages]
@@ -55,7 +55,7 @@ class LowLevelAgent:
         self.vlm_raw = ChatOpenAI(model="o3", temperature=1, api_key=os.environ.get("OPENAI_API_KEY"))
         self.vlm = FunctionsWrapper(self.vlm_raw)
         
-        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "low_level_agent")
+        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "high_level_agent")
         self.search_in_time_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_prompt.txt"))
         self.search_in_time_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
         self.search_in_time_reflection_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_reflection_prompt.txt"))
@@ -72,7 +72,11 @@ class LowLevelAgent:
             print(f"Task set: {task_desc}")
             
     def setup_tools(self, memory: MilvusMemory):
-        search_tools = create_memory_search_tools(memory)
+        recall_best_matches_tool = create_recall_best_matches_tool(memory, self.llm, self.llm_raw, self.vlm, self.vlm_raw, logger=self.logger)
+        recall_last_seen_tool = create_recall_last_seen_tool(memory, self.llm, self.llm_raw, self.vlm, self.vlm_raw, logger=self.logger)
+        recall_all_tools = create_recall_all_tool(memory, self.llm, self.llm_raw, self.vlm, self.vlm_raw, logger=self.logger)
+        
+        search_tools = recall_best_matches_tool + recall_last_seen_tool + recall_all_tools
         inspect_tools = create_memory_inspection_tool(memory)
         response_tools = create_memory_terminate_tool()
         reflection_tools = create_pause_and_think_tool()
@@ -118,6 +122,19 @@ class LowLevelAgent:
                                 content = get_image_message_for_record(id, path, msg.tool_call_id)
                                 message = HumanMessage(content=content)
                                 image_messages.append(message)
+                                
+                        elif isinstance(msg.content, str) and is_recall_tool_result(msg.content):
+                            records = eval(msg.content).get("records", [])
+                            if is_recall_all_result(msg.content):
+                                records = sorted(records, key=lambda d: float(d["timestamp"]))
+                            for record in records:
+                                content = get_image_message_for_record(
+                                    int(record["id"]), 
+                                    get_viz_path(self.memory, int(record["id"])),
+                                    msg.tool_call_id)
+                                message = HumanMessage(content=content)
+                                image_messages.append(message)
+                                
                         if self.logger:
                             self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
                 
@@ -233,6 +250,8 @@ class LowLevelAgent:
         import pdb; pdb.set_trace()
     
     def search_in_space(self, state: AgentState):
+        return # TODO fix me
+        
         if not self.task.search_proposal:
             # TODO: Handle the case where search proposal is not set
             if self.logger:
@@ -280,7 +299,7 @@ class LowLevelAgent:
         """
         Build the graph for the agent.
         """
-        workflow = StateGraph(LowLevelAgent.AgentState)
+        workflow = StateGraph(HighLevelAgent.AgentState)
         
         workflow.add_node("search_in_time", lambda state: try_except_continue(state, self.search_in_time))
         workflow.add_node("search_in_time_action", ToolNode(self.temporal_tools))
@@ -290,7 +309,7 @@ class LowLevelAgent:
         workflow.add_edge("search_in_time_action", "search_in_time")
         workflow.add_conditional_edges(
             "search_in_time",
-            LowLevelAgent.from_search_in_time_to,
+            HighLevelAgent.from_search_in_time_to,
             {
                 "search_in_time_action": "search_in_time_action",
                 "next": "prepare_search_in_space",
@@ -324,11 +343,10 @@ class LowLevelAgent:
             ]
         }
         
-        config = {"recursion_limit": 50}
+        config = {"recursion_limit": 30}
         state = self.graph.invoke(inputs, config=config)
         
         if self.logger:
             self.logger.info("=============== END ===============")
         
         return self.task.search_proposal
-        
