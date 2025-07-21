@@ -152,7 +152,7 @@ class HighLevelAgent:
         model = self.vlm
         if self.search_in_time_cnt < max_search_in_time_cnt:
             if self.search_in_time_cnt % n_reflection_intervals == 0:
-                current_tool_defs = self.temporal_tool_definitions # TODO workaround; need to debug the true error
+                current_tool_defs = self.reflection_tool_definitions
             else:
                 current_tool_defs = self.temporal_tool_definitions
         else:
@@ -251,7 +251,10 @@ class HighLevelAgent:
         import pdb; pdb.set_trace()
     
     def search_in_space(self, state: AgentState):
-        return # TODO fix me
+        if self.navigate_fn is None or self.find_object_fn is None or self.pick_fn is None:
+            if self.logger:
+                self.logger.error("[SEARCH IN SPACE] Navigation, find object, or pick function not set. Cannot proceed with search in space.")
+            return
         
         if not self.task.search_proposal:
             # TODO: Handle the case where search proposal is not set
@@ -348,6 +351,6 @@ class HighLevelAgent:
         state = self.graph.invoke(inputs, config=config)
         
         if self.logger:
-            self.logger.info("=============== END ===============")
+            self.logger.info("=============== END =============== \n\n\n")
         
         return self.task.search_proposal

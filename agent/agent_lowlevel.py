@@ -134,7 +134,7 @@ class LowLevelAgent:
         model = self.vlm
         if self.search_in_time_cnt < max_search_in_time_cnt:
             if self.search_in_time_cnt % n_reflection_intervals == 0:
-                current_tool_defs = self.temporal_tool_definitions # TODO workaround; need to debug the true error
+                current_tool_defs = self.reflection_tool_definitions
             else:
                 current_tool_defs = self.temporal_tool_definitions
         else:
@@ -328,7 +328,7 @@ class LowLevelAgent:
         state = self.graph.invoke(inputs, config=config)
         
         if self.logger:
-            self.logger.info("=============== END ===============")
+            self.logger.info("=============== END =============== \n\n\n")
         
         return self.task.search_proposal
         

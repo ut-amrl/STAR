@@ -126,7 +126,8 @@ These records are retrieved using **vector similarity search** — the robot com
 You MUST follow the JSON format strictly. You are only allowed to call the following tools as your response.
 For all the recall_* tools, you are actually delegate retrieval subtasks to other peer agents — each of which is intelligent and capable of performing one kind of object retrieval strategy. They wrap a complete search process over memory.
 You must give these agents clear and appropriate input — and interpret their output carefully to decide your next step.
-
+You may call multiple `inspect_memory_image` or `get_record_count_within_time_range` tools **at the same time**, by simply including multiple tool calls in the list (see example).
+If you decide to call them in parallel, it will greatly save iteration times as well as query time. It can be useful if there are multiple candidate records equally likely or worth checking.
 ___
 
 ### 🎯 `recall_best_matches`

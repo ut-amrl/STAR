@@ -429,7 +429,7 @@ def create_recall_best_matches_tool(
             ]
             if self.agent_call_count < self.max_agent_call_count:
                 chat_template += [
-                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}"),
+                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}. You must use one of the tools to continue searching or finalize your decision without any additional explanation."),
                     ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
                 ]
             else:
@@ -784,7 +784,7 @@ def create_recall_last_seen_tool(
             ]
             if self.agent_call_count < self.max_agent_call_count:
                 chat_template += [
-                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}"),
+                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}. You must use one of the tools to continue searching or finalize your decision without any additional explanation."),
                     ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
                 ]
             else:
@@ -1148,7 +1148,7 @@ def create_recall_all_tool(
             ]
             if self.agent_call_count < self.max_agent_call_count:
                 chat_template += [
-                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}"),
+                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}. You must use one of the tools to continue searching or finalize your decision without any additional explanation."),
                     ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
                 ]
             else:

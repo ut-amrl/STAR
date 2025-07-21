@@ -111,7 +111,8 @@ In the next section, you will be introduced to your available tools.
 
 ## 🛠️ Available Tools
 
-You may call multiple `search_*` or `inspect_memory_image` tools **at the same time**.  
+You may call multiple `search_*` or `inspect_memory_image` tools **at the same time**, by simply including multiple tool calls in the list (see example).
+If you decide to call multiple `inspect_memory_image` in parallel, it will greatly save iteration times as well as query time. It can be useful if there are multiple candidate records equally likely or worth checking.
 However, you must only call **one** of rest tools at a time.
 You MUST follow the JSON format strictly.
 
