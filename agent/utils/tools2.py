@@ -24,7 +24,7 @@ from agent.utils.utils import *
 
 TOOL_RATIONALE_DESC = (
     "Explain briefly why this tool is being called. The rationale should clarify how this tool helps move the reasoning forward — "
-    "what is already known, what new insight is expected from the call, and what uncertainty or open question this tool is meant to resolve. "
+    "what is already known, what new insight is expected from the call, what uncertainty or open question this tool is meant to resolve, and why, comapring to other tools, this is the most optimal next step to do. "
     "Avoid vague or redundant justifications; focus on the unique purpose of this tool in the current context."
 )
 
@@ -225,9 +225,6 @@ def create_memory_search_tools(memory: MilvusMemory):
 def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
 
     class MemoryInspectionInput(BaseModel):
-        tool_rationale: str = Field(
-            description=TOOL_RATIONALE_DESC
-        )
         record_id: int = Field(
             description="The ID of the memory record you want to inspect. The image associated with this record will be returned in base64 (utf-8) format."
         )
@@ -247,10 +244,6 @@ def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
         frame = (start_frame + end_frame) // 2
         imgpath = image_path_fn(vidpath, frame)
         return {record_id : imgpath}
-
-        # img = get_image_from_record(record, type="utf-8", resize=True)
-        # img_msg = get_vlm_img_message(img, type="gpt")
-        # return [img_msg]
 
     inspection_tool = StructuredTool.from_function(
         func=_inspect_memory_record,
@@ -369,12 +362,13 @@ def create_recall_best_matches_tool(
                     image_messages = []
                     for msg in messages[last_ai_idx+1:]:
                         if isinstance(msg, ToolMessage):
+                            original_msg_content = copy.copy(msg.content)
                             if isinstance(msg.content, str):
                                 msg.content = parse_and_pretty_print_tool_message(msg.content)
                             additional_search_history.append(msg)
                             
-                            if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
-                                inspection = eval(msg.content)
+                            if isinstance(original_msg_content, str) and is_image_inspection_result(original_msg_content):
+                                inspection = eval(original_msg_content)
                                 for id, path in inspection.items():
                                     content = get_image_message_for_record(id, path, msg.tool_call_id)
                                     message = HumanMessage(content=content)
@@ -396,7 +390,7 @@ def create_recall_best_matches_tool(
                     
                     additional_search_history += image_messages
             
-            chat_history = state.get("agent_history", [])
+            chat_history = copy.deepcopy(state.get("agent_history", []))
             chat_history += additional_search_history
                     
             max_agent_call_count = 8
@@ -453,9 +447,9 @@ def create_recall_best_matches_tool(
                     for call in response.tool_calls:
                         args_str = ", ".join(f"{k}={repr(v)}" for k, v in call.get("args", {}).items())
                         log_str = f"{call.get('name')}({args_str})"
-                        self.logger.info(f"[BEST MATCH] Tool call: {log_str}")
+                        self.logger.info(f"[BEST MATCHES] Tool call: {log_str}")
                 else:
-                    self.logger.info(f"[BEST MATCH] {response}")
+                    self.logger.info(f"[BEST MATCHES] {response}")
                     
             self.agent_call_count += 1
             return {"messages": [response], "agent_history": additional_search_history + [response]}
@@ -480,6 +474,7 @@ def create_recall_best_matches_tool(
             self.graph = workflow.compile()
             
         def run(self, 
+                tool_rationale: str,
                 description: str, 
                 visual_cue_from_record_id: Optional[int] = None,
                 search_start_time: Optional[str] = None, 
@@ -721,12 +716,13 @@ def create_recall_last_seen_tool(
                     image_messages = []
                     for msg in messages[last_ai_idx+1:]:
                         if isinstance(msg, ToolMessage):
+                            original_msg_content = copy.copy(msg.content)
                             if isinstance(msg.content, str):
                                 msg.content = parse_and_pretty_print_tool_message(msg.content)
                             additional_search_history.append(msg)
                             
-                            if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
-                                inspection = eval(msg.content)
+                            if isinstance(original_msg_content, str) and is_image_inspection_result(original_msg_content):
+                                inspection = eval(original_msg_content)
                                 for id, path in inspection.items():
                                     content = get_image_message_for_record(id, path, msg.tool_call_id)
                                     message = HumanMessage(content=content)
@@ -736,7 +732,7 @@ def create_recall_last_seen_tool(
                     
                     additional_search_history += image_messages
             
-            chat_history = state.get("agent_history", [])
+            chat_history = copy.deepcopy(state.get("agent_history", []))
             chat_history += additional_search_history
                     
             max_agent_call_count = 10
@@ -820,6 +816,7 @@ def create_recall_last_seen_tool(
             self.graph = workflow.compile()
         
         def run(self, 
+            tool_rationale: str,
             description: str, 
             visual_cue_from_record_id: Optional[int] = None,
             search_start_time: Optional[str] = None, 
@@ -1070,12 +1067,13 @@ def create_recall_all_tool(
                     image_messages = []
                     for msg in messages[last_ai_idx+1:]:
                         if isinstance(msg, ToolMessage):
+                            original_msg_content = copy.copy(msg.content)
                             if isinstance(msg.content, str):
                                 msg.content = parse_and_pretty_print_tool_message(msg.content)
                             additional_search_history.append(msg)
                             
-                            if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
-                                inspection = eval(msg.content)
+                            if isinstance(original_msg_content, str) and is_image_inspection_result(original_msg_content):
+                                inspection = eval(original_msg_content)
                                 for id, path in inspection.items():
                                     content = get_image_message_for_record(id, path, msg.tool_call_id)
                                     message = HumanMessage(content=content)
@@ -1085,7 +1083,7 @@ def create_recall_all_tool(
                     
                     additional_search_history += image_messages
             
-            chat_history = state.get("agent_history", [])
+            chat_history = copy.deepcopy(state.get("agent_history", []))
             chat_history += additional_search_history
                     
             max_agent_call_count = 10
@@ -1169,6 +1167,7 @@ def create_recall_all_tool(
             self.graph = workflow.compile()
         
         def run(self, 
+            tool_rationale: str,
             description: str, 
             visual_cue_from_record_id: Optional[int] = None,
             search_start_time: Optional[str] = None, 

@@ -111,21 +111,22 @@ class HighLevelAgent:
                 image_messages = []
                 for msg in messages[last_ai_idx+1:]:
                     if isinstance(msg, ToolMessage):
+                        original_msg_content = copy.copy(msg.content)
                         if isinstance(msg.content, str):
                             msg.content = parse_and_pretty_print_tool_message(msg.content)
                         additional_search_history.append(msg)
                         # state["search_in_time_history"].append(msg)
                         
-                        if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
-                            inspection = eval(msg.content)
+                        if isinstance(original_msg_content, str) and is_image_inspection_result(original_msg_content):
+                            inspection = eval(original_msg_content)
                             for id, path in inspection.items():
                                 content = get_image_message_for_record(id, path, msg.tool_call_id)
                                 message = HumanMessage(content=content)
                                 image_messages.append(message)
-                                
-                        elif isinstance(msg.content, str) and is_recall_tool_result(msg.content):
-                            records = eval(msg.content).get("records", [])
-                            if is_recall_all_result(msg.content):
+                             
+                        elif isinstance(original_msg_content, str) and is_recall_tool_result(original_msg_content):
+                            records = eval(original_msg_content).get("records", [])
+                            if is_recall_all_result(original_msg_content):
                                 records = sorted(records, key=lambda d: float(d["timestamp"]))
                             for record in records:
                                 content = get_image_message_for_record(
@@ -142,7 +143,7 @@ class HighLevelAgent:
                 # state["search_in_time_history"] += image_messages
                 
         
-        chat_history = state.get("search_in_time_history", [])
+        chat_history = copy.deepcopy(state.get("search_in_time_history", []))
         chat_history += additional_search_history
         
         max_search_in_time_cnt = 20
@@ -343,7 +344,7 @@ class HighLevelAgent:
             ]
         }
         
-        config = {"recursion_limit": 30}
+        config = {"recursion_limit": 100}
         state = self.graph.invoke(inputs, config=config)
         
         if self.logger:

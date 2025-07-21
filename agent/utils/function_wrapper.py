@@ -316,7 +316,7 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
             del kwargs["function_call"]
         if len(functions) > 0 and _is_pydantic_class(functions[0]):
             functions = [convert_to_ollama_tool(fn) for fn in functions]
-        functions.insert(0, DEFAULT_RESPONSE_FUNCTION)
+        # functions.insert(0, DEFAULT_RESPONSE_FUNCTION)
         system_message_prompt_template = SystemMessagePromptTemplate.from_template(
             self.tool_system_prompt_template
         )
@@ -345,7 +345,7 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
             import pdb; pdb.set_trace()
             raise ValueError(
                 f"""Model did not respond with valid JSON. 
-                Please try again. 
+                Please review what tools are availbe to you, select the right one, respond in the specified JSON format and try again. 
                 Response: {chat_generation_content}"""
             )
 
@@ -373,7 +373,8 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
                     f"{chat_generation_content}"
                 )
             
-            if called_tool["name"] == DEFAULT_RESPONSE_FUNCTION["name"]:
+            # if called_tool["name"] == DEFAULT_RESPONSE_FUNCTION["name"]:
+            if False:
                 if len(parsed_chat_result) != 1:
                     print("NOTE: There are other tools that are being called that we are skipping.")
                     print("This is due to the default response being called along with other tool calls.")
