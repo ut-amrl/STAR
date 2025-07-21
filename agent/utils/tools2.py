@@ -326,6 +326,7 @@ def create_recall_best_matches_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
+            self.max_agent_call_count = 8
             
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
@@ -393,15 +394,17 @@ def create_recall_best_matches_tool(
             chat_history = copy.deepcopy(state.get("agent_history", []))
             chat_history += additional_search_history
                     
-            max_agent_call_count = 8
-
             model = self.vlm
-            if self.agent_call_count < max_agent_call_count:
+            if self.agent_call_count < self.max_agent_call_count:
                 prompt = self.agent_prompt
-                model = model.bind_tools(self.tool_definitions)
+                current_tool_defs = self.tool_definitions
             else:
                 prompt = self.agent_gen_only_prompt
-                model = model.bind_tools(self.response_tool_definitions)
+                current_tool_defs = self.response_tool_definitions
+                
+            model = model.bind_tools(current_tool_defs)
+            tool_names = [tool['name'] for tool in current_tool_defs]
+            tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
                 
             question_str = (
                 f"Your peer agent wants to retrieve at most {self.k} memory records that best match the following description:\n"
@@ -424,6 +427,16 @@ def create_recall_best_matches_tool(
                 ("human", "{caller_context_text}"),
                 ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
+            if self.agent_call_count < self.max_agent_call_count:
+                chat_template += [
+                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}"),
+                    ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
+                ]
+            else:
+                chat_template += [
+                    ("system", f"You must strictly follow the JSON output format. Since you have already reached the maximum number of iterations, you should finalize your decision now by calling: {tool_list_str}"),
+                ]
+            
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
             chained_model = chat_prompt | model
@@ -680,6 +693,7 @@ def create_recall_last_seen_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
+            self.max_agent_call_count = 10
         
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
@@ -735,15 +749,17 @@ def create_recall_last_seen_tool(
             chat_history = copy.deepcopy(state.get("agent_history", []))
             chat_history += additional_search_history
                     
-            max_agent_call_count = 10
-
             model = self.vlm
-            if self.agent_call_count < max_agent_call_count:
+            if self.agent_call_count < self.max_agent_call_count:
                 prompt = self.agent_prompt
-                model = model.bind_tools(self.tool_definitions)
+                current_tool_defs = self.tool_definitions
             else:
                 prompt = self.agent_gen_only_prompt
-                model = model.bind_tools(self.response_tool_definitions)
+                current_tool_defs = self.response_tool_definitions
+                
+            model = model.bind_tools(current_tool_defs)
+            tool_names = [tool['name'] for tool in current_tool_defs]
+            tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
                 
             question_str = (
                 f"Your peer agent wants to find when and where the following object was last seen in memory:\n"
@@ -766,6 +782,16 @@ def create_recall_last_seen_tool(
                 ("human", "{caller_context_text}"),
                 ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
+            if self.agent_call_count < self.max_agent_call_count:
+                chat_template += [
+                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}"),
+                    ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
+                ]
+            else:
+                chat_template += [
+                    ("system", f"You must strictly follow the JSON output format. Since you have already reached the maximum number of iterations, you should finalize your decision now by calling: {tool_list_str}"),
+                ]
+                
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
             chained_model = chat_prompt | model
@@ -1031,6 +1057,7 @@ def create_recall_all_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
+            self.max_agent_call_count = 10
             
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
@@ -1086,15 +1113,17 @@ def create_recall_all_tool(
             chat_history = copy.deepcopy(state.get("agent_history", []))
             chat_history += additional_search_history
                     
-            max_agent_call_count = 10
-
             model = self.vlm
-            if self.agent_call_count < max_agent_call_count:
+            if self.agent_call_count < self.max_agent_call_count:
                 prompt = self.agent_prompt
-                model = model.bind_tools(self.tool_definitions)
+                current_tool_defs = self.tool_definitions
             else:
                 prompt = self.agent_gen_only_prompt
-                model = model.bind_tools(self.response_tool_definitions)
+                current_tool_defs = self.response_tool_definitions
+                
+            model = model.bind_tools(current_tool_defs)
+            tool_names = [tool['name'] for tool in current_tool_defs]
+            tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
                 
             question_str = (
                 f"Your peer agent wants to find all plausible past memory records where the following object may have appeared::\n"
@@ -1117,6 +1146,16 @@ def create_recall_all_tool(
                 ("human", "{caller_context_text}"),
                 ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
+            if self.agent_call_count < self.max_agent_call_count:
+                chat_template += [
+                    ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}"),
+                    ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
+                ]
+            else:
+                chat_template += [
+                    ("system", f"You must strictly follow the JSON output format. Since you have already reached the maximum number of iterations, you should finalize your decision now by calling: {tool_list_str}"),
+                ]
+                
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
             chained_model = chat_prompt | model
