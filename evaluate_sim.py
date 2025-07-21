@@ -161,11 +161,22 @@ def evaluate(args):
     #     image_path_fn=get_image_path_for_simulation,
     # )
     # agent = Agent("full")
-    agent = LowLevelAgent(
-        navigate_fn=navigate,
-        find_object_fn=find_object,
-        pick_fn=pick_by_instance_id,
-    )
+    if args.agent_type == "high_level":
+        from agent.agent_highlevel import HighLevelAgent
+        agent = HighLevelAgent(
+            navigate_fn=navigate,
+            find_object_fn=find_object,
+            pick_fn=pick_by_instance_id,
+        )
+    elif args.agent_type == "low_level":
+        from agent.agent_lowlevel import LowLevelAgent
+        agent = LowLevelAgent(
+            navigate_fn=navigate,
+            find_object_fn=find_object,
+            pick_fn=pick_by_instance_id,
+        )
+    else:
+        raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'high_level' and 'low_level'.")
     
     data_metadata = load_virtualhome_data_metadata(args.data_dir)
     versions = [""]
@@ -306,7 +317,7 @@ if __name__ == "__main__":
     
     os.makedirs(args.output_dir, exist_ok=True)
     for task_type, result_list in results["results"].items():
-        output_path = os.path.join(args.output_dir, f"results_{task_type}.json")
+        output_path = os.path.join(args.output_dir, f"results_{args.agent_type}_{task_type}.json")
         
         result = {
             "task_metadata": results["task_metadata"],

@@ -36,6 +36,9 @@ Depending on the object type:
 - For **anchored or immovable objects** (e.g. shelves, tables), layout and position tend to be more stable — spatial context can be a strong identity cue.
 But regardless of object type, you should **not move forward** until you have a **clear visual or contextual understanding** of which object instance the user likely means — and enough information to recognize it again, even if seen elsewhere.
 
+If you later want to search for this exact object instance again — for example, to find its last known location or past occurrences — providing a reference image can help guide instance-level retrieval.
+🖼️ A reference image can only be provided after you’ve already seen the object in memory and confirmed its appearance through inspection. Use it when you need to search for that an instance you have seen before, not just the general category.
+
 ---
 
 ### 🧠 Confirming the Intended Object
