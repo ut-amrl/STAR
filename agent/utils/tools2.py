@@ -425,7 +425,7 @@ def create_recall_best_matches_tool(
                 ("system", "{fact_prompt}"),
                 HumanMessage(content=question_content),
                 ("human", "{caller_context_text}"),
-                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you’ve done, what you know, and what the user ultimately needs.")
+                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
@@ -433,7 +433,9 @@ def create_recall_best_matches_tool(
             
             fact_prompt = f"Here are some facts for your context:\n" \
                       f"1. {self.memory.get_memory_stats_for_llm()}\n" \
-                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"
+                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"\
+                      f"3. {self.time_str}\n"
+
             caller_context_text = self.caller_context if self.caller_context else "None"
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
@@ -523,14 +525,24 @@ def create_recall_best_matches_tool(
                     self.visual_cue_from_record_id, 
                     self.viz_path, 
                 )
-            time_str = "\n\nTime constraints:"
-            if search_start_time:
-                time_str += f"\n→ Start: {search_start_time}"
-            if search_end_time:
-                time_str += f"\n→ End: {search_end_time}"
-            if not search_start_time and not search_end_time:
+                
+            time_str = "Your peer agent is only interested in information within the following time window:"
+            
+            start_t_str, end_t_str = self.memory.get_db_time_range()
+            if search_start_time is not None and search_end_time is None:
+                self.search_end_time = end_t_str
+            elif search_start_time is None and search_end_time is not None:
+                self.search_start_time = start_t_str
+            
+            if search_start_time is None and search_end_time is None:
                 time_str += "\n→ None"
-            content += [{"type": "text", "text": time_str}]
+            else:
+                time_str += f"\n→ Start: {search_start_time}"
+                time_str += f"\n→ End: {search_end_time}"
+                
+            self.time_str = time_str
+            
+            content += [{"type": "text", "text": self.time_str}]
             
             inputs = {
                 "messages": [
@@ -750,7 +762,7 @@ def create_recall_last_seen_tool(
                 ("system", "{fact_prompt}"),
                 HumanMessage(content=question_content),
                 ("human", "{caller_context_text}"),
-                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you’ve done, what you know, and what the user ultimately needs.")
+                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
@@ -758,7 +770,9 @@ def create_recall_last_seen_tool(
             
             fact_prompt = f"Here are some facts for your context:\n" \
                       f"1. {self.memory.get_memory_stats_for_llm()}\n" \
-                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"
+                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"\
+                      f"3. {self.time_str}\n"
+            
             caller_context_text = self.caller_context if self.caller_context else "None"
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
@@ -850,14 +864,23 @@ def create_recall_last_seen_tool(
             if self.image_message:
                 content += self.image_message
             
-            time_str = "\n\nTime constraints:"
-            if search_start_time:
-                time_str += f"\n→ Start: {search_start_time}"
-            if search_end_time:
-                time_str += f"\n→ End: {search_end_time}"
-            if not search_start_time and not search_end_time:
+            time_str = "Your peer agent is only interested in information within the following time window:"
+            
+            start_t_str, end_t_str = self.memory.get_db_time_range()
+            if search_start_time is not None and search_end_time is None:
+                self.search_end_time = end_t_str
+            elif search_start_time is None and search_end_time is not None:
+                self.search_start_time = start_t_str
+            
+            if search_start_time is None and search_end_time is None:
                 time_str += "\n→ None"
-            content += [{"type": "text", "text": time_str}]
+            else:
+                time_str += f"\n→ Start: {search_start_time}"
+                time_str += f"\n→ End: {search_end_time}"
+                
+            self.time_str = time_str
+            
+            content += [{"type": "text", "text": self.time_str}]
             
             inputs = {
                 "messages": [
@@ -1085,7 +1108,7 @@ def create_recall_all_tool(
                 ("system", "{fact_prompt}"),
                 HumanMessage(content=question_content),
                 ("human", "{caller_context_text}"),
-                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you’ve done, what you know, and what the user ultimately needs.")
+                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
@@ -1093,7 +1116,9 @@ def create_recall_all_tool(
             
             fact_prompt = f"Here are some facts for your context:\n" \
                       f"1. {self.memory.get_memory_stats_for_llm()}\n" \
-                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"
+                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n" \
+                      f"3. {self.time_str}\n"
+            
             caller_context_text = self.caller_context if self.caller_context else "None"
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
@@ -1184,14 +1209,23 @@ def create_recall_all_tool(
             if self.image_message:
                 content += self.image_message
             
-            time_str = "\n\nTime constraints:"
-            if search_start_time:
-                time_str += f"\n→ Start: {search_start_time}"
-            if search_end_time:
-                time_str += f"\n→ End: {search_end_time}"
-            if not search_start_time and not search_end_time:
+            time_str = "Your peer agent is only interested in information within the following time window:"
+            
+            start_t_str, end_t_str = self.memory.get_db_time_range()
+            if search_start_time is not None and search_end_time is None:
+                self.search_end_time = end_t_str
+            elif search_start_time is None and search_end_time is not None:
+                self.search_start_time = start_t_str
+            
+            if search_start_time is None and search_end_time is None:
                 time_str += "\n→ None"
-            content += [{"type": "text", "text": time_str}]
+            else:
+                time_str += f"\n→ Start: {search_start_time}"
+                time_str += f"\n→ End: {search_end_time}"
+                
+            self.time_str = time_str
+            
+            content += [{"type": "text", "text": self.time_str}]
             
             inputs = {
                 "messages": [

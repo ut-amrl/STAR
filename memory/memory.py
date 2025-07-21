@@ -256,7 +256,7 @@ class MilvusMemory(Memory):
         # self.milv_wrapper.reload()
         
         query_embedding = self.embedder.embed_query(f"Represent this sentence for searching relevant passages: {query}")
-        expr_time = self._get_search_time_range(start_time, end_time)
+        expr_time = self.get_search_time_range(start_time, end_time)
 
         # TODO need to verify start_time and end_time str before calling this function
         # start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp()
@@ -279,7 +279,7 @@ class MilvusMemory(Memory):
                                     k: int = 8) -> str:
         # Only use position for search (ignore theta)
         position_query = position
-        expr_time = self._get_search_time_range(start_time, end_time)
+        expr_time = self.get_search_time_range(start_time, end_time)
 
         # start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").timestamp()
         # end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").timestamp()
@@ -364,7 +364,7 @@ class MilvusMemory(Memory):
         """
         Return the number of records in memory between start_time and end_time.
         """
-        expr_time = self._get_search_time_range(start_time, end_time)
+        expr_time = self.get_search_time_range(start_time, end_time)
         
         results = self.milv_wrapper.collection.query(
             expr=expr_time,
@@ -409,7 +409,9 @@ class MilvusMemory(Memory):
             rets.append(ret)
         return json.dumps(rets)
     
-    def _get_search_time_range(self, start_time: Optional[str], end_time: Optional[str]) -> tuple[float, float]:
+    def get_search_time_range(self, 
+                              start_time: Optional[str], 
+                              end_time: Optional[str]) -> tuple[float, float]:
         """Return a Milvus expr string or None if no constraint is needed."""
         if start_time is None and end_time is None:
             return "timestamp >= 0"  # No time constraint
@@ -423,6 +425,17 @@ class MilvusMemory(Memory):
         end_ts = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp() if end_time else max_ts
 
         return f"timestamp >= {start_ts} and timestamp <= {end_ts}"
+        
+    def get_db_time_range(self):
+        stats = self.get_memory_stats()
+        
+        min_ts = stats["min_timestamp"] - 60
+        max_ts = stats["max_timestamp"] + 60
+        
+        min_dt_str = datetime.utcfromtimestamp(min_ts).strftime("%Y-%m-%d %H:%M:%S")
+        max_dt_str = datetime.utcfromtimestamp(max_ts).strftime("%Y-%m-%d %H:%M:%S")
+
+        return min_dt_str, max_dt_str
         
     def get_memory_stats(self):
         self.milv_wrapper.reload()
