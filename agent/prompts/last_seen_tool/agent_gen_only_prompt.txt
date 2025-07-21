@@ -78,7 +78,7 @@ You have used up all your quota on tool calls. Now you must make a decision, and
 
 ### ✅ `recall_last_seen_terminate`
 
-Use this to finalize the task **once you are confident** about the best-matching records.  
+Use this to finalize the task **once you are confident** about in which record the query object was last seen.  
 This tool signals that your reasoning is complete and you are ready to hand off results to the caller agent.
 
 - **Required Fields**:

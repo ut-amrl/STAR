@@ -53,7 +53,6 @@ To mitigate this, you should perform **backward-batch search**:
 - Divide memory into time chunks starting from `end_time` and moving backward.
 - Use `get_record_count_within_time_range` to ensure each chunk contains a manageable number of records.
 - Run `search_in_memory_by_text_within_time_range` within each chunk (e.g., with `k=20–30`) and inspect candidate records.
-- Stop early once a visually confirmed match is found.  
 This ensures both good temporal coverage and efficient inspection within context limits.
 
 ## 🖼️ What Does the Reference Image Represent?

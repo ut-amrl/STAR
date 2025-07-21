@@ -258,71 +258,6 @@ def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
 
     return [inspection_tool]
 
-def create_db_txt_search_tool(memory: MilvusMemory):
-    class TextRetrieverInput(BaseModel):
-            x: str = Field(description="The query that will be searched by the vector similarity-based retriever.\
-                                Text embeddings of this description are used. There should always be text in here as a response! \
-                                Based on the question and your context, decide what text to search for in the database. \
-                                This query argument should be a phrase such as 'a crowd gathering' or 'a green car driving down the road'.\
-                                The query will then search your memories for you.")
-
-    txt_retriever_tool = StructuredTool.from_function(
-        func=lambda x: memory.search_by_text(x),
-        name="retrieve_from_text",
-        description="Search and return information from your video memory in the form of captions",
-        args_schema=TextRetrieverInput
-        # coroutine= ... <- you can specify an async method if desired as well
-    )
-    return [txt_retriever_tool]
-    
-def create_db_txt_search_with_time_tool(memory: MilvusMemory):
-
-    class TextRetrieverInputWithTime(BaseModel):
-        x: str = Field(
-            description="The query that will be searched by the vector similarity-based retriever. "
-                        "Text embeddings of this description are used. There should always be text in here as a response! "
-                        "Based on the question and your context, decide what text to search for in the database. "
-                        "This query argument should be a phrase such as 'a crowd gathering' or 'a green car driving down the road'."
-        )
-        start_time: str = Field(
-            description="Start search time in YYYY-MM-DD HH:MM:SS format. Only search for observations made after this timestamp. Following unix standard, this can only be a time after 1970-01-01 00:00:00."
-        )
-        end_time: str = Field(
-            description="End search time in YYYY-MM-DD HH:MM:SS format. Only search for observations made before this timestamp. Following unix standard, this can only be a time larger than the start time, and also before current time 2025-03-01."
-        )
-
-    txt_time_retriever_tool = StructuredTool.from_function(
-        func=lambda x, start_time, end_time: memory.search_by_txt_and_time(x, start_time, end_time),
-        name="retrieve_from_text_with_time",
-        description="Search and return information from your video memory in the form of captions, filtered by time range.",
-        args_schema=TextRetrieverInputWithTime
-    )
-    return [txt_time_retriever_tool]
-
-def create_db_txt_search_k_tool(memory: MilvusMemory):
-    class TextRetrieverWithKInput(BaseModel):
-        x: str = Field(
-            description="The query to search for in the memory. This should describe what you're trying to retrieve, like 'a blue mug on the table'."
-        )
-        k: conint(ge=int(1), le=int(50)) = Field(
-            default=8,
-            description="The number of top memory matches to retrieve. Must be between 1 and 50."
-        )
-
-    def _search_with_k(x: str, k: int):
-        return memory.search_by_text(x, k=k)
-
-    txt_retriever_k_tool = StructuredTool.from_function(
-        func=_search_with_k,
-        name="retrieve_top_k_from_text",
-        description="Search memory for the top-k most relevant past observations using a natural language query.",
-        args_schema=TextRetrieverWithKInput
-    )
-    return [txt_retriever_k_tool]
-
-def create_db_txt_backward_search_tool(memory: MilvusMemory):
-    pass 
-
 def create_recall_best_matches_terminate_tool(memory: MilvusMemory) -> StructuredTool:
     
     class BestMatchTerminateInput(BaseModel):
@@ -779,14 +714,14 @@ def create_recall_last_seen_tool(
                                     message = HumanMessage(content=content)
                                     image_messages.append(message)
                             if self.logger:
-                                self.logger.info(f"[BEST MATCHES] Tool Response: {msg.content}")
+                                self.logger.info(f"[LAST SEEN] Tool Response: {msg.content}")
                     
                     additional_search_history += image_messages
             
             chat_history = state.get("agent_history", [])
             chat_history += additional_search_history
                     
-            max_agent_call_count = 8
+            max_agent_call_count = 10
 
             model = self.vlm
             if self.agent_call_count < max_agent_call_count:
@@ -827,14 +762,11 @@ def create_recall_last_seen_tool(
             caller_context_text = self.caller_context if self.caller_context else "None"
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
-            try:
-                response = chained_model.invoke({
-                    "chat_history": chat_history,
-                    "fact_prompt": fact_prompt,
-                    "caller_context_text": caller_context_text
-                })
-            except Exception as e:
-                import pdb; pdb.set_trace()
+            response = chained_model.invoke({
+                "chat_history": chat_history,
+                "fact_prompt": fact_prompt,
+                "caller_context_text": caller_context_text
+            })
             
             if self.logger:
                 if hasattr(response, "tool_calls") and response.tool_calls:
@@ -993,6 +925,42 @@ def create_recall_last_seen_tool(
         
     return [last_seen_tool]
         
+def create_recall_all_terminate_tool(memory: MilvusMemory) -> StructuredTool:
+    
+    class RecallAllTerminateInput(BaseModel):
+        summary: str = Field(
+            description="A short explanation of what set of records is being returned and why they are relevant"
+        )
+        record_ids: List[int] = Field(
+            description=(
+                "List of memory record IDs where the described object plausibly appears. "
+                "You must not return more than 50. If there are more, return the most representative and informative ones."
+            )
+        )
+    
+    def _terminate_fn(
+        summary: str,
+        record_ids: List[int]
+    ) -> str:
+        records = []
+        for record_id in record_ids[:50]:  # Enforce hard cap
+            record = memory.get_by_id(record_id)
+            if record:
+                records.append(record)
+        return str(records)
+
+    terminate_tool = StructuredTool.from_function(
+        func=_terminate_fn,
+        name="recall_all_terminate",
+        description=(
+            "Use this to finalize the recall-all task once you have gathered all plausible records where the object may appear. "
+            "This tool should be called when your retrieval is complete and you've curated a set of representative results."
+        ),
+        args_schema=RecallAllTerminateInput
+    )
+    
+    return [terminate_tool]
+
 
 def create_recall_all_tool(
     memory: MilvusMemory,
@@ -1003,20 +971,22 @@ def create_recall_all_tool(
     logger=None
 ) -> StructuredTool:
     
-    def from_agent_to(state: AgentState):
-        messages = state["messages"]
-        last_message = messages[-1]
-        # If there is no function call, then we finish
-        if not last_message.tool_calls:
-            return "generate"
-        else:
-            return "action"
-    
-    class AgentState(TypedDict):
-        messages: Annotated[Sequence[BaseMessage], add_messages]
-        output: Annotated[Sequence, replace_messages] = None
-    
     class RecallAllAgent:
+        class AgentState(TypedDict):
+            messages: Annotated[Sequence[BaseMessage], add_messages]
+            agent_history: Annotated[Sequence[BaseMessage], add_messages]
+            
+        @staticmethod
+        def from_agent_to(state: AgentState):
+            messages = state["messages"]
+            last_message = messages[-1] if messages else None
+            
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                for call in last_message.tool_calls:
+                    if "terminate" in call.get("name"):
+                        return "next"
+            return "action"
+        
         def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
             self.memory = memory
             self.llm = llm
@@ -1032,96 +1002,263 @@ def create_recall_all_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
-            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
             
         def setup_tools(self, memory: MilvusMemory):
-            self.tools = create_db_txt_search_k_tool(memory)
+            search_tools = create_memory_search_tools(memory)
+            inspect_tools = create_memory_inspection_tool(memory)
+            response_tools = create_recall_all_terminate_tool(memory)
+            reflect_tools = create_pause_and_think_tool()
+            
+            self.tools = search_tools + inspect_tools + response_tools
             self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
             
-        def agent(self, state: AgentState):
-            pass
+            self.reflect_tools = reflect_tools
+            self.reflect_tool_definitions = [convert_to_openai_function(t) for t in self.reflect_tools]
+            self.response_tools = response_tools
+            self.response_tool_definitions = [convert_to_openai_function(t) for t in self.response_tools]
         
-        def generate(self, state: AgentState):
-            pass
+        def agent(self, state: AgentState):
+            messages = state["messages"]
+            
+            additional_search_history = []
+            last_message = messages[-1]
+            if isinstance(last_message, ToolMessage):
+                # ===  Step 1: Find last AIMessage with tool_calls
+                idx = len(messages) - 1
+                last_ai_idx = None
+                while idx >= 0:
+                    msg = messages[idx]
+                    if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                        last_ai_idx = idx
+                        break
+                    idx -= 1
+
+                # ===  Step 2: Append all following ToolMessages
+                if last_ai_idx is not None:
+                    image_messages = []
+                    for msg in messages[last_ai_idx+1:]:
+                        if isinstance(msg, ToolMessage):
+                            if isinstance(msg.content, str):
+                                msg.content = parse_and_pretty_print_tool_message(msg.content)
+                            additional_search_history.append(msg)
+                            
+                            if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
+                                inspection = eval(msg.content)
+                                for id, path in inspection.items():
+                                    content = get_image_message_for_record(id, path, msg.tool_call_id)
+                                    message = HumanMessage(content=content)
+                                    image_messages.append(message)
+                            if self.logger:
+                                self.logger.info(f"[RECALL ALL] Tool Response: {msg.content}")
+                    
+                    additional_search_history += image_messages
+            
+            chat_history = state.get("agent_history", [])
+            chat_history += additional_search_history
+                    
+            max_agent_call_count = 10
+
+            model = self.vlm
+            if self.agent_call_count < max_agent_call_count:
+                prompt = self.agent_prompt
+                model = model.bind_tools(self.tool_definitions)
+            else:
+                prompt = self.agent_gen_only_prompt
+                model = model.bind_tools(self.response_tool_definitions)
+                
+            question_str = (
+                f"Your peer agent wants to find all plausible past memory records where the following object may have appeared::\n"
+                f"→ {self.description.strip()}\n"
+            )
+            if self.image_message:
+                question_str += f"Your peer agent also provides an image where the target object was last observed:\n"
+            
+            # "Based on what you’ve observed and what you already know, what should you do next?"
+            question_content = [{"type": "text", "text": question_str}]
+            if self.image_message:
+                question_content += self.image_message
+            
+            chat_template = [
+                ("human", "You are a memory retrieval agent. Your job is to retrieve all plausible memory records where the described object may have appeared. Use tools to inspect and reason carefully before finalizing."),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("system", prompt),
+                ("system", "{fact_prompt}"),
+                HumanMessage(content=question_content),
+                ("human", "{caller_context_text}"),
+                ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you’ve done, what you know, and what the user ultimately needs.")
+            ]
+            chat_prompt = ChatPromptTemplate.from_messages(chat_template)
+            
+            chained_model = chat_prompt | model
+            
+            fact_prompt = f"Here are some facts for your context:\n" \
+                      f"1. {self.memory.get_memory_stats_for_llm()}\n" \
+                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"
+            caller_context_text = self.caller_context if self.caller_context else "None"
+            caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
+            
+            response = chained_model.invoke({
+                "chat_history": chat_history,
+                "fact_prompt": fact_prompt,
+                "caller_context_text": caller_context_text
+            })
+            
+            if self.logger:
+                if hasattr(response, "tool_calls") and response.tool_calls:
+                    for call in response.tool_calls:
+                        args_str = ", ".join(f"{k}={repr(v)}" for k, v in call.get("args", {}).items())
+                        log_str = f"{call.get('name')}({args_str})"
+                        self.logger.info(f"[RECALL ALL] Tool call: {log_str}")
+                else:
+                    self.logger.info(f"[RECALL ALL] {response}")
+                    
+            self.agent_call_count += 1
+            return {"messages": [response], "agent_history": additional_search_history + [response]}
         
         def build_graph(self):
-            workflow = StateGraph(AgentState)
+            workflow = StateGraph(RecallAllAgent.AgentState)
             
             workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
             workflow.add_node("action", ToolNode(self.tools))
-            workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
             
+            workflow.add_edge("action", "agent")
             workflow.add_conditional_edges(
                 "agent",
-                from_agent_to,
+                RecallAllAgent.from_agent_to,
                 {
+                    "next": END,
                     "action": "action",
-                    "generate": "generate",
                 },
             )
-            workflow.add_edge('action', 'agent')
-            workflow.add_edge("generate", END)
             
             workflow.set_entry_point("agent")
             self.graph = workflow.compile()
         
         def run(self, 
-                user_task: str, 
-                history_summary: str, 
-                current_task: str, 
-                instance_description: str, 
-                search_start_time: Optional[str] = None, 
-                search_end_time: Optional[str] = None) -> List[Dict]:
+            description: str, 
+            visual_cue_from_record_id: Optional[int] = None,
+            search_start_time: Optional[str] = None, 
+            search_end_time: Optional[str] = None,
+            caller_context: Optional[str] = None,
+        ) -> List[Dict]:
             
             if self.logger:
                 self.logger.info(
-                    f"[RECALL_ALL] Running tool with user_task: {user_task}, "
-                    f"current_task: {current_task}, "
-                    f"instance_description: {instance_description}, "
-                    f"search_start_time: {search_start_time}, search_end_time: {search_end_time}"
+                    f"[RECALL ALL] Running tool with description: {description}, "
+                    f"visual_cue_from_record_id: {visual_cue_from_record_id}, "
+                    f"search_start_time: {search_start_time}, "
+                    f"search_end_time: {search_end_time}"
                 )
                 
-            self.user_task = user_task
-            self.history_summary = history_summary
-            self.current_task = current_task
-            self.instance_description = instance_description
+            self.description = description.strip()
+            self.visual_cue_from_record_id = visual_cue_from_record_id
+            
+            if self.visual_cue_from_record_id is not None:
+                self.viz_path = get_viz_path(self.memory, self.visual_cue_from_record_id)
+                self.image_message = get_image_message_for_record(
+                    self.visual_cue_from_record_id, 
+                    self.viz_path, 
+                )
+            else:
+                self.viz_path = None
+                self.image_message = None
+            
             self.search_start_time = search_start_time
             self.search_end_time = search_end_time
+            self.caller_context = caller_context
             
-            # TODO implement the actual logic here
-            return []
+            self.setup_tools(self.memory)
+            self.build_graph()
+            
+            self.agent_call_count = 0
+            
+            content = []
+            question_str = (
+                f"Your peer agent wants to find all plausible memory records where the following object may have appeared:\n"
+                f"→ {self.description.strip()}\n"
+            )
+            if self.image_message is not None:
+                question_str += f"Your peer agent also provides an image where the target object was previously observed:\n"
+            
+            content += [{"type": "text", "text": question_str}]
+            if self.image_message:
+                content += self.image_message
+            
+            time_str = "\n\nTime constraints:"
+            if search_start_time:
+                time_str += f"\n→ Start: {search_start_time}"
+            if search_end_time:
+                time_str += f"\n→ End: {search_end_time}"
+            if not search_start_time and not search_end_time:
+                time_str += "\n→ None"
+            content += [{"type": "text", "text": time_str}]
+            
+            inputs = {
+                "messages": [
+                    HumanMessage(content=content),
+                ]
+            }
+            state = self.graph.invoke(inputs)
+            
+            output = {
+                "tool_name": "recall_all_terminate",
+                "summary": "",
+                "records": []
+            }
+            
+            last_message = state["messages"][-1]
+            if isinstance(last_message, AIMessage) and hasattr(last_message, "tool_calls"):
+                tool_call = last_message.tool_calls[0] if last_message.tool_calls else None
+                if tool_call and (type(tool_call) is dict) and ("args" in tool_call.keys()) and type(tool_call["args"]) is dict:
+                    output["summary"] = tool_call["args"].get("summary", "")
+
+                    record_ids = tool_call["args"].get("record_ids", [])
+                    records = []
+                    for record_id in record_ids:
+                        record = memory.get_by_id(record_id)
+                        if record:
+                            records.append(record)
+                    output["records"] = records
+                    
+            return output
         
+        
+    tool_runner = RecallAllAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+            
     class RecallAllInput(BaseModel):
-        user_task: str = Field(
-            description="The high-level task the user wants to perform. For example, 'bring me the book I was reading yesterday'."
+        description: str = Field(
+            description="Text description of the object to recall, e.g., 'a red mug'. The goal is to retrieve all plausible past appearances for reasoning purposes."
         )
-        history_summary: str = Field(
-            description="A summary of the prior reasoning or dialog history that provides context for this recall."
-        )
-        current_task: str = Field(
-            description="The current subtask being worked on. For example, 'retrieve all possible matching observations for analysis'."
-        )
-        instance_description: str = Field(
-            description="A description of the object or event you want to recall from memory. E.g., 'red suitcase', or 'any instance of the blue mug on the table'."
+        visual_cue_from_record_id: Optional[int] = Field(
+            default=None,
+            description="ID of a memory record that contains an image of the object to be retrieved. Used as a visual cue for grounding."
         )
         search_start_time: Optional[str] = Field(
             default=None,
-            description="(Optional) Start of time window, format 'YYYY-MM-DD HH:MM:SS'. Results after this time will be considered."
+            description="Start time (inclusive) for searching memory. Can be an ISO string or datetime. Leave blank for no lower bound."
         )
         search_end_time: Optional[str] = Field(
             default=None,
-            description="(Optional) End of time window, format 'YYYY-MM-DD HH:MM:SS'. Results before this time will be considered."
+            description="End time (inclusive) for searching memory. Can be an ISO string or datetime. Leave blank for no upper bound."
         )
-        
-    tool_runner = RecallAllAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+        caller_context: Optional[str] = Field(
+            default=None,
+            description="Additional free-text context from the caller agent to help guide the retrieval — e.g., what the caller is trying to do, what it is uncertain about, or how the results will be used."
+        )
+            
     recall_all_tool = StructuredTool.from_function(
-        func=lambda user_task, history_summary, current_task, instance_description, search_start_time=None, search_end_time=None: 
-            tool_runner.run(user_task, history_summary, current_task, instance_description, search_start_time, search_end_time),
+        func=tool_runner.run,
         name="recall_all",
-        description="Recall all memory records that match a given object or scene description. Use this when you want to see the full pattern or history of an object across time.",
-        args_schema=RecallAllInput
+        description=(
+            "Recall all plausible memory records where the described object may have appeared. "
+            "You may provide a visual cue (via record ID) and a time window to guide retrieval. "
+            "This tool is useful for analyzing typical locations, usage patterns, or frequency of appearance."
+        ),
+        args_schema=RecallAllInput,
     )
+    
     return [recall_all_tool]
+
 
 def create_determine_search_instance_tool(
     memory: MilvusMemory,

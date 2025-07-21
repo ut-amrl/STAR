@@ -253,7 +253,7 @@ Example:
 
 ### ✅ `recall_last_seen_terminate`
 
-Use this to finalize the task **once you are confident** about the best-matching records.  
+Use this to finalize the task **once you are confident** about in which record the query object was last seen.  
 This tool signals that your reasoning is complete and you are ready to hand off results to the caller agent.
 
 - **Required Fields**:
@@ -278,7 +278,12 @@ Example:
 ]
 ```
 
+---
+
 ## Examples
+
+For simplicity, the following examples omit `get_record_count_within_time_range`.  
+In practice, this tool helps estimate memory density, choose a good `k`, and decide whether to split memory into chunks — especially in large or dense memory. Use it to plan searches more effectively.
 
 ### Example 1: Text-only query: “a red mug”
 Setup
@@ -355,8 +360,6 @@ recall_last_seen_terminate(
     record_id=-1
 )
 ```
-NOTE: Before the first `search_in_memory_by_text_within_time_range`, ideally you should call `get_record_count_within_time_range` to understand what `k` you should use. We are skipping that step for simplicity of the example traces.
-
 
 ### Example 3: Large memory + backward batch search
 Setup
