@@ -194,7 +194,7 @@ def get_image_message_for_record(record_id: int,
 
 def is_image_inspection_result(content: str) -> bool:
     try:
-        normalized = content.replace("{{", "{").replace("}}", "}")
+        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
         parsed = ast.literal_eval(normalized)
 
         if not isinstance(parsed, dict):

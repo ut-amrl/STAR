@@ -72,9 +72,21 @@ class HighLevelAgent:
             print(f"Task set: {task_desc}")
             
     def setup_tools(self, memory: MilvusMemory):
-        recall_best_matches_tool = create_recall_best_matches_tool(memory, self.llm, self.llm_raw, self.vlm, self.vlm_raw, logger=self.logger)
-        recall_last_seen_tool = create_recall_last_seen_tool(memory, self.llm, self.llm_raw, self.vlm, self.vlm_raw, logger=self.logger)
-        recall_all_tools = create_recall_all_tool(memory, self.llm, self.llm_raw, self.vlm, self.vlm_raw, logger=self.logger)
+        recall_best_matches_tool = create_recall_best_matches_tool(memory, 
+                                                                   self.llm, self.llm_raw, 
+                                                                   self.vlm, self.vlm_raw, 
+                                                                #    logger=self.logger
+                                                                   )
+        recall_last_seen_tool = create_recall_last_seen_tool(memory, 
+                                                             self.llm, self.llm_raw, 
+                                                             self.vlm, self.vlm_raw, 
+                                                            #  logger=self.logger
+                                                             )
+        recall_all_tools = create_recall_all_tool(memory, 
+                                                  self.llm, self.llm_raw, 
+                                                  self.vlm, self.vlm_raw, 
+                                                #   logger=self.logger
+                                                  )
         
         search_tools = recall_best_matches_tool + recall_last_seen_tool + recall_all_tools
         inspect_tools = create_memory_inspection_tool(memory)
@@ -158,7 +170,7 @@ class HighLevelAgent:
         chat_history += additional_search_history
         
         max_search_in_time_cnt = 10
-        n_reflection_intervals = 3
+        n_reflection_intervals = 4
         
         model = self.vlm
         if self.search_in_time_cnt < max_search_in_time_cnt:

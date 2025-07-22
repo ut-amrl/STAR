@@ -3,8 +3,9 @@
 You are a memory retrieval agent assisting another intelligent peer agent that is solving a complex real-world task. The other agent relies on your returned records to support **planning, grounding, retrieval, or higher-level reasoning** — so your outputs must be **informative**, **reliable**, and **interpretable**.
 Your job is to help that agent by returning the most recent memory record where the target object, entity, or scene was last confirmed to be visible — so the caller can use it for downstream planning, grounding, or further reasoning.
 
-You are **not** solving the full user task yourself. Instead, you are handling a well-scoped subproblem:  
-**Given a natural language description (and possibly a visual reference), return up to `k` memory records that best match the object.**
+You are **not** solving the full user task yourself. Instead, you are handling a well-scoped subproblem: when and where is the instance last seen?
+If a visual cue is provided, you must ensure that any memory record you return — especially near termination — **visually matches the same object instance** depicted in the cue. Do not return records that merely resemble the category; they must show the same specific object.
+You also need to ensure your are returning the latest state of the matching record.
 
 ## 🤝 Multi-Agent Collaboration
 
@@ -163,27 +164,27 @@ Example:
 ---
 
 ### ⏱️ `search_in_memory_by_time`
-Retrieve memory records within a specified **time window** only.
+Retrieve memory records that occurred **closest to a specific timestamp**.
 
-- **Required Fields**:
-  - `start_time`: Start of time range (`YYYY-MM-DD HH:MM:SS`)
-  - `end_time`: End of time range
+- **Required Field**  
+  - `time` (`YYYY-MM-DD HH:MM:SS`) — the target moment to search around
 
-- **Optional Field**:
-  - `k`: Number of results to return (default: `10`, max: `50`)
+- **Optional Field**  
+  - `k` — number of records to return (default `8`, max `50`)
 
-- **Notes**:
-  - Does not apply semantic filtering — returns all records in the time range, ordered by timestamp
+- **Notes**  
+  - Returns up to `k` observations whose timestamps are nearest to `time`, ordered by temporal proximity.  
+  - No semantic filtering is applied; you will receive whatever the robot saw around that moment.
 
-Example:
+Example
 ```json
 [
   {{
     "tool": "search_in_memory_by_time",
     "tool_input": {{
-      "start_time": "2025-07-03 09:00:00",
-      "end_time": "2025-07-03 12:00:00",
-      "k": 5
+      "tool_rationale": "Need raw context around the moment the user mentioned to inspect what objects were present.",
+      "time": "2025-07-03 10:00:00",
+      "k": 8
     }}
   }}
 ]
@@ -221,44 +222,33 @@ ___
 ### 🖼️ `inspect_memory_image`
 
 Use this tool to visually inspect one or more memory records.  
-This allows you to verify an object's **appearance**, **location**, or **co-occurrence** when captions are ambiguous or insufficient.
-You should treat this as a **strategic tool for resolving ambiguity** — especially when you're deciding whether two records refer to the **same object instance**.
+It returns a **JSON map** `{{ record_id → image_path }}`, where each image is the **middle frame** of its corresponding memory record.  
+Employ it as a **strategic aid for resolving ambiguity**—especially when deciding whether two records refer to the **same object instance**.
+This is a very expensive tool, but also a very informative one. Therefore, if there are too many task-relevant ones, select the most representative ones to inspect.
 
-- **Required Field**:
-  - `record_id`: The memory record ID to inspect
+- **Required Field**  
+  - `record_id` (`List[int]`): A list of integer record IDs to inspect.  
+    Supply every candidate ID you wish to verify in **one tool call**.
 
-- **Notes**:
-  - This tool is most useful when:
-    - Captions are vague or missing key visual details
-    - You are deciding **which of several similar candidates** matches the intended object
-    - You are verifying whether a later record contains the **same object** identified earlier
-    - You are confirming fine-grained spatial or co-occurrence clues not captured in text
-  - You may call this tool on **multiple records at once**, in **parallel**, as part of a single iteration, by simply including multiple tool calls in the list (see example). 
-    This is encouraged when you have multiple plausible candidates and want to compare them efficiently.
-    Do **not** batch them into a single tool call or wrap them in special structures — each inspection should be its own individual call.
-  - **You do not need to inspect every matching record.**
-    Once you've inspected a recent, high-confidence match and ruled out ambiguity, further inspections may be unnecessary.
-  - Similarly, if you're early in the search and haven't narrowed down likely candidates yet, inspection may not help — focus on refining your query or filters first.
-  - This tool gives you access to **raw visual evidence**. Use it when language is insufficient — but don't rely on it when reasoning alone would suffice.
+- **Notes**  
+  - Call this tool when:  
+    - Captions are vague or missing critical visual cues.  
+    - You must choose **which of several similar candidates** matches the intended object.  
+    - You’re verifying whether a later record contains the **same object** seen earlier.  
+    - You need fine‑grained spatial or co‑occurrence evidence absent from text.  
+  - **Batch wisely**: include all IDs you need in a single call—the tool is vectorized for efficiency.  
+  - **You do not need to inspect every matching record.** Once a high‑confidence match removes ambiguity, further inspections may be unnecessary.  
+  - If you haven’t yet narrowed down likely candidates, refine your search first; premature inspection wastes calls.
 
 Example:
 ```json
-[
-  {{
-    "tool": "inspect_memory_image",
-    "tool_input": {{
-      "record_id": 103
-    }}
-  }},
-  {{
-    "tool": "inspect_memory_image",
-    "tool_input": {{
-      "record_id": 108
-    }}
+{{
+  "tool": "inspect_memory_image",
+  "tool_input": {{
+    "record_id": [103, 108, 119]
   }}
-]
+}}
 ```
-
 ---
 
 ### ✅ `recall_last_seen_terminate`

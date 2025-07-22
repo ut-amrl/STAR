@@ -225,34 +225,54 @@ def create_memory_search_tools(memory: MilvusMemory):
 def create_memory_inspection_tool(memory: MilvusMemory) -> StructuredTool:
 
     class MemoryInspectionInput(BaseModel):
-        record_id: int = Field(
-            description="The ID of the memory record you want to inspect. The image associated with this record will be returned in base64 (utf-8) format."
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
+        record_id: List[int] = Field(
+            description=(
+                "A list of memory record IDs to inspect. "
+                "Each ID should be an integer previously returned by a search tool. "
+                "Use this when you need to visually verify one or more candidate memories "
+                "before deciding what to retrieve."
+            )
         )
 
-    def _inspect_memory_record(record_id: int) -> str:
-        # Should return base64-encoded (utf-8) image string for the record
-        docs = memory.get_by_id(record_id)
-        if docs is None or len(docs) == 0:
-            return "" # "No record found with the given ID."
-        record = eval(docs)[0]
-
+    def _inspect_memory_record(tool_rationale: str, record_id: List[int]) -> Dict[int, str]:
+        """
+        For every ID in `record_id`, load the corresponding memory entry and
+        return {id: image_path}.  The caller can then decide which visual
+        evidence is most relevant.  (Image is not yet base64‑encoded for
+        bandwidth efficiency; encode it client‑side if needed.)
+        """
+        id_to_path = {}
         image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
-        vidpath = record["vidpath"]
-        start_frame = record["start_frame"]
-        end_frame = record["end_frame"]
-        start_frame, end_frame = int(start_frame), int(end_frame)
-        frame = (start_frame + end_frame) // 2
-        imgpath = image_path_fn(vidpath, frame)
-        return {record_id : imgpath}
+
+        for rid in record_id:
+            docs = memory.get_by_id(rid)
+            if docs is None or len(docs) == 0:
+                continue  # silently skip missing records
+            record = eval(docs)[0]
+            vidpath = record["vidpath"]
+            start_frame = int(record["start_frame"])
+            end_frame = int(record["end_frame"])
+            frame = (start_frame + end_frame) // 2
+            id_to_path[rid] = image_path_fn(vidpath, frame)
+
+        return id_to_path
 
     inspection_tool = StructuredTool.from_function(
         func=_inspect_memory_record,
         name="inspect_memory_record",
-        description="Given a memory record ID, return its associated visual observation as a base64-encoded image string.",
+        description=(
+            "Inspect one or more memory records by ID and obtain a quick visual "
+            "snapshot (middle frame) for each.  Use this to validate hypotheses "
+            "before finalizing a retrieval."
+        ),
         args_schema=MemoryInspectionInput
     )
 
     return [inspection_tool]
+
 
 def create_recall_best_matches_terminate_tool(memory: MilvusMemory) -> StructuredTool:
     
@@ -326,7 +346,7 @@ def create_recall_best_matches_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
-            self.max_agent_call_count = 8
+            self.max_agent_call_count = 6
             
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
@@ -693,7 +713,7 @@ def create_recall_last_seen_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
-            self.max_agent_call_count = 10
+            self.max_agent_call_count = 8
         
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
@@ -1057,7 +1077,7 @@ def create_recall_all_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
-            self.max_agent_call_count = 10
+            self.max_agent_call_count = 8
             
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
