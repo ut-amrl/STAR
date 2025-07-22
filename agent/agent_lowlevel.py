@@ -84,7 +84,16 @@ class LowLevelAgent:
         self.reflection_tool_definitions = [convert_to_openai_function(t) for t in self.reflection_tools]
         self.temporal_search_terminate_tool = response_tools
         self.temporal_search_terminate_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_search_terminate_tool]
-            
+    
+    def flush_tool_threads(self):
+        """
+        Wait until all background tool calls finish, then shut down the pool.
+        Call once you’re done with this agent instance.
+        """
+        if hasattr(self, "_tool_pool") and self._tool_pool is not None:
+            self._tool_pool.shutdown(wait=True)
+            self._tool_pool = None
+    
     def search_in_time(self, state: AgentState):
         messages = state["messages"]
         

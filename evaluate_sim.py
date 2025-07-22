@@ -303,8 +303,13 @@ def evaluate(args):
                     pbar_postfix_str += f"/({mem_rate:.1f})%"
                 pbar.set_postfix_str(pbar_postfix_str)
                 
-            utility.drop_collection(db_name)
+            # Clean up memory and agent state
+            agent.flush_tool_threads()
             import time; time.sleep(1)
+            if utility.has_collection(db_name):
+                utility.drop_collection(db_name)
+            import time; time.sleep(1)
+            
         pbar.close()
         
     output["results"] = results

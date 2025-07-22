@@ -60,9 +60,9 @@ class HighLevelAgent:
         self.search_in_time_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
         self.search_in_time_reflection_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_reflection_prompt.txt"))
         
-        self.temporal_tools, self.spatial_tools = None, None
-        self.temporal_tool_definitions = None
-        self.spatial_tool_definitions = None
+        self.all_temporal_tools, self.all_spatial_tools = None, None
+        self.all_temporal_tool_definitions = None
+        self.all_spatial_tool_definitions = None
         
         self.search_in_time_cnt = 0
         
@@ -81,13 +81,24 @@ class HighLevelAgent:
         response_tools = create_memory_terminate_tool()
         reflection_tools = create_pause_and_think_tool()
         
-        self.temporal_tools = search_tools + inspect_tools + response_tools + reflection_tools
-        self.temporal_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_tools]
+        self.all_temporal_tools = search_tools + inspect_tools + response_tools + reflection_tools
+        self.all_temporal_tool_definitions = [convert_to_openai_function(t) for t in self.all_temporal_tools]
         
+        self.temporal_info_tools = search_tools + inspect_tools + response_tools
+        self.temporal_info_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_info_tools]
         self.reflection_tools = reflection_tools
         self.reflection_tool_definitions = [convert_to_openai_function(t) for t in self.reflection_tools]
         self.temporal_search_terminate_tool = response_tools
         self.temporal_search_terminate_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_search_terminate_tool]
+        
+    def flush_tool_threads(self):
+        """
+        Wait until all background tool calls finish, then shut down the pool.
+        Call once you’re done with this agent instance.
+        """
+        if hasattr(self, "_tool_pool") and self._tool_pool is not None:
+            self._tool_pool.shutdown(wait=True)
+            self._tool_pool = None
             
     def search_in_time(self, state: AgentState):
         messages = state["messages"]
@@ -146,7 +157,7 @@ class HighLevelAgent:
         chat_history = copy.deepcopy(state.get("search_in_time_history", []))
         chat_history += additional_search_history
         
-        max_search_in_time_cnt = 20
+        max_search_in_time_cnt = 10
         n_reflection_intervals = 3
         
         model = self.vlm
@@ -154,7 +165,7 @@ class HighLevelAgent:
             if self.search_in_time_cnt % n_reflection_intervals == 0:
                 current_tool_defs = self.reflection_tool_definitions
             else:
-                current_tool_defs = self.temporal_tool_definitions
+                current_tool_defs = self.temporal_info_tool_definitions
         else:
             current_tool_defs = self.temporal_search_terminate_tool_definitions
 
@@ -306,7 +317,7 @@ class HighLevelAgent:
         workflow = StateGraph(HighLevelAgent.AgentState)
         
         workflow.add_node("search_in_time", lambda state: try_except_continue(state, self.search_in_time))
-        workflow.add_node("search_in_time_action", ToolNode(self.temporal_tools))
+        workflow.add_node("search_in_time_action", ToolNode(self.all_temporal_tools))
         workflow.add_node("prepare_search_in_space", lambda state: try_except_continue(state, self.prepare_search_in_space))
         workflow.add_node("search_in_space", lambda state: try_except_continue(state, self.search_in_space))
         
