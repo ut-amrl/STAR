@@ -314,13 +314,12 @@ class LowLevelAgent:
         self.memory = memory
         self.setup_tools(memory)
         
-    def run(self, question: str, today: str, graph_type: str):
+    def run(self, question: str):
         if self.logger:
             self.logger.info("=============== START ===============")
-            self.logger.info(f"User question: {question}. Today's date is: {today}.")
+            self.logger.info(f"User question: {question}.")
         
         self.set_task(question)
-        self.today_str = today
         
         self.search_in_time_cnt = 0
         

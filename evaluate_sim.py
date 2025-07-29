@@ -47,12 +47,6 @@ def parse_args():
         help="List of task type prefixes to evaluate (e.g., unambiguous spatial). If not set, evaluate all."
     )
     parser.add_argument(
-        "--eval_type",
-        type=str,
-        required=True,
-        help="Evaluation type to run (e.g., 'mem_retrieval', 'execution')."
-    )
-    parser.add_argument(
         "--include_common_sense",
         action='store_true',
         help="Whether to include common sense reasoning in the evaluation.",
@@ -70,79 +64,9 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def evaluate_one_mem_retrieval_task(args, agent, task: dict, annotations):
+def evaluate_one_task(agent, task: dict):
     result = agent.run(
         question=task['task'],
-        today=f"Today is {args.current_pretty_date}.",
-        graph_type="retrieval",
-    )
-    if result is None:
-        return (False, (None, None, None, None))
-    
-    instances = []
-    for annotation in annotations:
-        if int(annotation["start_frame"]) >= int(result["start_frame"]) and \
-           int(result["end_frame"]) >= int(annotation["end_frame"]):
-               instances += [item for sublist in annotation["target_instances"].values() for item in sublist]
-    instances = list(set(instances))
-    
-    return ((task["instance_name"] in instances) and (task["target_bagname_memory"] in result["vidpath"]), 
-            (result["start_frame"], result["end_frame"], task["instance_name"], instances))
-    
-def evaluate_one_execution_task(args, agent, task: dict, annotations):
-    try:
-        result = agent.run(
-            question=task['task'],
-            today=f"Today is {args.current_pretty_date}.",
-            graph_type="no_replanning"
-        )
-    except Exception as e:
-        import pdb; pdb.set_trace()
-        return (False, False, None)
-    import pdb; pdb.set_trace()
-    
-    retrieved_record = result.curr_target()
-    if retrieved_record is None:
-        mem_retrieval_success = False
-    elif retrieved_record["id"] == -1:
-        mem_retrieval_success = False
-    else:
-        instances = []
-        for annotation in annotations:
-            if int(annotation["start_frame"]) >= int(retrieved_record["start_frame"]) and \
-            int(retrieved_record["end_frame"]) >= int(annotation["end_frame"]):
-                instances += [item for sublist in annotation["target_instances"].values() for item in sublist]
-        instances = set(instances)
-        if task["task_type"] == "classonly":
-            mem_retrieval_success = False
-            for instance in instances:
-                if task["instance_name"] in instance.lower():
-                    mem_retrieval_success = True
-                    break
-            mem_retrieval_success = mem_retrieval_success and (task["target_bagname_memory"] in retrieved_record["vidpath"])
-        else:
-            mem_retrieval_success = (task["instance_name"] in instances) and (task["target_bagname_memory"] in retrieved_record["vidpath"])
-    
-    if not result.has_picked:
-        obj_retrieval_success = False
-        retrieved_instance = None
-    else:
-        if task["task_type"] == "classonly":
-            obj_retrieval_success = task["instance_name"] in result.instance_uid.lower()
-        else:
-            obj_retrieval_success = (task["instance_name"] == result.instance_uid)
-        retrieved_instance = result.instance_uid
-        
-    if mem_retrieval_success and (not obj_retrieval_success) and len(instances) == 1:
-        import pdb; pdb.set_trace()
-        
-    return (obj_retrieval_success, mem_retrieval_success, retrieved_instance)
-
-def evaluate_one_task(args, agent, task: dict):
-    result = agent.run(
-        question=task['task'],
-        today=f"{args.current_pretty_date}",
-        graph_type="",
     )
 
     if result.has_picked is None or result.instance_name is None:
@@ -171,10 +95,6 @@ def evaluate(args):
     
     data_metadata = load_virtualhome_data_metadata(args.data_dir)
     versions = [""]
-    if args.include_common_sense:
-        versions += ["_common_sense"]
-    if args.include_recaption:
-        versions += ["_recaption"]
     task_metadata = load_task_metadata(
         args.task_file, 
         args.benchmark_dir, 
@@ -216,26 +136,24 @@ def evaluate(args):
             memory = MilvusMemory(db_name, obs_savepth=obs_savepath)
             memory.reset()
     
-            bag_unix_times = {}
+            bag_unix_times = []
             for bagname, (date_str, time_str) in task_data["bag_time_mapping"]:
+                print(bagname, (date_str, time_str))
                 try:
                     dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
                     dt = dt.replace(tzinfo=timezone.utc)
-                    if bagname == task_data["bagnames"][-1]:
-                        try:
-                            args.current_pretty_date = dt.strftime("%A, %b %-d, %Y")  # Linux/Mac
-                        except ValueError:
-                            args.current_pretty_date = dt.strftime("%A, %b %#d, %Y")  # Windows fallback
-                    # dt = dt.replace(tzinfo=timezone.utc)
                     unix_time = dt.timestamp()
-                    bag_unix_times[bagname] = unix_time
+                    bag_unix_times.append(unix_time)
                 except Exception as e:
                     raise ValueError(f"Failed to parse datetime for bag '{bagname}': {e}")
     
+            assert len(bag_unix_times) == len(task_data["bagnames"]), \
+                f"Number of bag names ({len(task_data['bagnames'])}) does not match number of unix times ({len(bag_unix_times)})"
+    
             inpaths, time_offsets, viddirs = [], [], []
-            for bagname in task_data["bagnames"]:
+            for bi, bagname in enumerate(task_data["bagnames"]):
                 inpaths.append(data_metadata[bagname])
-                time_offsets.append(bag_unix_times[bagname])
+                time_offsets.append(bag_unix_times[bi])
                 viddirs.append(os.path.join(args.data_dir, bagname, "images"))
             remember(memory, inpaths, time_offsets, viddirs)
             
@@ -248,21 +166,18 @@ def evaluate(args):
                 if not set_virtulhome_scene(graph_path, scene_id):
                     import pdb; pdb.set_trace()
                 
-                if args.eval_type == "execution":
-                    obj_success, mem_success, retrieved_instance = evaluate_one_task(args, agent, task)
-                    
-                    result = {
-                        "task": task["task"],
-                        "task_type": task_type,
-                        "instance_name": task["instance_name"],
-                        "instance_class": task["instance_class"],
-                        "success": obj_success,
-                        "mem_success": mem_success or obj_success,  # If object retrieval is successful, memory retrieval is also considered successful
-                        "retrieved_instance": retrieved_instance,
-                        "target_instance": task["instance_name"],
-                    } # TODO figure out why ground truth sometimes missed the target instance
-                else:
-                    raise ValueError(f"Unknown evaluation type: {args.eval_type}")
+                obj_success, mem_success, retrieved_instance = evaluate_one_task(agent, task)
+                
+                result = {
+                    "task": task["task"],
+                    "task_type": task_type,
+                    "instance_name": task["instance_name"],
+                    "instance_class": task["instance_class"],
+                    "success": obj_success,
+                    "mem_success": mem_success or obj_success,  # If object retrieval is successful, memory retrieval is also considered successful
+                    "retrieved_instance": retrieved_instance,
+                    "target_instance": task["instance_name"],
+                } # TODO figure out why ground truth sometimes missed the target instance
                 
                 results[task_type].append(result)
                 pbar.update(1)
@@ -270,10 +185,6 @@ def evaluate(args):
                 total = len(results[task_type])
                 rate = 100.0 * success / total if total > 0 else 0.0
                 pbar_postfix_str = f"({rate:.1f}%)"
-                if args.eval_type == "execution":
-                    mem_success = sum([r["mem_success"] for r in results[task_type]])
-                    mem_rate = 100.0 * mem_success / total if total > 0 else 0.0
-                    pbar_postfix_str += f"/({mem_rate:.1f})%"
                 pbar.set_postfix_str(pbar_postfix_str)
                 
             # Clean up memory and agent state
@@ -315,8 +226,4 @@ if __name__ == "__main__":
         success = sum(r["success"] for r in result_list)
         rate = 100.0 * success / total if total > 0 else 0.0
         summary = f" - {task_type:<20}: {success}/{total} succeeded ({rate:.1f}%)"
-        if args.eval_type == "execution":
-            mem_success = sum(r["mem_success"] for r in result_list)
-            mem_rate = 100.0 * mem_success / total if total > 0 else 0.0
-            summary += f", Memory Retrieval: {mem_success}/{total} ({mem_rate:.1f}%)"
         print(summary)
