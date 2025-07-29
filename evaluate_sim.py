@@ -138,7 +138,6 @@ def evaluate(args):
     
             bag_unix_times = []
             for bagname, (date_str, time_str) in task_data["bag_time_mapping"]:
-                print(bagname, (date_str, time_str))
                 try:
                     dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
                     dt = dt.replace(tzinfo=timezone.utc)
