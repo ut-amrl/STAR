@@ -346,7 +346,7 @@ def create_recall_best_matches_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
-            self.max_agent_call_count = 6
+            self.max_agent_call_count = 5
             
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
@@ -1077,7 +1077,7 @@ def create_recall_all_tool(
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
-            self.max_agent_call_count = 8
+            self.max_agent_call_count = 5
             
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)

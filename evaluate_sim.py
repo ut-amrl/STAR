@@ -152,15 +152,6 @@ def evaluate_one_task(args, agent, task: dict, annotations):
     return (obj_retrieval_success, mem_retrieval_success, result.instance_name)
     
 def evaluate(args):
-    # agent = Agent(
-    #     agent_type="sim",
-    #     navigate_fn=navigate,
-    #     find_object_fn=find_object,
-    #     observe_fn=observe,
-    #     pick_fn=pick,
-    #     image_path_fn=get_image_path_for_simulation,
-    # )
-    # agent = Agent("full")
     if args.agent_type == "high_level":
         from agent.agent_highlevel import HighLevelAgent
         agent = HighLevelAgent(
@@ -226,7 +217,7 @@ def evaluate(args):
             memory.reset()
     
             bag_unix_times = {}
-            for bagname, (date_str, time_str) in task_data["bag_time_mapping"].items():
+            for bagname, (date_str, time_str) in task_data["bag_time_mapping"]:
                 try:
                     dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
                     dt = dt.replace(tzinfo=timezone.utc)

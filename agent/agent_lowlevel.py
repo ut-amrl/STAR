@@ -131,10 +131,8 @@ class LowLevelAgent:
                             self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
                 
                 additional_search_history += image_messages
-                # state["search_in_time_history"] += image_messages
-                
         
-        chat_history = state.get("search_in_time_history", [])
+        chat_history = copy.deepcopy(state.get("search_in_time_history", []))
         chat_history += additional_search_history
         
         max_search_in_time_cnt = 20

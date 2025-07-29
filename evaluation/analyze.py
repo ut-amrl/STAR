@@ -8,11 +8,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 EXPECTED_TASK_TYPES = [
-    "classonly",
+    # "classonly",
     "unambiguous",
-    "spatial",
+    "unambiguous_h",
+    # "spatial",
     "spatial_temporal",
+    "spatial_temporal_h",
     "frequency",
+    "frequency_h",
     # "unambiguous_wp_only",
     # "spatial_wp_only",
     # "spatial_temporal_wp_only",
@@ -20,10 +23,15 @@ EXPECTED_TASK_TYPES = [
 ]
 TASK_TYPE_ORDER = [
     "classonly",
+    "classonly_h",
     "unambiguous",
+    "unambiguous_h",
     "spatial",
+    "spatial_h",
     "spatial_temporal",
+    "spatial_temporal_h",
     "frequency",
+    "frequency_h",
     # "unambiguous",
     # "unambiguous_wp_only",
     # "spatial",
@@ -34,10 +42,15 @@ TASK_TYPE_ORDER = [
 ]
 TASK_DISPLAY_NAMES = {
     "classonly": "unambiguous",
+    "classonly_h": "unambiguous_h",
     "unambiguous": "attribute-based",
+    "unambiguous_h": "attribute-based_h",
     "spatial": "spatial",  # leave unchanged
-    "spatial_temporal": "temporal",  # if used in future
+    "spatial_h": "spatial_h",  # leave unchanged
+    "spatial_temporal": "spatial-temporal",  # if used in future
+    "spatial_temporal_h": "spatial-temporal_h",  # if used in future
     "frequency": "frequency",
+    "frequency_h": "frequency_h",
     "unambiguous_wp_only": "attribute-based",
     "spatial_wp_only": "spatial",
     "spatial_temporal_wp_only": "temporal",
@@ -116,7 +129,8 @@ def plot_combined_success_rates(args, stats_dict, metric_keys):
     color_groups = {
         "unambiguous": plt.cm.Greens,
         "spatial_temporal": plt.cm.Blues,
-        "spatial": plt.cm.Purples
+        "spatial": plt.cm.Purples,
+        "frequency": plt.cm.Greys
     }
 
     # Prepare color assignment
