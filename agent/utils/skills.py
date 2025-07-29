@@ -120,21 +120,3 @@ def find_object(query_text: str, viz_path: str = None) -> FindObjectSrvResponse:
     except rospy.ServiceException as e:
         print("Service call failed:", e)
     
-# # NOTE This is just a placeholder function for the simpliest case.    
-# # This current implemntation is not correct
-# def find_object(query_cls: str) -> List[List[int]]:
-#     obs_response = observe()
-    
-#     detections = []
-#     if obs_response.pano_images:
-#         for pano_image in obs_response.pano_images:
-#             response = detect_objects_owlv2(pano_image, query_cls)
-#             if response.bounding_boxes.bboxes:
-#                 detections += response.bounding_boxes.bboxes
-
-#     detections.sort(key=lambda x: x.conf, reverse=True)
-#     xyxys = []
-#     for detection in detections:
-#         xyxy = [int(x) for x in detection.xyxy]
-#         xyxys.append(xyxy)
-#     return xyxys

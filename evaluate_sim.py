@@ -138,7 +138,7 @@ def evaluate_one_execution_task(args, agent, task: dict, annotations):
         
     return (obj_retrieval_success, mem_retrieval_success, retrieved_instance)
 
-def evaluate_one_task(args, agent, task: dict, annotations):
+def evaluate_one_task(args, agent, task: dict):
     result = agent.run(
         question=task['task'],
         today=f"{args.current_pretty_date}",
@@ -239,13 +239,6 @@ def evaluate(args):
                 viddirs.append(os.path.join(args.data_dir, bagname, "images"))
             remember(memory, inpaths, time_offsets, viddirs)
             
-            with open(os.path.join(str(Path(inpaths[-1]).parent), "caption_synthetic.json"), "r") as f:
-                annotations = json.load(f)
-            if annotations is None:
-                raise ValueError(f"No annotations found in {inpaths[-1]}")
-                
-            agent.allow_recaption = "recaption" in task_type
-            agent.allow_common_sense = "common_sense" in task_type
             agent.set_memory(memory)
             
             for task in task_data["tasks"]:
@@ -255,19 +248,8 @@ def evaluate(args):
                 if not set_virtulhome_scene(graph_path, scene_id):
                     import pdb; pdb.set_trace()
                 
-                # TODO use args.eval_types to determine which tasks to run
-                if args.eval_type == "mem_retrieval":
-                    success, _ = evaluate_one_mem_retrieval_task(args, agent, task, annotations)
-                    result = {
-                        "task": task["task"],
-                        "task_type": task_type,
-                        "instance_name": task["instance_name"],
-                        "instance_class": task["instance_class"],
-                        "success": success,
-                    }
-                elif args.eval_type == "execution":
-                    # obj_success, mem_success, retrieved_instance = evaluate_one_execution_task(args, agent, task, annotations)
-                    obj_success, mem_success, retrieved_instance = evaluate_one_task(args, agent, task, annotations)
+                if args.eval_type == "execution":
+                    obj_success, mem_success, retrieved_instance = evaluate_one_task(args, agent, task)
                     
                     result = {
                         "task": task["task"],
