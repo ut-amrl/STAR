@@ -342,7 +342,7 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
                 parsed_chat_result = json.loads(chat_generation_content)
 
         except json.JSONDecodeError:
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             raise ValueError(
                 f"""Model did not respond with valid JSON. 
                 Please review what tools are availbe to you, select the right one, respond in the specified JSON format and try again. 
@@ -361,13 +361,14 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
             try:
                 called_tool_name = tool["tool"]
             except:
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
+                pass
             called_tool = next(
                 (fn for fn in functions if fn["name"] == called_tool_name), None
             )
 
             if called_tool is None:
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
                 raise ValueError(
                     f"Failed to parse a function call from output: "
                     f"{chat_generation_content}"

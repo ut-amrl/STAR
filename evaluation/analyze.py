@@ -1,234 +1,293 @@
 import argparse
-import json
 import os
-from pathlib import Path
+import json
 from collections import defaultdict
-
+from typing import Dict, List, Any
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import numpy as np
 
-EXPECTED_TASK_TYPES = [
-    # "classonly",
-    "unambiguous",
-    "unambiguous_h",
-    # "spatial",
-    "spatial_temporal",
-    "spatial_temporal_h",
-    "frequency",
-    "frequency_h",
-    # "unambiguous_wp_only",
-    # "spatial_wp_only",
-    # "spatial_temporal_wp_only",
-    # "spatial_temporal_recaption_wp_only"
+# fields we want to keep from every result file
+_SUCCESS_FLAGS = [
+    "success",
+    "reference_resolution_successs",
+    "retrieval_grounding_success",
+    "latest_retrieval_success",
 ]
-TASK_TYPE_ORDER = [
-    "classonly",
-    "classonly_h",
-    "unambiguous",
-    "unambiguous_h",
-    "spatial",
-    "spatial_h",
-    "spatial_temporal",
-    "spatial_temporal_h",
-    "frequency",
-    "frequency_h",
-    # "unambiguous",
-    # "unambiguous_wp_only",
-    # "spatial",
-    # "spatial_wp_only",
-    # "spatial_temporal", 
-    # "spatial_temporal_wp_only", 
-    # "spatial_temporal_recaption_wp_only"
+
+_OBJECT_FLAGS = [
+    "instance_class",
+    "instance_name",
 ]
-TASK_DISPLAY_NAMES = {
-    "classonly": "unambiguous",
-    "classonly_h": "unambiguous_h",
-    "unambiguous": "attribute-based",
-    "unambiguous_h": "attribute-based_h",
-    "spatial": "spatial",  # leave unchanged
-    "spatial_h": "spatial_h",  # leave unchanged
-    "spatial_temporal": "spatial-temporal",  # if used in future
-    "spatial_temporal_h": "spatial-temporal_h",  # if used in future
-    "frequency": "frequency",
-    "frequency_h": "frequency_h",
-    "unambiguous_wp_only": "attribute-based",
-    "spatial_wp_only": "spatial",
-    "spatial_temporal_wp_only": "temporal",
-    "spatial_temporal_recaption_wp_only": "temporal (recaption)"
+
+_TASK_DISPLAY = {
+    "spatial_temporal": "temporal",
+    "frequency":        "freqencist",
+    # add more renames here if needed
 }
 
+_COLOR_GROUP = {
+    "attribute_based":  plt.cm.Greens,
+    "spatial_temporal": plt.cm.Blues,
+    "spatial":          plt.cm.Purples,
+    "frequency":        plt.cm.Greys,
+}
+
+def _pretty_task(raw: str) -> str:
+    """Human-friendly label for legends / tick‐labels."""
+    for orig, nice in _TASK_DISPLAY.items():
+        if raw.startswith(orig):
+            return f"{nice}{raw[len(orig):]}"     # keep any suffix
+    return raw
+
+def _strip(record: dict) -> dict:
+    """Return only the fields listed in _SUCCESS_FLAGS and _OBJECT_FLAGS (missing keys → None)."""
+    return {k: record.get(k) for k in _SUCCESS_FLAGS + _OBJECT_FLAGS}
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Read evaluation results.")
-    parser.add_argument(
-        "--result_dir",
-        type=str,
-        default="evaluation/sim_outputs/",
-        help="Directory containing results_{task_type}.json files (default: evaluation/outputs/)"
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="evaluation/sim_outputs/",
-        help="Path to save the output plot (default: evaluation/outputs/)"
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
+    parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
+    parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim.txt")
+    parser.add_argument("--agent_types", nargs="+", default=["low_level", "high_level"])
     return parser.parse_args()
 
+def _load_json_safe(path: str):
+    """Return parsed dict if file exists, else None."""
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError as e:
+                print(f"[WARN] JSON decode error in {path}: {e}")
+    return None
 
-def load_results_from_dir(result_dir, task_types):
-    result_dir = Path(result_dir)
-    results = {}
-    for task_type in task_types:
-        file_path = result_dir / f"results_{task_type}.json"
-        if file_path.exists():
-            with open(file_path, "r") as f:
-                results[task_type] = json.load(f)
-        else:
-            print(f"⚠️  Skipping missing file: {file_path}")
+def parse_task_config(task_config: str) -> dict[str, list[str]]:
+    """
+    Parse tasks_sim.txt into {task_type: [hash1, hash2, ...]}.
+    Expected line format (1 per task, blanks/comments allowed):
+        spatial_temporal/09b7d427.json
+        frequency/032e0e9a.json
+        # comment lines are ignored
+    """
+    tasks: dict[str, list[str]] = defaultdict(list)
+
+    with open(task_config, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue                       # skip blanks & comments
+            try:
+                task_type, fname = line.split("/", 1)
+            except ValueError:                # malformed line → warn & skip
+                print(f"[WARN] Cannot parse line: {line}")
+                continue
+
+            hash_name, ext = os.path.splitext(os.path.basename(fname))
+            if ext != ".json":
+                print(f"[WARN] Expected .json, got {ext} in: {line}")
+            tasks[task_type].append(hash_name)
+    return dict(tasks)
+
+def parse_results(args, tasks):
+    results = defaultdict(dict)
+    for task_type, hashes in tasks.items():
+        for h in hashes:
+            entry = {}
+            for agent in args.agent_types:
+                fname = f"results_{agent}_{h}.json"
+                path = os.path.join(args.data_dir, task_type, h, fname)
+
+                raw = _load_json_safe(path)
+                entry[agent] = _strip(raw) if raw is not None else None
+
+            results[task_type][h] = entry
     return results
 
+def analyze_results(
+    args,
+    results: Dict[str, Dict[str, Dict[str, Any]]],
+    agent_types: List[str],
+):
+    import pandas as pd
 
-def get_present_metric_keys(results):
-    """Return a list of metric keys that are present in at least one result entry."""
-    metric_keys = set()
-    for task_results in results.values():
-        for r in task_results:
-            for key in ("success", "mem_success"):
-                if key in r:
-                    metric_keys.add(key)
-        # Break early if both keys are found
-        if "success" in metric_keys and "mem_success" in metric_keys:
-            break
-    return list(metric_keys)
+    rows = []
+    for task_type, task_dict in results.items():
+        for h, per_agent in task_dict.items():
+            for agent in agent_types:
+                rec = per_agent.get(agent)
+                if rec is None:
+                    continue
+                row = {"task_type": task_type, "hash": h, "agent": agent}
+                row.update(rec)
+                rows.append(row)
 
+    df = pd.DataFrame(rows)
 
-def compute_success_rates(results, key: str):
-    stats = defaultdict(lambda: defaultdict(lambda: [0, 0]))  # task_type → instance_class → [success_count, total_count]
-    for task_type, task_results in results.items():
-        for r in task_results:
-            if key not in r:
-                continue
-            cls = r.get("instance_class", "unknown")
-            success = r[key]
-            stats[task_type][cls][1] += 1
-            if success:
-                stats[task_type][cls][0] += 1
-    return stats
+    rates: Dict[str, Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
+    for agent in agent_types:
+        sub = df[df["agent"] == agent]
+        for task_type, g in sub.groupby("task_type"):
+            for flag in _SUCCESS_FLAGS:
+                if flag not in g.columns:
+                    continue
+                denom = g[flag].notna().sum()
+                if denom:
+                    rates[agent][task_type][flag] = g[flag].mean()
 
+    # pretty-print
+    for ag, per_task in rates.items():
+        print(f"\n========== {ag} ==========")
+        for task_t, stats in per_task.items():
+            print(f"\n--- {task_t} ---")
+            for flag, r in stats.items():
+                print(f"{flag:32s}: {r:.1%}")
+                
+    return rates, df
 
-def plot_combined_success_rates(args, stats_dict, metric_keys):
-    task_types = [t for t in TASK_TYPE_ORDER if any(t in stats for stats in stats_dict.values())]
-    all_classes = sorted({cls for stats in stats_dict.values() for task_stats in stats.values() for cls in task_stats})
-    x = np.arange(len(all_classes))
-    width = 0.8 / len(task_types)
+def plot_overall_success(args, df):
+    agg = (
+        df.groupby(["task_type", "agent"])["success"]
+          .mean()
+          .reset_index()
+          .pivot(index="task_type", columns="agent", values="success")
+          .reindex(columns=args.agent_types)           # keep agent order
+          .sort_index()
+    )
 
-    fig, axes = plt.subplots(1, len(metric_keys), figsize=(9 * len(metric_keys), 6), sharex=True, sharey=True)
-    if len(metric_keys) == 1:
-        axes = [axes]  # ensure iterable
+    if agg.empty:
+        print("[WARN] No data for overall-success plot")
+    else:
+        tasks  = agg.index.tolist()
+        n_tasks  = len(tasks)
+        n_agents = len(args.agent_types)
+        x = np.arange(n_tasks)
+        width = 0.8 / n_agents
 
-    color_groups = {
-        "unambiguous": plt.cm.Greens,
-        "spatial_temporal": plt.cm.Blues,
-        "spatial": plt.cm.Purples,
-        "frequency": plt.cm.Greys
-    }
+        fig, ax = plt.subplots(figsize=(11, 6))
 
-    # Prepare color assignment
-    type_to_color = {}
-    grouped = defaultdict(list)
-    for task_type in task_types:
-        for prefix in color_groups:
-            if task_type.startswith(prefix):
-                grouped[prefix].append(task_type)
-                break
+        shade_points = np.linspace(0.45, 0.75, n_agents)    # same as helper
 
-    for prefix, type_list in grouped.items():
-        cmap = color_groups[prefix]
-        for i, task_type in enumerate(type_list):
-            color = cmap(0.3 + 0.5 * i / max(len(type_list) - 1, 1))
-            type_to_color[task_type] = color
+        for i_agent, (ag, shade) in enumerate(zip(args.agent_types, shade_points)):
+            for i_task, task in enumerate(tasks):
+                cmap  = _COLOR_GROUP.get(task.replace("-", "_"), plt.cm.tab10)
+                colour = cmap(shade)
+                ax.bar(
+                    x[i_task] + (i_agent - (n_agents-1)/2) * width,
+                    agg.loc[task, ag],
+                    width=width,
+                    color=colour,
+                    edgecolor="black",
+                    linewidth=0.7,
+                )
 
-    for ax, key in zip(axes, metric_keys):
-        stats = stats_dict[key]
-        for i, task_type in enumerate(task_types):
-            heights = []
-            for cls in all_classes:
-                success, total = stats[task_type].get(cls, [0, 0])
-                rate = success / total if total > 0 else 0.0
-                heights.append(rate)
-            color = type_to_color.get(task_type, "gray")
-            ax.bar(
-                x + i * width,
-                heights,
-                width,
-                label=TASK_DISPLAY_NAMES.get(task_type, task_type),
-                color=color,
+        # x-tick labels
+        ax.set_xticks(x)
+        ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=45, ha="right")
+
+        # y-axis & grid
+        ax.set_ylabel("Execution Success Rate", fontsize=14)
+        ax.set_ylim(0, 1)
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", alpha=0.4)
+
+        # legend – one patch per agent (colour sampled from first task)
+        legend_handles = [
+            mpatches.Patch(
+                facecolor=_COLOR_GROUP.get(tasks[0].replace("-", "_"), plt.cm.tab10)(shade_points[i]),
                 edgecolor="black",
-                linewidth=0.5
+                label=ag,
+                linewidth=0.7,
             )
-            ax.grid(True, axis="y", linestyle="--", alpha=0.7)
-            ax.set_axisbelow(True)
+            for i, ag in enumerate(args.agent_types)
+        ]
+        ax.legend(handles=legend_handles, title="Agent",
+                  bbox_to_anchor=(1.04, 1), loc="upper left")
 
-        # Labeling
-        title = {
-            "success": "Memory Recall Accuracy",
-            "mem_success": "Execution Success Rate"
-        }.get(key, key.replace("_", " ").title())
+        ax.set_title("Overall End-to-End Success by Task Type")
 
-        ylabel = {
-            "success": "Memory Recall Accuracy",
-            "mem_success": "Execution Success Rate"
-        }.get(key, "Success Rate")
+        plt.tight_layout()
+        os.makedirs(args.output_dir, exist_ok=True)
+        out_path = os.path.join(args.output_dir, "success.png")
+        plt.savefig(out_path, bbox_inches="tight")
+        plt.close()
+        print(f"[INFO] overall-success plot saved to {out_path}")
 
-        ax.set_title(title, fontsize=16)
-        ax.set_ylabel(ylabel, fontsize=14)
+def plot_object_class_success(args, df):
+    """
+    One figure, x-axis = instance_class, grouped bars = (task_type, agent)
+    Colours:  colour-map per task_type, shade per agent.
+    """
+    if df.empty or "instance_class" not in df.columns:
+        print("[WARN] No instance_class info available – skipping object-class plot")
+        return
 
-    # Shared axis and formatting
-    center_positions = x + width * (len(task_types) - 1) / 2
-    for ax in axes:
-        ax.set_xticks(center_positions)
-        ax.set_xticklabels(all_classes, rotation=45, ha="right", fontsize=12)
-        ax.legend(title="Task Type")
-
-    plt.tight_layout()
+    import numpy as np
+    import pandas as pd
     os.makedirs(args.output_dir, exist_ok=True)
-    out_path = Path(args.output_dir) / "accuracy.png"
-    plt.savefig(out_path)
-    print(f"✅ Combined plot saved to {out_path}")
+
+    # ── 1 aggregate success per (instance_class, task_type, agent) ─────────
+    plot_df = (
+        df.groupby(["instance_class", "task_type", "agent"])["success"]
+          .mean()
+          .reset_index()
+          .pivot(index="instance_class",
+                 columns=["task_type", "agent"],
+                 values="success")
+    )
+    if plot_df.empty:
+        print("[WARN] Nothing to plot – empty after pivot")
+        return
+
+    # ── 2 build display names & colours in one pass ───────────────────────
+    flat_cols, colours = [], []
+    for task in sorted({t for t, _ in plot_df.columns}):
+        cmap   = _COLOR_GROUP.get(task, plt.cm.tab10)       # fallback palette
+        agents = args.agent_types
+        # pick evenly spaced shades   light → dark
+        shade_points = np.linspace(0.45, 0.75, len(agents))
+        for shade, ag in zip(shade_points, agents):
+            flat_cols.append((task, ag))
+            colours.append(cmap(shade))
+
+    # re-index columns so the dataframe matches the colour list
+    plot_df = plot_df.reindex(columns=pd.MultiIndex.from_tuples(flat_cols))
+
+    # flatten column names for Matplotlib (“temporal\nlow_level”, …)
+    plot_df.columns = [f"{_pretty_task(t)}\n{ag}" for t, ag in plot_df.columns]
+
+    # ── 3 draw ─────────────────────────────────────────────────────────────
+    ax = plot_df.plot(
+        kind="bar",
+        rot=45,
+        figsize=(11, 6),
+        color=colours,
+        edgecolor="black",
+        linewidth=0.7,
+    )
+    ax.set_ylabel("Execution Success Rate", fontsize=14)
+    ax.set_xlabel("")
+    ax.set_ylim(0, 1)
+    ax.set_axisbelow(True)        # make grid render beneath
+    ax.grid(axis="y", alpha=0.4)  # horizontal grid only
+    # ax.set_title("Execution Success Rate")
+    ax.legend(title="Task Type / Agent", bbox_to_anchor=(1.04, 1), loc="upper left")
+    plt.tight_layout()
+
+    out_path = os.path.join(args.output_dir, "success_by_object_and_task.png")
+    plt.savefig(out_path, bbox_inches="tight")
+    plt.close()
+    print(f"[INFO] combined object-class × task-type plot saved to {out_path}")
 
 
-def print_summary(results_data, key, label):
-    print(f"Summary of {label} Results:")
-    for task_type, task_results in results_data.items():
-        valid = [r for r in task_results if key in r]
-        total = len(valid)
-        success = sum(r[key] for r in valid)
-        rate = success / total if total > 0 else 0.0
-        stderr = (rate * (1 - rate) / total) ** 0.5 if total > 0 else 0.0
-        ci95 = 1.96 * stderr
-        print(f"{task_type:<20}: {success}/{total} succeeded ({rate*100:.1f}% ± {ci95*100:.1f}%)")
-
-
-if __name__ == "__main__":
+def main():
     args = parse_args()
-    all_task_types = EXPECTED_TASK_TYPES.copy()
-    results_data = load_results_from_dir(args.result_dir, all_task_types)
-    present_keys = get_present_metric_keys(results_data)
-    preferred_order = ["mem_success", "success"]
-    present_keys = [k for k in preferred_order if k in present_keys]
+    tasks = parse_task_config(args.task_config)
+    results = parse_results(args, tasks)
+    
+    rates, df = analyze_results(args, results, args.agent_types)
+    plot_overall_success(args, df)
+    plot_object_class_success(args, df)
 
-    if not present_keys:
-        print("❌ No valid metric keys found (expected 'success' or 'mem_success')")
-        exit(1)
-
-    stats_dict = {
-        key: compute_success_rates(results_data, key)
-        for key in present_keys
-    }
-
-    plot_combined_success_rates(args, stats_dict, present_keys)
-
-    if "success" in present_keys:
-        print_summary(results_data, "success", "Execution")
-    if "mem_success" in present_keys:
-        print_summary(results_data, "mem_success", "Memory Recall")
+if __name__ == "__main__":  
+    main()
