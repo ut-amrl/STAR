@@ -94,6 +94,13 @@ class LowLevelAgent:
         if hasattr(self, "_tool_pool") and self._tool_pool is not None:
             self._tool_pool.shutdown(wait=True)
             self._tool_pool = None
+            
+        def _close_logger(logger):
+            handlers = logger.handlers[:]
+            for handler in handlers:
+                handler.close()
+                logger.removeHandler(handler)
+        _close_logger(self.logger)
     
     def search_in_time(self, state: AgentState):
         messages = state["messages"]

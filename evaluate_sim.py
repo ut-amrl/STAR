@@ -141,6 +141,14 @@ def evaluate(args):
             result_dir = os.path.join(args.output_dir, task_type, task_id)
             os.makedirs(result_dir, exist_ok=True)
             
+            result_path = os.path.join(result_dir, f"results_{args.agent_type}_{task_id}.json")
+            if not args.force_rerun and os.path.exists(result_dir) and os.path.exists(result_path):
+                with open(result_path, "r") as f:
+                    result = json.load(f)
+                if result is not None and "success" in result:
+                    before_one_task_finish(results, result, pbar)
+                    continue
+                
             if args.agent_type == "high_level":
                 from agent.agent_highlevel import HighLevelAgent
                 agent = HighLevelAgent(
@@ -159,14 +167,6 @@ def evaluate(args):
                 )
             else:
                 raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'high_level' and 'low_level'.")
-            
-            result_path = os.path.join(result_dir, f"results_{args.agent_type}_{task_id}.json")
-            if not args.force_rerun and os.path.exists(result_dir) and os.path.exists(result_path):
-                with open(result_path, "r") as f:
-                    result = json.load(f)
-                if result is not None and "success" in result:
-                    before_one_task_finish(results, result, pbar)
-                    continue
             
             with open(task_path, "r") as f:
                 task_data = json.load(f)
