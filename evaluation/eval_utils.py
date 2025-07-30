@@ -102,6 +102,25 @@ def load_virtualhome_data_metadata(data_dir: str):
             result[dataname] = caption_file
     return result
 
+def load_virtualhome_annotations(data_dir: str):
+    all_annotations = {}
+    for dataname in os.listdir(data_dir):
+        data_path = os.path.join(data_dir, dataname)
+        if not os.path.isdir(data_path):
+            continue  # skip non-directory entries
+        simulation_data_dir = os.path.join(data_path, "0")
+        
+        annotation_file = os.path.join(simulation_data_dir, "gt_annotations.json")
+        try:
+            with open(annotation_file, "r") as f:
+                annotations = json.load(f)
+            if type(annotations) != list:
+                raise ValueError(f"Unexpected type of annotations: {type(annotations)}")
+        except:
+            continue
+        all_annotations[dataname] = annotations
+    return all_annotations
+
 import rospy
 import roslib; roslib.load_manifest('amrl_msgs')
 from amrl_msgs.srv import (

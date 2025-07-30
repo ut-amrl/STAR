@@ -38,6 +38,9 @@ class SearchProposal:
         self.theta: float = theta  # Orientation in radians
         self.records: List[dict] = records  # Original record from the database
         
+        self.reference_resolution_records: dict = None
+        self.retrieval_grounding_records: dict = None
+        
         self.instance_name: str = None
         self.has_picked: bool = False
         

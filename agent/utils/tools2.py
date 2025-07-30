@@ -2067,3 +2067,38 @@ def visualize_memory_messages(memory_messages, output_dir="debug/unique_instance
                 f.write(current_text)
 
             i += 1
+            
+def create_search_in_time_evaluation_tool():
+    
+    class ReviewObjectReferenceAndRetrievalTerminateInput(BaseModel):
+        review_rationale: str = Field(
+            description="A concise explanation of your reasoning for both answers. Include how the agent’s actions support your selected records and note any ambiguity or uncertainty."
+        )
+        reference_resolution_record_id: int = Field(
+            description="The memory record ID that best shows which object the agent took the user to be referring to, satisfying any key constraints in the user query (e.g., spatial, temporal, descriptive)."
+        )
+        retrieval_grounding_record_id: int = Field(
+            description="The memory record ID that shows where the agent retrieved the object from, and whether this was the most recent valid sighting of the same object."
+        )
+
+    def _terminate_review_fn(
+        review_rationale: str,
+        reference_resolution_record_id: int,
+        retrieval_grounding_record_id: int,
+    ) -> bool:
+        # Dummy implementation: always return True
+        return True
+
+    review_terminate_tool = StructuredTool.from_function(
+        func=_terminate_review_fn,
+        name="review_object_reference_and_retrieval_terminate",
+        description=(
+            "Use this tool to **finalize your review** of the agent’s object retrieval decision.\n"
+            "You must answer two questions based solely on the agent’s tool use and reasoning trace:\n"
+            "1. Which memory record shows the object instance the agent believed the user was referring to?\n"
+            "2. Which memory record shows where the agent retrieved that object from — and is it the most recent sighting?\n\n"
+        ),
+        args_schema=ReviewObjectReferenceAndRetrievalTerminateInput,
+    )
+
+    return [review_terminate_tool]

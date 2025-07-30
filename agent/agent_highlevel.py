@@ -61,6 +61,9 @@ class HighLevelAgent:
         self.search_in_time_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
         self.search_in_time_reflection_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_reflection_prompt.txt"))
         
+        eval_prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "evaluation")
+        self.eval_ref_and_ret_prompt = file_to_string(os.path.join(eval_prompt_dir, "eval_ref_and_ret_prompt.txt"))
+        
         self.all_temporal_tools, self.all_spatial_tools = None, None
         self.all_temporal_tool_definitions = None
         self.all_spatial_tool_definitions = None
@@ -104,6 +107,10 @@ class HighLevelAgent:
         self.temporal_search_terminate_tool = response_tools
         self.temporal_search_terminate_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_search_terminate_tool]
         
+        eval_search_in_time_tools = create_search_in_time_evaluation_tool()
+        self.eval_search_in_time_tools = eval_search_in_time_tools
+        self.eval_search_in_time_tool_definitions = [convert_to_openai_function(t) for t in self.eval_search_in_time_tools]
+    
     def flush_tool_threads(self):
         """
         Wait until all background tool calls finish, then shut down the pool.
@@ -280,6 +287,59 @@ class HighLevelAgent:
                 
         # TODO: Should never go here; add fallback logic
         import pdb; pdb.set_trace()
+        
+    def evaluate_search_in_time(self, state: AgentState):
+        chat_history = copy.deepcopy(state.get("search_in_time_history", []))[:-1]
+        
+        model = self.vlm
+        model = model.bind_tools(self.eval_search_in_time_tool_definitions)
+        
+        chat_prompt = ChatPromptTemplate.from_messages([
+            MessagesPlaceholder("chat_history"),
+            ("system", self.eval_ref_and_ret_prompt),
+        ])
+        chained_model = chat_prompt | model
+        response = chained_model.invoke({
+            "chat_history": chat_history,
+        })
+        
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            for call in response.tool_calls:
+                if call.get("name") == "review_object_reference_and_retrieval_terminate":
+                    
+                    fn_args = call.get("args", {})
+                    review_rationale = fn_args["review_rationale"]
+                    reference_resolution_record_id = int(fn_args["reference_resolution_record_id"])
+                    retrieval_grounding_record_id = int(fn_args["retrieval_grounding_record_id"])
+                    
+                    if reference_resolution_record_id == -1:
+                        reference_resolution_record = None
+                    else:
+                        records = eval(self.memory.get_by_id(reference_resolution_record_id))
+                        if len(records) < 1:
+                            reference_resolution_record = None
+                        else:
+                            reference_resolution_record = records[0]
+                    
+                    if retrieval_grounding_record_id == -1:
+                        retrieval_grounding_record = None
+                    else:
+                        records = eval(self.memory.get_by_id(retrieval_grounding_record_id))
+                        if len(records) < 1:
+                            retrieval_grounding_record = None
+                        else:
+                            retrieval_grounding_record = records[0]
+                    
+                    if self.logger:
+                        self.logger.info(f"[EVALUATE SEARCH IN TIME] Reference resolution record: {reference_resolution_record}")
+                        self.logger.info(f"[EVALUATE SEARCH IN TIME] Retrieval grounding record: {retrieval_grounding_record}")
+                        
+                    self.task.search_proposal.reference_resolution_records = reference_resolution_record
+                    self.task.search_proposal.retrieval_grounding_records = retrieval_grounding_record
+                    
+                    return
+                
+        raise ValueError("No terminate tool call found in the response")
     
     def search_in_space(self, state: AgentState):
         if self.navigate_fn is None or self.find_object_fn is None or self.pick_fn is None:
@@ -330,7 +390,7 @@ class HighLevelAgent:
             self.logger.info(f"[SEARCH IN SPACE] Pick operation successful: {self.task.search_proposal.instance_name} (has_picked={self.task.search_proposal.has_picked}).")
         return
             
-    def build_graph(self):
+    def build_graph(self, eval_search_in_time: bool):
         """
         Build the graph for the agent.
         """
@@ -350,7 +410,12 @@ class HighLevelAgent:
                 "next": "prepare_search_in_space",
             }
         )
-        workflow.add_edge("prepare_search_in_space", "search_in_space")
+        if eval_search_in_time:
+            workflow.add_node("evaluate_search_in_time", lambda state: try_except_continue(state, self.evaluate_search_in_time))
+            workflow.add_edge("prepare_search_in_space", "evaluate_search_in_time")
+            workflow.add_edge("evaluate_search_in_time", "search_in_space")
+        else:
+            workflow.add_edge("prepare_search_in_space", "search_in_space")
         # TODO
         workflow.add_edge("search_in_space", END)
         
@@ -361,7 +426,7 @@ class HighLevelAgent:
         self.memory = memory
         self.setup_tools(memory)
         
-    def run(self, question: str):
+    def run(self, question: str, eval_search_in_time: bool = False):
         if self.logger:
             self.logger.info("=============== START ===============")
             self.logger.info(f"User question: {question}.")
@@ -370,7 +435,7 @@ class HighLevelAgent:
         
         self.search_in_time_cnt = 0
         
-        self.build_graph()
+        self.build_graph(eval_search_in_time=eval_search_in_time)
         
         inputs = { "messages": [
                 (("user", self.task.task_desc)),

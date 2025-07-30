@@ -59,16 +59,82 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def evaluate_one_task(agent, task: dict):
+def extract_dataname_from_vidpath(vidpath: str) -> str:
+    """
+    Extract dataname from vidpath.
+    Example: '...unity_output/scene4_02/images' -> 'scene4_02'
+    """
+    if vidpath is None:
+        return None
+    
+    # Split the path and find the directory before 'images'
+    path_parts = vidpath.split('/')
+    try:
+        # Find the index of 'images' and get the directory before it
+        images_index = path_parts.index('images')
+        if images_index > 0:
+            return path_parts[images_index - 1]
+        else:
+            return None
+    except ValueError:
+        # 'images' not found in path
+        return None
+
+def evaluate_one_task(agent, task: dict, annotations: dict):
     result = agent.run(
         question=task['task'],
+        eval_search_in_time=True,
     )
 
     if result.has_picked is None or result.instance_name is None:
         return (False, False, None)
-    obj_retrieval_success = task["instance_name"].lower() in result.instance_name.lower()
-    mem_retrieval_success = obj_retrieval_success
-    return (obj_retrieval_success, mem_retrieval_success, result.instance_name)
+    success = task["instance_name"].lower() in result.instance_name.lower()
+    
+    ref_record = result.reference_resolution_records
+    ret_record = result.retrieval_grounding_records
+    
+    # Extract datanames from records
+    ref_dataname = extract_dataname_from_vidpath(ref_record["vidpath"]) if ref_record is not None else None
+    ret_dataname = extract_dataname_from_vidpath(ret_record["vidpath"]) if ret_record is not None else None
+    
+    reference_resolution_successs, retrieval_grounding_successs, latest_retrieval_successs = False, False, False
+    if ref_record is not None:
+        for frame_idx in range(ref_record["start_frame"], ref_record["end_frame"]):
+            annotation = annotations[ref_dataname][frame_idx]
+            all_visible_instances = [x["prefab_name"] for x in annotation["frame_nodes"]]
+            if task["instance_name"] in all_visible_instances:
+                reference_resolution_successs = True
+                break
+    if ret_record is not None:
+        for frame_idx in range(ret_record["start_frame"], ret_record["end_frame"]):
+            annotation = annotations[ret_dataname][frame_idx]
+            all_visible_instances = [x["prefab_name"] for x in annotation["frame_nodes"]]
+            if task["instance_name"] in all_visible_instances:
+                retrieval_grounding_successs = True
+                break
+        retrieved_unix_time = ret_record["timestamp"]
+        if abs(retrieved_unix_time - task["lastest_unix_time"]) > 3600:
+            latest_retrieval_successs = False
+        else:
+            latest_retrieval_successs = retrieval_grounding_successs
+    
+    image_path_fn = lambda vidpath, start_f, end_f: os.path.join(vidpath, f"{(start_f + end_f) // 2:06d}.png")
+    reference_resoluation_path = image_path_fn(ref_record["vidpath"], 
+                                               ref_record["start_frame"], 
+                                               ref_record["end_frame"]) if ref_record is not None else None
+    retrieval_grounding_path = image_path_fn(ret_record["vidpath"], 
+                                             ret_record["start_frame"], 
+                                             ret_record["end_frame"]) if ret_record is not None else None
+    
+    
+    return {
+        "success": success,
+        "reference_resolution_successs": reference_resolution_successs,
+        "reference_resoluation_path": reference_resoluation_path,
+        "retrieval_grounding_success": retrieval_grounding_successs,
+        "retrieval_grounding_path": retrieval_grounding_path,
+        "latest_retrieval_success": latest_retrieval_successs,
+    }
     
 def evaluate(args):
     
@@ -92,6 +158,7 @@ def evaluate(args):
         versions=versions
     )
     included_task_types = task_metadata.keys()
+    annotations = load_virtualhome_annotations(args.data_dir)
     
     output = {
         "task_metadata": task_metadata,
@@ -206,18 +273,20 @@ def evaluate(args):
                 if not set_virtulhome_scene(graph_path, scene_id):
                     import pdb; pdb.set_trace()
                 
-                obj_success, mem_success, retrieved_instance = evaluate_one_task(agent, task)
+                _, (lastest_date_str, lastest_time_str) = task_data["bag_time_mapping"][-1]
+                dt = datetime.strptime(f"{lastest_date_str} {lastest_time_str}", "%Y-%m-%d %H:%M")
+                dt = dt.replace(tzinfo=timezone.utc)
+                lastest_unix_time = dt.timestamp()
                 
-                result = {
-                    "task": task["task"],
-                    "task_type": task_type,
-                    "instance_name": task["instance_name"],
-                    "instance_class": task["instance_class"],
-                    "success": obj_success,
-                    "mem_success": mem_success or obj_success,  # If object retrieval is successful, memory retrieval is also considered successful
-                    "retrieved_instance": retrieved_instance,
-                    "target_instance": task["instance_name"],
-                } # TODO figure out why ground truth sometimes missed the target instance
+                task["lastest_unix_time"] = lastest_unix_time
+                
+                result = evaluate_one_task(agent, task, annotations)
+                
+                result["task"] = task["task"]
+                result["task_type"] = task_type
+                result["instance_name"] = task["instance_name"]
+                result["instance_class"] = task["instance_class"]
+                result["target_instance"] = task["instance_name"]
                 
                 with open(result_path, "w") as f:
                     json.dump(result, f, indent=2)
