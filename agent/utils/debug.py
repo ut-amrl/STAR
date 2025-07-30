@@ -2,15 +2,19 @@ import logging
 import os
 from datetime import datetime
 
-def get_logger(name="agent", log_dir="debug/agent"):
-    os.makedirs(log_dir, exist_ok=True)
+def get_logger(name="agent", logdir="debug/agent", prefix: str = "", flatten: bool = False):
+    os.makedirs(logdir, exist_ok=True)
     
     date_str = datetime.now().strftime("%Y-%m-%d")
-    log_dir = os.path.join(log_dir, date_str)
-    os.makedirs(log_dir, exist_ok=True)
+    if not flatten:
+        logdir = os.path.join(logdir, date_str)
+        os.makedirs(logdir, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_file = os.path.join(log_dir, f"{timestamp}.log")
+    if prefix:
+        log_file = os.path.join(logdir, f"{prefix}_{timestamp}.log")
+    else:
+        log_file = os.path.join(logdir, f"{timestamp}.log")
 
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)

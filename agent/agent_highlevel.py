@@ -37,7 +37,8 @@ class HighLevelAgent:
                  navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
                  find_object_fn: Callable[[str], List[List[int]]] = None,
                  observe_fn: Callable[[], GetImageSrvResponse] = None,
-                 pick_fn: Callable[[str], PickObjectSrvResponse] = None
+                 pick_fn: Callable[[str], PickObjectSrvResponse] = None,
+                 logdir: str = None
     ):
         self.verbose = verbose
         
@@ -46,7 +47,7 @@ class HighLevelAgent:
         self.observe_fn = observe_fn
         self.pick_fn = pick_fn
         
-        self.logger = get_logger()
+        self.logger = get_logger(logdir=logdir, prefix="high_level", flatten=True) if logdir else get_logger(prefix="high_level", flatten=True)
         
         self.task: Task = None
         

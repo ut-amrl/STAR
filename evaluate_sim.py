@@ -4,12 +4,12 @@ from pathlib import Path
 from pymilvus import utility
 from collections import defaultdict
 from tqdm import tqdm
+import glob
+import json
+import os
 
 from evaluation.eval_utils import *
-# from agent.agent import Agent
-# from agent.agent2 import Agent
-from agent.agent_lowlevel import LowLevelAgent
-from memory.memory import MilvusMemory, MemoryItem
+from memory.memory import MilvusMemory
 from agent.utils.memloader import remember
 from agent.utils.skills import *
 
@@ -47,19 +47,14 @@ def parse_args():
         help="List of task type prefixes to evaluate (e.g., unambiguous spatial). If not set, evaluate all."
     )
     parser.add_argument(
-        "--include_common_sense",
-        action='store_true',
-        help="Whether to include common sense reasoning in the evaluation.",
-    )
-    parser.add_argument(
-        "--include_recaption",
-        action='store_true',
-        help="Whether to include recaptioning in the evaluation.",
-    )
-    parser.add_argument(
         "--agent_type",
         type=str,
         help="Type of agent to use (e.g., 'low_level', 'high_level').",
+    )
+    parser.add_argument(
+        "--force_rerun",
+        action="store_true",
+        help="Whether to force rerun the evaluation. If True, will rerun all tasks even if they have already been evaluated.",
     )
     args = parser.parse_args()
     return args
@@ -76,22 +71,16 @@ def evaluate_one_task(agent, task: dict):
     return (obj_retrieval_success, mem_retrieval_success, result.instance_name)
     
 def evaluate(args):
-    if args.agent_type == "high_level":
-        from agent.agent_highlevel import HighLevelAgent
-        agent = HighLevelAgent(
-            navigate_fn=navigate,
-            find_object_fn=find_object,
-            pick_fn=pick_by_instance_id,
-        )
-    elif args.agent_type == "low_level":
-        from agent.agent_lowlevel import LowLevelAgent
-        agent = LowLevelAgent(
-            navigate_fn=navigate,
-            find_object_fn=find_object,
-            pick_fn=pick_by_instance_id,
-        )
-    else:
-        raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'high_level' and 'low_level'.")
+    
+    def before_one_task_finish(results, result, pbar):
+        results[task_type].append(result)
+        pbar.update(1)
+        success = sum([r["success"] for r in results[task_type]])
+        total = len(results[task_type])
+        rate = 100.0 * success / total if total > 0 else 0.0
+        pbar_postfix_str = f"({rate:.1f}%)"
+        pbar.set_postfix_str(pbar_postfix_str)
+        return results, pbar
     
     data_metadata = load_virtualhome_data_metadata(args.data_dir)
     versions = [""]
@@ -109,9 +98,31 @@ def evaluate(args):
     }
     results = defaultdict(list)
     
+    if args.force_rerun:
+        for task_type, task_paths in task_metadata.items():
+            for task_path in task_paths:
+                task_id = Path(task_path).stem
+                results_dir = os.path.join(args.output_dir, task_type, task_id)
+                # Patterns to match
+                patterns = [
+                    f"results_{args.agent_type}_*.json",
+                    f"{args.agent_type}_*.log"
+                ]
+                if os.path.exists(results_dir):
+                    for pattern in patterns:
+                        files_to_delete = glob.glob(os.path.join(results_dir, pattern))
+                        for f in files_to_delete:
+                            try:
+                                os.remove(f)
+                                print(f"🗑️ Deleted: {f}")
+                            except Exception as e:
+                                print(f"⚠️ Failed to delete {f}: {e}")
+    
     for task_type, task_paths in task_metadata.items():
         if task_type not in included_task_types:
             continue
+        
+        os.makedirs(os.path.join(args.output_dir, task_type), exist_ok=True)
         
         # progress bar
         total_tasks = 0
@@ -126,6 +137,36 @@ def evaluate(args):
         
         for task_path in task_paths:
             task_id = Path(task_path).stem
+            
+            result_dir = os.path.join(args.output_dir, task_type, task_id)
+            os.makedirs(result_dir, exist_ok=True)
+            
+            if args.agent_type == "high_level":
+                from agent.agent_highlevel import HighLevelAgent
+                agent = HighLevelAgent(
+                    navigate_fn=navigate,
+                    find_object_fn=find_object,
+                    pick_fn=pick_by_instance_id,
+                    logdir=result_dir,
+                )
+            elif args.agent_type == "low_level":
+                from agent.agent_lowlevel import LowLevelAgent
+                agent = LowLevelAgent(
+                    navigate_fn=navigate,
+                    find_object_fn=find_object,
+                    pick_fn=pick_by_instance_id,
+                    logdir=result_dir,
+                )
+            else:
+                raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'high_level' and 'low_level'.")
+            
+            result_path = os.path.join(result_dir, f"results_{args.agent_type}_{task_id}.json")
+            if not args.force_rerun and os.path.exists(result_dir) and os.path.exists(result_path):
+                with open(result_path, "r") as f:
+                    result = json.load(f)
+                if result is not None and "success" in result:
+                    before_one_task_finish(results, result, pbar)
+                    continue
             
             with open(task_path, "r") as f:
                 task_data = json.load(f)
@@ -178,13 +219,10 @@ def evaluate(args):
                     "target_instance": task["instance_name"],
                 } # TODO figure out why ground truth sometimes missed the target instance
                 
-                results[task_type].append(result)
-                pbar.update(1)
-                success = sum([r["success"] for r in results[task_type]])
-                total = len(results[task_type])
-                rate = 100.0 * success / total if total > 0 else 0.0
-                pbar_postfix_str = f"({rate:.1f}%)"
-                pbar.set_postfix_str(pbar_postfix_str)
+                with open(result_path, "w") as f:
+                    json.dump(result, f, indent=2)
+                
+                before_one_task_finish(results, result, pbar)
                 
             # Clean up memory and agent state
             agent.flush_tool_threads()
@@ -200,10 +238,10 @@ def evaluate(args):
     
 if __name__ == "__main__":
     args = parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
     
     results = evaluate(args)
     
-    os.makedirs(args.output_dir, exist_ok=True)
     for task_type, result_list in results["results"].items():
         output_path = os.path.join(args.output_dir, f"results_{args.agent_type}_{task_type}.json")
         
@@ -217,7 +255,6 @@ if __name__ == "__main__":
             json.dump(result_list, f, indent=2)
         print(f"✅ Saved {task_type} results to {output_path}")
 
-    
     # Print summary
     print("📊 Evaluation Summary:")
     for task_type, result_list in results["results"].items():
