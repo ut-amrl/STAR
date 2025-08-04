@@ -21,20 +21,34 @@ _OBJECT_FLAGS = [
 ]
 
 _TASK_DISPLAY = {
+    "unambiguous":      "attribute-based",
     "spatial_temporal": "temporal",
-    "frequency":        "freqencist",
+    "frequency":        "freqentist",
     # add more renames here if needed
 }
 
 _COLOR_GROUP = {
-    "attribute_based":  plt.cm.Greens,
+    "unambiguous":  plt.cm.Greens,
     "spatial_temporal": plt.cm.Blues,
     "spatial":          plt.cm.Purples,
     "frequency":        plt.cm.Greys,
 }
 
+# desired left-to-right order in every grouped plot  (raw names!)
+_TASK_ORDER = [
+    "unambiguous",       # → “attribute-based”
+    "spatial_temporal",  # → “temporal”
+    "frequency",         # → “freqencist”
+]
+
+def _task_sort_key(t):
+    try:
+        return _TASK_ORDER.index(t)
+    except ValueError:
+        return len(_TASK_ORDER) + hash(t)
+
 def _pretty_task(raw: str) -> str:
-    """Human-friendly label for legends / tick‐labels."""
+    """Human-friendly label for legends / tick-labels."""
     for orig, nice in _TASK_DISPLAY.items():
         if raw.startswith(orig):
             return f"{nice}{raw[len(orig):]}"     # keep any suffix
@@ -158,8 +172,8 @@ def plot_overall_success(args, df):
     if agg.empty:
         print("[WARN] No data for overall-success plot")
     else:
-        tasks  = agg.index.tolist()
-        n_tasks  = len(tasks)
+        tasks = sorted(agg.index.tolist(), key=_task_sort_key)
+        n_tasks = len(tasks)
         n_agents = len(args.agent_types)
         x = np.arange(n_tasks)
         width = 0.8 / n_agents
@@ -204,7 +218,7 @@ def plot_overall_success(args, df):
         ax.legend(handles=legend_handles, title="Agent",
                   bbox_to_anchor=(1.04, 1), loc="upper left")
 
-        ax.set_title("Overall End-to-End Success by Task Type")
+        ax.set_title("Overall Execution Success by Task Type")
 
         plt.tight_layout()
         os.makedirs(args.output_dir, exist_ok=True)
@@ -241,7 +255,11 @@ def plot_object_class_success(args, df):
 
     # ── 2 build display names & colours in one pass ───────────────────────
     flat_cols, colours = [], []
-    for task in sorted({t for t, _ in plot_df.columns}):
+    unique_tasks = {t for t, _ in plot_df.columns}
+    ordered_tasks = [t for t in _TASK_ORDER if t in unique_tasks] + \
+                    [t for t in unique_tasks if t not in _TASK_ORDER]
+
+    for task in ordered_tasks:
         cmap   = _COLOR_GROUP.get(task, plt.cm.tab10)       # fallback palette
         agents = args.agent_types
         # pick evenly spaced shades   light → dark
@@ -264,10 +282,11 @@ def plot_object_class_success(args, df):
         color=colours,
         edgecolor="black",
         linewidth=0.7,
+        width=0.7,
     )
     ax.set_ylabel("Execution Success Rate", fontsize=14)
     ax.set_xlabel("")
-    ax.set_ylim(0, 1)
+    ax.set_ylim(0, 1.01)
     ax.set_axisbelow(True)        # make grid render beneath
     ax.grid(axis="y", alpha=0.4)  # horizontal grid only
     # ax.set_title("Execution Success Rate")

@@ -142,18 +142,7 @@ ___
 
 ### 🎯 `recall_best_matches`
 Retrieve up to `k` memory records that best match a described object or scene, optionally guided by a reference image and caller context. 
-This is more economic compared to `recall_all` tool. However, it is best suited if you only interest a few most representative samples of the records.
-In addition, for your convenience, I, a human, will show you the raw observations agent made an the returned records.
-
-- **Required Field**:
-  - `description`: description: A short natural language description of the object or scene to retrieve (e.g., "a red mug on the kitchen table")
-
-- **Optional Fields**:
-  - `visual_cue_from_record_id`: Record ID of a past memory containing an image of the exact object instance being queried. Use this to guide instance-level re-identification. The callee agent relies heavily on this image for instance re-identification. You must first call inspect_memory_image to verify the object is visually present and consistent with your intent.
-  - `search_start_time`: Only include memory after this timestamp (`YYYY-MM-DD HH:MM:SS`)
-  - `search_end_time`: Only include memory before this timestamp (`YYYY-MM-DD HH:MM:SS`)
-  - `k`: Number of max top-matching records to return (default: `5`, must be between `1` and `10`)
-  - `caller_context`: Free-form context from the calling agent describing what it is trying to achieve or how the results will be used
+This is more economic compared to `recall_all` tool. However, it is best suited if you only interest a few ( < 5) most representative samples of the records. Otherwise, you are very likely to miss important and relevant information, and you should call `recall_all` tool instead.
 
 - **Notes**:
   - This tool delegates the task to a peer retrieval agent that is as capable as you are — it interprets the request, reasons over memory, and returns the most relevant records, so the quality of its output depends on the clarity and precision of your inputs. Results may include near matches. Inspect and reason carefully!
@@ -189,58 +178,12 @@ Example:
   }}
 ]
 ```
-___
-
-### 🕒 `recall_last_seen`
-Retrieve the **most recent memory record** that best matches a described object or scene, optionally guided by a reference image and caller context.
-In addition, for your convenience, I, a human, will show you the raw observations agent made an the returned records.
-
-- **Required Field**:
-  - `description`: A short natural language description of the object or scene to retrieve (e.g., "a red mug on the kitchen table")
-
-- **Optional Fields**:
-  - `visual_cue_from_record_id`: Record ID of a past memory containing an image of the exact object instance being queried. Use this to guide instance-level re-identification. The callee agent relies heavily on this image for instance re-identification. You must first call `inspect_memory_image` to verify the object is visually present and consistent with your intent.
-  - `search_start_time`: Only include memory after this timestamp (`YYYY-MM-DD HH:MM:SS`)
-  - `search_end_time`: Only include memory before this timestamp (`YYYY-MM-DD HH:MM:SS`)
-  - `caller_context`: Free-form context from the calling agent describing what it is trying to achieve or how the results will be used
-
-- **Notes**:
-  - This tool delegates the task to a peer retrieval agent that is as capable as you are — it interprets the request, reasons over memory, and returns the **most recent relevant** record. The quality of its output depends on the clarity and precision of your inputs. Always verify the result!
-  - Retrieval is constrained by the `search_start_time` and `search_end_time`, so you must reason carefully about timestamps when interpreting results.
-  - Use `caller_context` to clarify the purpose of retrieval (e.g., finding an object’s last known location for planning, disambiguating between candidates, etc.).
-
-Example:
-```json
-[
-  {{
-    "tool": "recall_last_seen",
-    "tool_input": {{
-      "description": "an algebra book",
-    }}
-  }}
-]
 
 ---
 
 ### 🧠 `recall_all`
 Retrieve **all plausible memory records** where the described object or scene may have appeared, optionally guided by a reference image, time range, and caller context.
 Due to the potential huge amount of returns, I will not demonstrate the raw observations for you. Please use `inspect_memory_image` to inspect the raw observations at these records if you think it is necessary.
-
-- **Required Field**:
-  - `description`: A short natural language description of the object or scene to retrieve (e.g., "a red mug on the kitchen table")
-
-- **Optional Fields**:
-  - `visual_cue_from_record_id`: Record ID of a past memory containing an image of the exact object instance being queried. Use this to guide instance-level re-identification. The callee agent relies heavily on this image. You must call `inspect_memory_image` first to verify the object is visually present and consistent with your intent.
-  - `search_start_time`: Only include memory after this timestamp (`YYYY-MM-DD HH:MM:SS`)
-  - `search_end_time`: Only include memory before this timestamp (`YYYY-MM-DD HH:MM:SS`)
-  - `caller_context`: Free-form context from the calling agent describing what it is trying to achieve or how the results will be used
-
-- **Notes**:
-  - Unlike `recall_best_matches`, which returns only the top-k most similar records, `recall_all` tries to return **all** plausible candidates over the time window.
-  - This is especially useful when you want to reason over **patterns**, **frequency of appearance**, or **typical contexts** — not just find the best single match.
-  - Results may contain noise and variation. You are expected to reason over the **distribution** and **diversity** of records, not just accuracy.
-  - Retrieval is constrained by the `search_start_time` and `search_end_time`, so be mindful when interpreting timestamps.
-  - Use `caller_context` to indicate how these records will be used — e.g., for statistical inference, usage analysis, or long-term memory formation.
 
 - **When to Use**:
   - Use `recall_best_matches` when you want the most relevant records for **grounding or disambiguation**.
@@ -260,15 +203,32 @@ Example:
   }}
 ]
 ```
+___
+
+### 🕒 `recall_last_seen`
+Retrieve the **most recent memory record** that best matches a described object or scene, optionally guided by a reference image and caller context.
+In addition, for your convenience, I, a human, will show you the raw observations agent made an the returned records.
+
+- **Notes**:
+  - This tool delegates the task to a peer retrieval agent that is as capable as you are — it interprets the request, reasons over memory, and returns the **most recent relevant** record. The quality of its output depends on the clarity and precision of your inputs. Always verify the result!
+  - Retrieval is constrained by the `search_start_time` and `search_end_time`, so you must reason carefully about timestamps when interpreting results.
+  - Use `caller_context` to clarify the purpose of retrieval (e.g., finding an object’s last known location for planning, disambiguating between candidates, etc.).
+
+Example:
+```json
+[
+  {{
+    "tool": "recall_last_seen",
+    "tool_input": {{
+      "description": "an algebra book",
+    }}
+  }}
+]
 
 ---
 
 ### 🔢 `get_record_count_within_time_range`  
 Return the number of memory records stored within a given time range. It can help you understand the total number of memmory records within this time range. Combining with the tool call results, you should be able to adjust your query strategies accordingly.
-
-- **Optional Fields**:
-  - `start_time`: Beginning of the range to count from (`YYYY-MM-DD HH:MM:SS`)
-  - `end_time`: End of the range to count to
 
 - **Notes**:
   - Both fields are optional. If neither is specified, returns the **total number of records** in memory.
@@ -295,10 +255,6 @@ ___
 Use this tool to visually inspect one or more memory records.  
 It returns a **JSON map** `{{ record_id → image_path }}`, where each image is the **middle frame** of its corresponding memory record.  
 Employ it as a **strategic aid for resolving ambiguity**—especially when deciding whether two records refer to the **same object instance**.
-
-- **Required Field**  
-  - `record_id` (`List[int]`): A list of integer record IDs to inspect.  
-    Supply every candidate ID you wish to verify in **one tool call**.
 
 - **Notes**  
   - Call this tool when:  

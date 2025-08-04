@@ -134,6 +134,7 @@ def evaluate_one_task(agent, task: dict, annotations: dict):
         "retrieval_grounding_success": retrieval_grounding_successs,
         "retrieval_grounding_path": retrieval_grounding_path,
         "latest_retrieval_success": latest_retrieval_successs,
+        "retrieved_instance_name": result.instance_name
     }
     
 def evaluate(args):
@@ -286,7 +287,6 @@ def evaluate(args):
                 result["task_type"] = task_type
                 result["instance_name"] = task["instance_name"]
                 result["instance_class"] = task["instance_class"]
-                result["target_instance"] = task["instance_name"]
                 
                 with open(result_path, "w") as f:
                     json.dump(result, f, indent=2)
