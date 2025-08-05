@@ -20,6 +20,7 @@ class LowLevelAgent:
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
         search_in_time_history: Annotated[Sequence[BaseMessage], add_messages]
+        search_in_time_toolcalls: Annotated[Sequence, add_messages]
         
     @staticmethod
     def from_search_in_time_to(state: AgentState):
@@ -114,6 +115,7 @@ class LowLevelAgent:
         messages = state["messages"]
         
         additional_search_history = []
+        last_tool_calls = []
         
         last_message = messages[-1]
         if isinstance(last_message, ToolMessage):
@@ -123,6 +125,7 @@ class LowLevelAgent:
             while idx >= 0:
                 msg = messages[idx]
                 if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                    last_tool_calls = copy.deepcopy(msg)
                     last_ai_idx = idx
                     break
                 idx -= 1
@@ -132,13 +135,14 @@ class LowLevelAgent:
                 image_messages = []
                 for msg in messages[last_ai_idx+1:]:
                     if isinstance(msg, ToolMessage):
+                        original_msg_content = copy.copy(msg.content)
                         if isinstance(msg.content, str):
                             msg.content = parse_and_pretty_print_tool_message(msg.content)
                         additional_search_history.append(msg)
                         # state["search_in_time_history"].append(msg)
                         
-                        if isinstance(msg.content, str) and is_image_inspection_result(msg.content):
-                            inspection = eval(msg.content)
+                        if isinstance(original_msg_content, str) and is_image_inspection_result(original_msg_content):
+                            inspection = eval(original_msg_content)
                             for id, path in inspection.items():
                                 content = get_image_message_for_record(id, path, msg.tool_call_id)
                                 message = HumanMessage(content=content)
@@ -152,7 +156,7 @@ class LowLevelAgent:
         chat_history += additional_search_history
         
         max_search_in_time_cnt = 20
-        n_reflection_intervals = 3
+        n_reflection_intervals = 4
         
         model = self.vlm
         if self.search_in_time_cnt < max_search_in_time_cnt:
@@ -220,7 +224,9 @@ class LowLevelAgent:
                 self.logger.info(f"[SEARCH IN TIME] {response}")
 
         self.search_in_time_cnt += 1
-        return {"messages": [response], "search_in_time_history": additional_search_history + [response]}
+        return {"messages": [response], 
+                "search_in_time_history": additional_search_history + [response],
+                "search_in_time_toolcalls": last_tool_calls}
     
     def prepare_search_in_space(self, state: AgentState):
         messages = state["messages"]
@@ -410,5 +416,11 @@ class LowLevelAgent:
         if self.logger:
             self.logger.info("=============== END =============== \n\n\n")
         
-        return self.task.search_proposal
+        toolcalls = []
+        for msg in state.get("search_in_time_toolcalls", []):
+            toolcalls += msg.tool_calls
+        return {
+            "task_result": self.task.search_proposal,
+            "search_in_time_toolcalls": toolcalls,
+        }
         

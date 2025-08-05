@@ -20,6 +20,7 @@ class HighLevelAgent:
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
         search_in_time_history: Annotated[Sequence[BaseMessage], add_messages]
+        search_in_time_toolcalls: Annotated[Sequence, add_messages]
         
     @staticmethod
     def from_search_in_time_to(state: AgentState):
@@ -132,6 +133,7 @@ class HighLevelAgent:
         messages = state["messages"]
         
         additional_search_history = []
+        last_tool_calls = []
         
         last_message = messages[-1]
         if isinstance(last_message, ToolMessage):
@@ -141,6 +143,7 @@ class HighLevelAgent:
             while idx >= 0:
                 msg = messages[idx]
                 if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                    last_tool_calls = copy.deepcopy(msg)
                     last_ai_idx = idx
                     break
                 idx -= 1
@@ -254,7 +257,9 @@ class HighLevelAgent:
                 self.logger.info(f"[SEARCH IN TIME] {response}")
 
         self.search_in_time_cnt += 1
-        return {"messages": [response], "search_in_time_history": additional_search_history + [response]}
+        return {"messages": [response], 
+                "search_in_time_history": additional_search_history + [response],
+                "search_in_time_toolcalls": last_tool_calls}
     
     def prepare_search_in_space(self, state: AgentState):
         messages = state["messages"]
@@ -449,4 +454,10 @@ class HighLevelAgent:
         if self.logger:
             self.logger.info("=============== END =============== \n\n\n")
         
-        return self.task.search_proposal
+        toolcalls = []
+        for msg in state.get("search_in_time_toolcalls", []):
+            toolcalls += msg.tool_calls
+        return {
+            "task_result": self.task.search_proposal,
+            "search_in_time_toolcalls": toolcalls,
+        }

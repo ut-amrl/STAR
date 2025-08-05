@@ -81,10 +81,11 @@ def extract_dataname_from_vidpath(vidpath: str) -> str:
         return None
 
 def evaluate_one_task(agent, task: dict, annotations: dict):
-    result = agent.run(
+    full_result = agent.run(
         question=task['task'],
         eval_search_in_time=True,
     )
+    result = full_result["task_result"]
 
     if result.has_picked is None or result.instance_name is None:
         return (False, False, None)
@@ -130,15 +131,17 @@ def evaluate_one_task(agent, task: dict, annotations: dict):
                                              ret_record["start_frame"], 
                                              ret_record["end_frame"]) if ret_record is not None else None
     
-    
     return {
-        "success": success,
-        "reference_resolution_successs": reference_resolution_successs,
-        "reference_resoluation_path": reference_resoluation_path,
-        "retrieval_grounding_success": retrieval_grounding_successs,
-        "retrieval_grounding_path": retrieval_grounding_path,
-        "latest_retrieval_success": latest_retrieval_successs,
-        "retrieved_instance_name": result.instance_name
+        "result": {
+            "success": success,
+            "reference_resolution_successs": reference_resolution_successs,
+            "reference_resoluation_path": reference_resoluation_path,
+            "retrieval_grounding_success": retrieval_grounding_successs,
+            "retrieval_grounding_path": retrieval_grounding_path,
+            "latest_retrieval_success": latest_retrieval_successs,
+            "retrieved_instance_name": result.instance_name
+        },
+        "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", []),
     }
     
 def evaluate(args):
@@ -155,6 +158,8 @@ def evaluate(args):
     
     if "gt" in args.agent_type:
         data_metadata = load_virtualhome_data_metadata(args.data_dir, caption_type="gt")
+    elif "caption" in args.agent_type:
+        data_metadata = load_virtualhome_data_metadata(args.data_dir, caption_type="nframe1")
     else:
         raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'low_level_gt' and 'high_level_gt'.")
     versions = [""]
@@ -290,8 +295,8 @@ def evaluate(args):
                 
                 task["lastest_unix_time"] = lastest_unix_time
                 
-                result = evaluate_one_task(agent, task, annotations)
-                
+                full_result = evaluate_one_task(agent, task, annotations)
+                result = full_result["result"]
                 result["task"] = task["task"]
                 result["task_type"] = task_type
                 result["instance_name"] = task["instance_name"]
@@ -299,6 +304,20 @@ def evaluate(args):
                 
                 with open(result_path, "w") as f:
                     json.dump(result, f, indent=2)
+                    
+                reasoning_toolcalls_path = os.path.join(result_dir, f"reasoning_toolcalls_{args.agent_type}_{task_id}.json")
+                reasoning_toolcalls = full_result.get("reasoning_toolcalls", [])
+                with open(reasoning_toolcalls_path, "w") as f:
+                    json.dump(reasoning_toolcalls, f, indent=2)
+                
+                reasoning_toolcalls_path = os.path.join(result_dir, f"reasoning_toolcalls_{args.agent_type}_{task_id}.txt")
+                ARG_ORDER = ["x", "time", "position", "record_id", "record_ids", "start_time", "end_time", "k"]
+                with open(reasoning_toolcalls_path, "w") as f:
+                    for toolcall in reasoning_toolcalls:
+                        toolname = toolcall.get("name", "unknown_tool")
+                        all_toolargs = toolcall.get("args", {})
+                        toolargs = [str(all_toolargs[arg]) for arg in ARG_ORDER if arg in all_toolargs]
+                        f.write(f'{toolname}({", ".join(toolargs)})\n')
                 
                 before_one_task_finish(results, result, pbar)
                 
