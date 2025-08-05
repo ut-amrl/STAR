@@ -43,6 +43,7 @@ class SearchProposal:
         
         self.instance_name: str = None
         self.has_picked: bool = False
+        self.visible_instances: List[str] = []  # List of visible instances in the scene
         
     def __str__(self):
         pos_str = f"({self.position[0]:.2f}, {self.position[1]:.2f}, {self.position[2]:.2f})"

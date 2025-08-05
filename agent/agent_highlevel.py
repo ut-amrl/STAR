@@ -4,7 +4,7 @@ from langchain.prompts import MessagesPlaceholder
 from langchain_core.messages import AIMessage, ToolMessage, BaseMessage
 
 from agent.utils.debug import get_logger
-from agent.utils.function_wrapper import FunctionsWrapper # TODO need to clean up FunctionsWrapper
+from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.tools2 import *
 
 import roslib; roslib.load_manifest('amrl_msgs')
@@ -12,8 +12,6 @@ from amrl_msgs.srv import (
     GetImageSrvResponse,
     GetImageAtPoseSrvResponse, 
     PickObjectSrvResponse,
-    GetVisibleObjectsSrvResponse,
-    SemanticObjectDetectionSrvResponse
 )
 
 class HighLevelAgent:
@@ -381,6 +379,7 @@ class HighLevelAgent:
             return
         if self.logger:
             self.logger.info(f"[SEARCH IN SPACE] Object found in the current view: {find_response}.")
+        self.task.search_proposal.visible_instances = find_response.visible_instances
             
         pick_response = self.pick_fn(
             self.task.search_proposal.instance_description,

@@ -86,6 +86,8 @@ def evaluate_one_task(agent, task: dict, annotations: dict):
         eval_search_in_time=True,
     )
     result = full_result["task_result"]
+    if result is None:
+        return (False, False, None)
 
     if result.has_picked is None or result.instance_name is None:
         return (False, False, None)
@@ -98,7 +100,7 @@ def evaluate_one_task(agent, task: dict, annotations: dict):
     ref_dataname = extract_dataname_from_vidpath(ref_record["vidpath"]) if ref_record is not None else None
     ret_dataname = extract_dataname_from_vidpath(ret_record["vidpath"]) if ret_record is not None else None
     
-    reference_resolution_successs, retrieval_grounding_successs, latest_retrieval_successs = False, False, False
+    reference_resolution_successs, retrieval_grounding_successs, latest_retrieval_successs, last_known_state_success = False, False, False, False
     if ref_record is not None:
         for frame_idx in range(ref_record["start_frame"], ref_record["end_frame"]+1):
             if frame_idx >= len(annotations[ref_dataname]):
@@ -131,6 +133,8 @@ def evaluate_one_task(agent, task: dict, annotations: dict):
                                              ret_record["start_frame"], 
                                              ret_record["end_frame"]) if ret_record is not None else None
     
+    last_known_state_success = task["instance_name"] in result.visible_instances
+    
     return {
         "result": {
             "success": success,
@@ -139,6 +143,10 @@ def evaluate_one_task(agent, task: dict, annotations: dict):
             "retrieval_grounding_success": retrieval_grounding_successs,
             "retrieval_grounding_path": retrieval_grounding_path,
             "latest_retrieval_success": latest_retrieval_successs,
+            "last_known_state_success": last_known_state_success,
+            "position": result.position,
+            "theta": result.theta,
+            "has_picked": result.has_picked,
             "retrieved_instance_name": result.instance_name
         },
         "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", []),
@@ -296,11 +304,14 @@ def evaluate(args):
                 task["lastest_unix_time"] = lastest_unix_time
                 
                 full_result = evaluate_one_task(agent, task, annotations)
-                result = full_result["result"]
-                result["task"] = task["task"]
-                result["task_type"] = task_type
-                result["instance_name"] = task["instance_name"]
-                result["instance_class"] = task["instance_class"]
+                try:
+                    result = full_result["result"]
+                    result["task"] = task["task"]
+                    result["task_type"] = task_type
+                    result["instance_name"] = task["instance_name"]
+                    result["instance_class"] = task["instance_class"]
+                except:
+                    import pdb; pdb.set_trace()
                 
                 with open(result_path, "w") as f:
                     json.dump(result, f, indent=2)
