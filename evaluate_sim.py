@@ -99,14 +99,18 @@ def evaluate_one_task(agent, task: dict, annotations: dict):
     
     reference_resolution_successs, retrieval_grounding_successs, latest_retrieval_successs = False, False, False
     if ref_record is not None:
-        for frame_idx in range(ref_record["start_frame"], ref_record["end_frame"]):
+        for frame_idx in range(ref_record["start_frame"], ref_record["end_frame"]+1):
+            if frame_idx >= len(annotations[ref_dataname]):
+                continue
             annotation = annotations[ref_dataname][frame_idx]
             all_visible_instances = [x["prefab_name"] for x in annotation["frame_nodes"]]
             if task["instance_name"] in all_visible_instances:
                 reference_resolution_successs = True
                 break
     if ret_record is not None:
-        for frame_idx in range(ret_record["start_frame"], ret_record["end_frame"]):
+        for frame_idx in range(ret_record["start_frame"], ret_record["end_frame"]+1):
+            if frame_idx >= len(annotations[ref_dataname]):
+                continue
             annotation = annotations[ret_dataname][frame_idx]
             all_visible_instances = [x["prefab_name"] for x in annotation["frame_nodes"]]
             if task["instance_name"] in all_visible_instances:
@@ -149,7 +153,10 @@ def evaluate(args):
         pbar.set_postfix_str(pbar_postfix_str)
         return results, pbar
     
-    data_metadata = load_virtualhome_data_metadata(args.data_dir)
+    if "gt" in args.agent_type:
+        data_metadata = load_virtualhome_data_metadata(args.data_dir, caption_type="gt")
+    else:
+        raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'low_level_gt' and 'high_level_gt'.")
     versions = [""]
     task_metadata = load_task_metadata(
         args.task_file, 
@@ -217,21 +224,23 @@ def evaluate(args):
                     before_one_task_finish(results, result, pbar)
                     continue
                 
-            if args.agent_type == "high_level":
+            if "high_level" in args.agent_type:
                 from agent.agent_highlevel import HighLevelAgent
                 agent = HighLevelAgent(
                     navigate_fn=navigate,
                     find_object_fn=find_object,
                     pick_fn=pick_by_instance_id,
                     logdir=result_dir,
+                    logger_prefix=args.agent_type
                 )
-            elif args.agent_type == "low_level":
+            elif "low_level" in args.agent_type:
                 from agent.agent_lowlevel import LowLevelAgent
                 agent = LowLevelAgent(
                     navigate_fn=navigate,
                     find_object_fn=find_object,
                     pick_fn=pick_by_instance_id,
                     logdir=result_dir,
+                    logger_prefix=args.agent_type
                 )
             else:
                 raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'high_level' and 'low_level'.")

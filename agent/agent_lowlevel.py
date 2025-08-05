@@ -38,7 +38,8 @@ class LowLevelAgent:
                  find_object_fn: Callable[[str], List[List[int]]] = None,
                  observe_fn: Callable[[], GetImageSrvResponse] = None,
                  pick_fn: Callable[[str], PickObjectSrvResponse] = None,
-                 logdir: str = None
+                 logdir: str = None,
+                 logger_prefix: str = ""
     ):
         self.verbose = verbose
         
@@ -47,7 +48,7 @@ class LowLevelAgent:
         self.observe_fn = observe_fn
         self.pick_fn = pick_fn
         
-        self.logger = get_logger(logdir=logdir, prefix="low_level", flatten=True) if logdir else get_logger(prefix="low_level", flatten=True)
+        self.logger = get_logger(logdir=logdir, prefix=logger_prefix, flatten=True) if logdir else get_logger(prefix=logger_prefix, flatten=True)
         
         self.task: Task = None
         

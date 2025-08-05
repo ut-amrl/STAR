@@ -88,7 +88,7 @@ def load_data_metadata(data_dir: str):
     
     return result
 
-def load_virtualhome_data_metadata(data_dir: str):
+def load_virtualhome_data_metadata(data_dir: str, caption_type: str = "gt"):
     result = {}
     for dataname in os.listdir(data_dir):
         data_path = os.path.join(data_dir, dataname)
@@ -96,8 +96,7 @@ def load_virtualhome_data_metadata(data_dir: str):
             continue  # skip non-directory entries
         simulation_data_dir = os.path.join(data_path, "0")
 
-        # caption_file = os.path.join(simulation_data_dir, "caption_synthetic.json")
-        caption_file = os.path.join(simulation_data_dir, "caption_gpt4o.json")
+        caption_file = os.path.join(simulation_data_dir, f"caption_gpt4o_{caption_type}.json")
         if os.path.exists(caption_file):
             result[dataname] = caption_file
     return result
