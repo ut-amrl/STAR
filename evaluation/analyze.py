@@ -13,6 +13,7 @@ _SUCCESS_FLAGS = [
     "reference_resolution_successs",
     "retrieval_grounding_success",
     "latest_retrieval_success",
+    "last_known_state_success",
 ]
 
 _OBJECT_FLAGS = [
@@ -63,7 +64,7 @@ def parse_args():
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim.txt")
-    parser.add_argument("--agent_types", nargs="+", default=["low_level", "high_level"])
+    parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "high_level_gt", "low_level_caption"])
     return parser.parse_args()
 
 def _load_json_safe(path: str):
