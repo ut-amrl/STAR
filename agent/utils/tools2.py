@@ -611,11 +611,20 @@ def create_recall_best_matches_tool(
             description=TOOL_RATIONALE_DESC
         )
         description: str = Field(
-            description="Text description of the object or scene to search for, e.g., 'the red mug on the kitchen table'."
+            description=(
+                "Text query.\n"
+                "• Text-only: this DEFINES the target to retrieve (e.g., 'a book on the table', 'the algebra book').\n"
+                "• With visual_cue_from_record_id: this acts as a VERBAL POINTER to the object IN that image "
+                "(e.g., 'the red mug on the left')."
+            )
         )
         visual_cue_from_record_id: Optional[int] = Field(
             default=None,
-            description="ID of a memory record that contains an image of the object to be retrieved. Used as a visual cue for grounding."
+            description=(
+                "ID of a memory record whose image serves as the visual ANCHOR. "
+                "When provided, the tool queries for the SAME INSTANCE seen in that image. "
+                "Use 'description' to indicate which object in the image you mean (a stand-in for circling it)."
+            )
         )
         search_start_time: Optional[str] = Field(
             default=None,
@@ -638,8 +647,10 @@ def create_recall_best_matches_tool(
         func=tool_runner.run,
         name="recall_best_matches",
         description=(
-            "Recall up to k memory records that best match a given object or scene description. "
-            "You may also provide a visual cue (via record ID) and a time window to guide retrieval. "
+           "Recall up to k memory records that best match the request.\n"
+            "• Text-only: 'description' DEFINES the target (semantic search).\n"
+            "• With visual_cue_from_record_id: the image ANCHORS the instance; 'description' VERBALLY POINTS to the object in that image. "
+            "Return the most relevant/recallable sightings accordingly. Use time filters for recency."
         ),
         args_schema=BestMatchesInput,
     )
@@ -970,11 +981,20 @@ def create_recall_last_seen_tool(
             description=TOOL_RATIONALE_DESC
         )
         description: str = Field(
-            description="Text description of the object or scene to search for, e.g., 'the red mug on the kitchen table'."
+            description=(
+                "Text query.\n"
+                "• Text-only: DEFINES the target to retrieve (e.g., 'the algebra book', 'the red mug on the kitchen table').\n"
+                "• With visual_cue_from_record_id: acts as a VERBAL POINTER to the object IN that reference image "
+                "(e.g., 'the red mug next to the painting')."
+            )
         )
         visual_cue_from_record_id: Optional[int] = Field(
             default=None,
-            description="ID of a memory record that contains an image of the object to be retrieved. Used as a visual cue for grounding."
+            description=(
+                "ID of a memory record whose image serves as the visual ANCHOR. "
+                "When set, the tool tracks the SAME INSTANCE seen in that image; "
+                "'description' indicates which object in the image you mean."
+            )
         )
         search_start_time: Optional[str] = Field(
             default=None,
@@ -993,7 +1013,10 @@ def create_recall_last_seen_tool(
         func=tool_runner.run,
         name="recall_last_seen",
         description=(
-            "Recall the last seen memory record that best matches a given object or scene description. "
+            "Return the most recent memory record where the target appears.\n"
+            "• Text-only: 'description' DEFINES the target.\n"
+            "• With visual_cue_from_record_id: the image ANCHORS the instance; 'description' POINTS to the object in that image.\n"
+            "Use time fields to bound recency; scene hints in text guide retrieval but do not constrain later sightings."
         ),
         args_schema=LastSeenInput,
     )
@@ -1331,11 +1354,20 @@ def create_recall_all_tool(
             description=TOOL_RATIONALE_DESC
         )
         description: str = Field(
-            description="Text description of the object to recall, e.g., 'a red mug'. The goal is to retrieve all plausible past appearances for reasoning purposes."
+            description=(
+                "Text query.\n"
+                "• Text-only: DEFINES the target to recall (e.g., 'a red mug', 'the algebra book').\n"
+                "• With visual_cue_from_record_id: acts as a VERBAL POINTER to the object IN that image "
+                "(e.g., 'the red mug on the left'). The image anchors the instance."
+            )
         )
         visual_cue_from_record_id: Optional[int] = Field(
             default=None,
-            description="ID of a memory record that contains an image of the object to be retrieved. Used as a visual cue for grounding."
+            description=(
+                "ID of a memory record whose image serves as the visual ANCHOR. "
+                "When provided, the tool recalls appearances of the SAME INSTANCE seen in that image; "
+                "'description' indicates which object in the image you mean."
+            )
         )
         search_start_time: Optional[str] = Field(
             default=None,
@@ -1354,9 +1386,10 @@ def create_recall_all_tool(
         func=tool_runner.run,
         name="recall_all",
         description=(
-            "Recall all plausible memory records where the described object may have appeared. "
-            "You may provide a visual cue (via record ID) and a time window to guide retrieval. "
-            "This tool is useful for analyzing typical locations, usage patterns, or frequency of appearance."
+            "Recall all plausible memory records where the target appears within the given time window.\n"
+            "• Text-only: 'description' DEFINES the target (semantic retrieval).\n"
+            "• With visual_cue_from_record_id: the image ANCHORS the instance; 'description' VERBALLY POINTS to it in the image.\n"
+            "Useful for typical locations, usage patterns, and frequency. Results may include near-misses—verify as needed."
         ),
         args_schema=RecallAllInput,
     )
