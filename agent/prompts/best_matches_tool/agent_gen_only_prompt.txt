@@ -16,8 +16,7 @@ You will be given:
 - A time range (`start_time`, `end_time`) to restrict your search
 - A result limit `k` — you **must not** return more than `k` results
 
-You have also been presented with the **caller context** — This is an optional free-text message from the other agent, describing their current task, uncertainties, or how your results will be used
-Your job is to reason over past memory and return the most recent, visually and/or semantically grounded record that matches the object.
+Use the time window strictly. Use `caller_context` only to note intent or an **explicit exception**.
 
 ## 🧠 What Is Memory?
 The robot’s memory is a collection of time-stamped, egocentric observations gathered as it patrolled a household or office environment.
