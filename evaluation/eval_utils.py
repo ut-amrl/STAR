@@ -3,6 +3,7 @@ import math
 import json
 import csv
 from collections import defaultdict
+import pandas as pd
 
 def load_task_metadata(
     task_file_path: str, 
@@ -109,15 +110,22 @@ def load_virtualhome_annotations(data_dir: str):
             continue  # skip non-directory entries
         simulation_data_dir = os.path.join(data_path, "0")
         
+        all_annotations[dataname] = {}
+        
         annotation_file = os.path.join(simulation_data_dir, "gt_annotations.json")
         try:
             with open(annotation_file, "r") as f:
-                annotations = json.load(f)
-            if type(annotations) != list:
-                raise ValueError(f"Unexpected type of annotations: {type(annotations)}")
+                frame_annotations = json.load(f)
+            if type(frame_annotations) != list:
+                raise ValueError(f"Unexpected type of annotations: {type(frame_annotations)}")
         except:
             continue
-        all_annotations[dataname] = annotations
+        all_annotations[dataname]["frames"] = frame_annotations
+        
+        object_placement_file = os.path.join(simulation_data_dir, "object_placement.csv")
+        object_placement = pd.read_csv(object_placement_file).to_dict(orient="records")
+        all_annotations[dataname]["object_placements"] = object_placement
+        
     return all_annotations
 
 import rospy

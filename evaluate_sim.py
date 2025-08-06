@@ -80,17 +80,19 @@ def extract_dataname_from_vidpath(vidpath: str) -> str:
         # 'images' not found in path
         return None
 
-def evaluate_one_task(agent, task: dict, annotations: dict):
+def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
     full_result = agent.run(
         question=task['task'],
         eval_search_in_time=True,
     )
     result = full_result["task_result"]
     if result is None:
-        return (False, False, None)
+        return {"result": (False, False, None),
+                "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", [])}
 
     if result.has_picked is None or result.instance_name is None:
-        return (False, False, None)
+        return {"result": (False, False, None),
+                "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", [])}
     success = task["instance_name"].lower() in result.instance_name.lower()
     
     ref_record = result.reference_resolution_records
@@ -103,27 +105,44 @@ def evaluate_one_task(agent, task: dict, annotations: dict):
     reference_resolution_successs, retrieval_grounding_successs, latest_retrieval_successs, last_known_state_success = False, False, False, False
     if ref_record is not None:
         for frame_idx in range(ref_record["start_frame"], ref_record["end_frame"]+1):
-            if frame_idx >= len(annotations[ref_dataname]):
+            if frame_idx >= len(annotations[ref_dataname]["frames"]):
                 continue
-            annotation = annotations[ref_dataname][frame_idx]
+            annotation = annotations[ref_dataname]["frames"][frame_idx]
             all_visible_instances = [x["prefab_name"] for x in annotation["frame_nodes"]]
             if task["instance_name"] in all_visible_instances:
                 reference_resolution_successs = True
                 break
     if ret_record is not None:
         for frame_idx in range(ret_record["start_frame"], ret_record["end_frame"]+1):
-            if frame_idx >= len(annotations[ref_dataname]):
+            if frame_idx >= len(annotations[ref_dataname]["frames"]):
                 continue
-            annotation = annotations[ret_dataname][frame_idx]
+            annotation = annotations[ret_dataname]["frames"][frame_idx]
             all_visible_instances = [x["prefab_name"] for x in annotation["frame_nodes"]]
             if task["instance_name"] in all_visible_instances:
                 retrieval_grounding_successs = True
                 break
-        retrieved_unix_time = ret_record["timestamp"]
-        if abs(retrieved_unix_time - task["lastest_unix_time"]) > 3600:
-            latest_retrieval_successs = False
-        else:
-            latest_retrieval_successs = retrieval_grounding_successs
+        if retrieval_grounding_successs:
+            retrieved_unix_time = ret_record["timestamp"]
+            if abs(retrieved_unix_time - task["lastest_unix_time"]) < 3600:
+                latest_retrieval_successs = True
+            else:
+                object_placements = annotations[ret_dataname]["object_placements"]
+                gt_object_placements = annotations[exec_dataname]["object_placements"]
+                
+                selected_obj_placement = None
+                for placement in object_placements:
+                    if placement["obj_prefab_name"] == task["instance_name"]:
+                        selected_obj_placement = placement
+                        break
+                gt_obj_placement = None
+                for placement in gt_object_placements:
+                    if placement["obj_prefab_name"] == task["instance_name"]:
+                        gt_obj_placement = placement
+                        break
+                if selected_obj_placement is None or gt_obj_placement is None:
+                    latest_retrieval_successs = False
+                else:
+                    latest_retrieval_successs = selected_obj_placement["surface_id"] == gt_obj_placement["surface_id"]
     
     image_path_fn = lambda vidpath, start_f, end_f: os.path.join(vidpath, f"{(start_f + end_f) // 2:06d}.png")
     reference_resoluation_path = image_path_fn(ref_record["vidpath"], 
@@ -289,10 +308,12 @@ def evaluate(args):
             
             agent.set_memory(memory)
             
+            exec_bagname = task_data["bagnames"][-1]
+            
             for task in task_data["tasks"]:
                 # Reset the testing environment
-                graph_path = os.path.join(args.data_dir, bagname, "0", "graph.json")
-                scene_id = int(bagname.split("_")[0].replace("scene", ""))
+                graph_path = os.path.join(args.data_dir, exec_bagname, "0", "graph.json")
+                scene_id = int(exec_bagname.split("_")[0].replace("scene", ""))
                 if not set_virtulhome_scene(graph_path, scene_id):
                     import pdb; pdb.set_trace()
                 
@@ -303,15 +324,12 @@ def evaluate(args):
                 
                 task["lastest_unix_time"] = lastest_unix_time
                 
-                full_result = evaluate_one_task(agent, task, annotations)
-                try:
-                    result = full_result["result"]
-                    result["task"] = task["task"]
-                    result["task_type"] = task_type
-                    result["instance_name"] = task["instance_name"]
-                    result["instance_class"] = task["instance_class"]
-                except:
-                    import pdb; pdb.set_trace()
+                full_result = evaluate_one_task(agent, task, annotations, exec_bagname)
+                result = full_result["result"]
+                result["task"] = task["task"]
+                result["task_type"] = task_type
+                result["instance_name"] = task["instance_name"]
+                result["instance_class"] = task["instance_class"]
                 
                 with open(result_path, "w") as f:
                     json.dump(result, f, indent=2)
