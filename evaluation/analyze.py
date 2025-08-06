@@ -9,11 +9,11 @@ import numpy as np
 
 # fields we want to keep from every result file
 _SUCCESS_FLAGS = [
-    "success",
     "reference_resolution_successs",
     "retrieval_grounding_success",
     "latest_retrieval_success",
     "last_known_state_success",
+    "success",
 ]
 
 _OBJECT_FLAGS = [
@@ -64,7 +64,7 @@ def parse_args():
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim.txt")
-    parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "high_level_gt", "low_level_caption"])
+    parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "high_level_gt"])
     return parser.parse_args()
 
 def _load_json_safe(path: str):
@@ -299,6 +299,43 @@ def plot_object_class_success(args, df):
     plt.close()
     print(f"[INFO] combined object-class × task-type plot saved to {out_path}")
 
+def cascade_failure_analysis(df, success_flags=_SUCCESS_FLAGS, group_keys=["task_type", "hash", "agent"]):
+    """
+    For each cascading success flag, print all task instances that succeeded
+    at the previous flag but failed at the current.
+    """
+    print("\n=== Cascade Failure Analysis ===")
+    # Ensure the DataFrame has all necessary columns
+    missing = [flag for flag in success_flags if flag not in df.columns]
+    if missing:
+        print(f"[WARN] Missing columns in dataframe: {missing}")
+        return
+
+    # Sort for easier reading
+    df_sorted = df.sort_values(group_keys)
+
+    first_flag = success_flags[0]
+    print(f"\n--- Tasks that FAILED at '{first_flag}' (first stage) ---")
+    mask = (df_sorted[first_flag] == 0)
+    failures = df_sorted[mask]
+    if failures.empty:
+        print("(none)")
+    else:
+        print(failures[group_keys + [first_flag]])
+
+
+    for i in range(1, len(success_flags)):
+        prev_flag = success_flags[i-1]
+        curr_flag = success_flags[i]
+        print(f"\n--- Tasks that SUCCEEDED at '{prev_flag}' but FAILED at '{curr_flag}' ---")
+        mask = (df_sorted[prev_flag] == 1) & (df_sorted[curr_flag] == 0)
+        failures = df_sorted[mask]
+        if failures.empty:
+            print("(none)")
+        else:
+            print(failures[group_keys + [prev_flag, curr_flag]])
+
+    print("\n=== End Cascade Failure Analysis ===")
 
 def main():
     args = parse_args()
@@ -308,6 +345,7 @@ def main():
     rates, df = analyze_results(args, results, args.agent_types)
     plot_overall_success(args, df)
     plot_object_class_success(args, df)
+    cascade_failure_analysis(df)
 
 if __name__ == "__main__":  
     main()
