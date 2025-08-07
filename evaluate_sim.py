@@ -84,14 +84,39 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
     full_result = agent.run(
         question=task['task'],
         eval_search_in_time=True,
+        class_type=task["instance_class"],
     )
     result = full_result["task_result"]
     if result is None:
-        return {"result": (False, False, None),
+        return {"result": {
+                    "success": False,
+                    "reference_resolution_successs": False,
+                    "reference_resoluation_path": "",
+                    "retrieval_grounding_success": False,
+                    "retrieval_grounding_path": "",
+                    "latest_retrieval_success": False,
+                    "last_known_state_success": False,
+                    "position": None,
+                    "theta": None,
+                    "has_picked": False,
+                    "retrieved_instance_name": ""
+                },
                 "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", [])}
 
     if result.has_picked is None or result.instance_name is None:
-        return {"result": (False, False, None),
+        return {"result": {
+                    "success": False,
+                    "reference_resolution_successs": False,
+                    "reference_resoluation_path": "",
+                    "retrieval_grounding_success": False,
+                    "retrieval_grounding_path": "",
+                    "latest_retrieval_success": False,
+                    "last_known_state_success": False,
+                    "position": None,
+                    "theta": None,
+                    "has_picked": False,
+                    "retrieved_instance_name": ""
+                },
                 "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", [])}
     success = task["instance_name"].lower() in result.instance_name.lower()
     

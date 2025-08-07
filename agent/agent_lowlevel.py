@@ -346,7 +346,8 @@ class LowLevelAgent:
         self.task.search_proposal.visible_instances = find_response.visible_instances
             
         pick_response = self.pick_fn(
-            self.task.search_proposal.instance_description,
+            # self.task.search_proposal.instance_description,
+            self.class_type,  # TODO
             find_response.id
         )
         if not pick_response.success:
@@ -395,7 +396,9 @@ class LowLevelAgent:
         self.memory = memory
         self.setup_tools(memory)
         
-    def run(self, question: str, eval_search_in_time: bool = False):
+    def run(self, question: str, eval_search_in_time: bool = False, class_type: str = None):
+        self.class_type = class_type # TODO delete this after testing
+        
         if self.logger:
             self.logger.info("=============== START ===============")
             self.logger.info(f"User question: {question}.")
