@@ -184,8 +184,10 @@ def evaluate(args):
         return results, pbar
     
     if "gt" in args.agent_type:
+        args.prompt_type = "gt"
         data_metadata = load_virtualhome_data_metadata(args.data_dir, caption_type="gt")
     elif "caption" in args.agent_type:
+        args.prompt_type = "caption"
         data_metadata = load_virtualhome_data_metadata(args.data_dir, caption_type="nframe1")
     else:
         raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'low_level_gt' and 'high_level_gt'.")
@@ -259,6 +261,7 @@ def evaluate(args):
             if "high_level" in args.agent_type:
                 from agent.agent_highlevel import HighLevelAgent
                 agent = HighLevelAgent(
+                    promt_type=args.prompt_type,
                     navigate_fn=navigate,
                     find_object_fn=find_object,
                     pick_fn=pick_by_instance_id,
@@ -268,6 +271,7 @@ def evaluate(args):
             elif "low_level" in args.agent_type:
                 from agent.agent_lowlevel import LowLevelAgent
                 agent = LowLevelAgent(
+                    prompt_type=args.prompt_type,
                     navigate_fn=navigate,
                     find_object_fn=find_object,
                     pick_fn=pick_by_instance_id,

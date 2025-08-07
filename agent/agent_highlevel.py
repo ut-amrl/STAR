@@ -32,6 +32,7 @@ class HighLevelAgent:
         return "search_in_time_action"
     
     def __init__(self,
+                 promt_type: str = "gt",
                  verbose: bool = False,
                  navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
                  find_object_fn: Callable[[str], List[List[int]]] = None,
@@ -40,6 +41,7 @@ class HighLevelAgent:
                  logdir: str = None,
                  logger_prefix: str = ""
     ):
+        self.prompt_type = promt_type
         self.verbose = verbose
         
         self.navigate_fn = navigate_fn
@@ -56,7 +58,7 @@ class HighLevelAgent:
         self.vlm_raw = ChatOpenAI(model="o3", temperature=1, api_key=os.environ.get("OPENAI_API_KEY"))
         self.vlm = FunctionsWrapper(self.vlm_raw)
         
-        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "high_level_agent")
+        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", self.prompt_type, "high_level_agent")
         self.search_in_time_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_prompt.txt"))
         self.search_in_time_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
         self.search_in_time_reflection_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_reflection_prompt.txt"))
