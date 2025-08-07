@@ -81,17 +81,17 @@ class HighLevelAgent:
         recall_best_matches_tool = create_recall_best_matches_tool(memory, 
                                                                    self.llm, self.llm_raw, 
                                                                    self.vlm, self.vlm_raw, 
-                                                                #    logger=self.logger if self.logger else None
+                                                                   logger=self.logger if self.logger else None
                                                                    )
         recall_last_seen_tool = create_recall_last_seen_tool(memory, 
                                                              self.llm, self.llm_raw, 
                                                              self.vlm, self.vlm_raw, 
-                                                            #  logger=self.logger if self.logger else None
+                                                             logger=self.logger if self.logger else None
                                                              )
         recall_all_tools = create_recall_all_tool(memory, 
                                                   self.llm, self.llm_raw, 
                                                   self.vlm, self.vlm_raw, 
-                                                #   logger=self.logger if self.logger else None
+                                                  logger=self.logger if self.logger else None
                                                   )
         
         search_tools = recall_best_matches_tool + recall_last_seen_tool + recall_all_tools

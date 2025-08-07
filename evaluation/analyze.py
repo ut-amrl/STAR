@@ -22,10 +22,11 @@ _OBJECT_FLAGS = [
 ]
 
 _TASK_DISPLAY = {
-    "classonly":        "class-only",
-    "unambiguous":      "attribute-based",
-    "spatial_temporal": "temporal",
-    "frequency":        "freqentist",
+    "classonly":        "class-\nbased",
+    "unambiguous":      "attribute-\nbased",
+    "spatial":          "spatial",
+    "spatial_temporal": "spatial-\ntemporal",
+    "frequency":        "spatial-\nfreqentist",
     # add more renames here if needed
 }
 
@@ -142,8 +143,14 @@ def analyze_results(
                 rows.append(row)
 
     df = pd.DataFrame(rows)
-    if "last_known_state_success" in df.columns:
-        df["success"] = df["last_known_state_success"]
+    def pick_success(row):
+        # Use the first available, in order of priority
+        for k in ("last_known_state_success", "success", "latest_retrieval_success"):
+            if k in row and pd.notnull(row[k]):
+                return row[k]
+        return np.nan
+
+    df["success"] = df.apply(pick_success, axis=1)
 
     rates: Dict[str, Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     for agent in agent_types:
@@ -167,6 +174,9 @@ def analyze_results(
     return rates, df
 
 def plot_overall_success(args, df):
+    import matplotlib as mpl
+    mpl.rcParams["hatch.linewidth"] = 0.5
+
     agg = (
         df.groupby(["task_type", "agent"])["success"]
           .mean()
@@ -202,6 +212,16 @@ def plot_overall_success(args, df):
                     linewidth=0.7,
                 )
 
+        # AGENT-SPECIFIC HATCHES
+        hatches = ["//" if ag == args.agent_types[0] else "" for ag in args.agent_types]
+        # Loop order matches plotting: for each agent, all tasks
+        for i_agent in range(n_agents):
+            for i_task in range(n_tasks):
+                patch_idx = i_agent * n_tasks + i_task
+                patch = ax.patches[patch_idx]
+                patch.set_hatch(hatches[i_agent])
+                patch.set_linewidth(0.5)  # thinner hatch, optional
+
         # x-tick labels
         ax.set_xticks(x)
         ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=45, ha="right")
@@ -226,6 +246,7 @@ def plot_overall_success(args, df):
                 edgecolor="black",
                 label=ag,
                 linewidth=0.7,
+                hatch=hatches[i],   # <<--- add hatch to legend patch as well!
             )
             for i, ag in enumerate(args.agent_types)
         ]
@@ -266,6 +287,7 @@ def plot_object_class_success(args, df):
     if plot_df.empty:
         print("[WARN] Nothing to plot – empty after pivot")
         return
+    print(plot_df)
 
     # ── 2 build display names & colours in one pass ───────────────────────
     flat_cols, colours = [], []
@@ -298,7 +320,7 @@ def plot_object_class_success(args, df):
         figsize=(11,6),
         color=colours,
         edgecolor="black",
-        linewidth=0.7,
+        linewidth=0.5,
         width=0.85,
     )
     
@@ -311,7 +333,7 @@ def plot_object_class_success(args, df):
         end   = start + n_rows
         for patch in ax.patches[start:end]:
             patch.set_hatch(hatch)
-
+            # patch.set_linewidth(0.5)
 
     ax.set_ylabel("Execution Success Rate", fontsize=14)
     ax.set_xlabel("")
@@ -387,6 +409,7 @@ def main():
     results = parse_results(args, tasks)
     
     rates, df = analyze_results(args, results, args.agent_types)
+    print(df)
     plot_overall_success(args, df)
     plot_object_class_success(args, df)
     cascade_failure_analysis(df)
