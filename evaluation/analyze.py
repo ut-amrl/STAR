@@ -22,6 +22,7 @@ _OBJECT_FLAGS = [
 ]
 
 _TASK_DISPLAY = {
+    "classonly":        "class-only",
     "unambiguous":      "attribute-based",
     "spatial_temporal": "temporal",
     "frequency":        "freqentist",
@@ -29,7 +30,8 @@ _TASK_DISPLAY = {
 }
 
 _COLOR_GROUP = {
-    "unambiguous":  plt.cm.Greens,
+    "classonly":        plt.cm.Oranges,
+    "unambiguous":      plt.cm.Greens,
     "spatial_temporal": plt.cm.Blues,
     "spatial":          plt.cm.Purples,
     "frequency":        plt.cm.Greys,
@@ -37,7 +39,9 @@ _COLOR_GROUP = {
 
 # desired left-to-right order in every grouped plot  (raw names!)
 _TASK_ORDER = [
+    "classonly",       # → “class-only”
     "unambiguous",       # → “attribute-based”
+    "spatial",         # → “spatial”
     "spatial_temporal",  # → “temporal”
     "frequency",         # → “freqencist”
 ]
@@ -283,7 +287,7 @@ def plot_object_class_success(args, df):
         color=colours,
         edgecolor="black",
         linewidth=0.7,
-        width=0.7,
+        width=0.85,
     )
     ax.set_ylabel("Execution Success Rate", fontsize=14)
     ax.set_xlabel("")
