@@ -67,7 +67,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
-    parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim.txt")
+    parser.add_argument("--task_config", type=str, default="evaluation/config/task_sim_all.txt")
     parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "high_level_gt"])
     return parser.parse_args()
 
@@ -142,6 +142,8 @@ def analyze_results(
                 rows.append(row)
 
     df = pd.DataFrame(rows)
+    if "last_known_state_success" in df.columns:
+        df["success"] = df["last_known_state_success"]
 
     rates: Dict[str, Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     for agent in agent_types:
@@ -209,6 +211,13 @@ def plot_overall_success(args, df):
         ax.set_ylim(0, 1)
         ax.set_axisbelow(True)
         ax.grid(axis="y", alpha=0.4)
+        
+        xticks = ax.get_xticks()
+        group_width = n_agents * width
+        for i in range(0, len(xticks), 2):  # Shade every other group
+            left = xticks[i] - group_width/2
+            right = xticks[i] + group_width/2
+            ax.axvspan(left, right, color="#b7b7b7", alpha=0.8, zorder=0)
 
         # legend – one patch per agent (colour sampled from first task)
         legend_handles = [
@@ -273,28 +282,59 @@ def plot_object_class_success(args, df):
             flat_cols.append((task, ag))
             colours.append(cmap(shade))
 
-    # re-index columns so the dataframe matches the colour list
+    hatches = [
+        "//" if agent == args.agent_types[0] else ""   # first agent = low_level_gt
+        for (task, agent) in flat_cols
+    ]
+
+    # re-index & flatten columns as before
     plot_df = plot_df.reindex(columns=pd.MultiIndex.from_tuples(flat_cols))
+    plot_df.columns = [f"{_pretty_task(t)}\n{ag}" for t,ag in flat_cols]
 
-    # flatten column names for Matplotlib (“temporal\nlow_level”, …)
-    plot_df.columns = [f"{_pretty_task(t)}\n{ag}" for t, ag in plot_df.columns]
-
-    # ── 3 draw ─────────────────────────────────────────────────────────────
+    # draw the bars
     ax = plot_df.plot(
         kind="bar",
         rot=45,
-        figsize=(11, 6),
+        figsize=(11,6),
         color=colours,
         edgecolor="black",
         linewidth=0.7,
         width=0.85,
     )
+    
+    # how many object-classes (i.e. rows in plot_df)?
+    n_rows = plot_df.shape[0]
+
+    # now, for each column j, the next n_rows patches are that column's bars:
+    for col_idx, hatch in enumerate(hatches):
+        start = col_idx * n_rows
+        end   = start + n_rows
+        for patch in ax.patches[start:end]:
+            patch.set_hatch(hatch)
+
+
     ax.set_ylabel("Execution Success Rate", fontsize=14)
     ax.set_xlabel("")
     ax.set_ylim(0, 1.01)
     ax.set_axisbelow(True)        # make grid render beneath
     ax.grid(axis="y", alpha=0.4)  # horizontal grid only
     # ax.set_title("Execution Success Rate")
+    
+    # Get the x locations of bars (these are the object classes)
+    xticks = ax.get_xticks()
+    n_groups = len(xticks)
+    bar_width = ax.patches[0].get_width()  # width of one bar
+
+    # Group width: total width of all task/agent bars in a group
+    n_bars_per_group = len(plot_df.columns)
+    group_width = n_bars_per_group * bar_width
+
+    # Shade every other group background for readability
+    for i in range(0, n_groups, 2):  # even-indexed groups
+        left = xticks[i] - group_width/2
+        right = xticks[i] + group_width/2
+        ax.axvspan(left, right, color="#d6d6d6", alpha=0.8, zorder=0)
+    
     ax.legend(title="Task Type / Agent", bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.tight_layout()
 
