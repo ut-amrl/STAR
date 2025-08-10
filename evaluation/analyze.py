@@ -21,11 +21,17 @@ _OBJECT_FLAGS = [
     "instance_name",
 ]
 
+_AGENT_DISPLAY = {
+    "low_level_gt": "low-level",
+    "high_level_gt": "high-level",
+    # Add more mappings as needed
+}
+
 _TASK_DISPLAY = {
     "classonly":        "class-\nbased",
     "unambiguous":      "attribute-\nbased",
-    "spatial":          "spatial",
     "spatial_temporal": "spatial-\ntemporal",
+    "spatial":          "spatial",
     "frequency":        "spatial-\nfreqentist",
     # add more renames here if needed
 }
@@ -56,6 +62,13 @@ def _task_sort_key(t):
 def _pretty_task(raw: str) -> str:
     """Human-friendly label for legends / tick-labels."""
     for orig, nice in _TASK_DISPLAY.items():
+        if raw.startswith(orig):
+            return f"{nice}{raw[len(orig):]}"     # keep any suffix
+    return raw
+
+def _pretty_agent(raw: str) -> str:
+    """Human-friendly label for legends / tick-labels."""
+    for orig, nice in _AGENT_DISPLAY.items():
         if raw.startswith(orig):
             return f"{nice}{raw[len(orig):]}"     # keep any suffix
     return raw
@@ -287,7 +300,6 @@ def plot_object_class_success(args, df):
     if plot_df.empty:
         print("[WARN] Nothing to plot – empty after pivot")
         return
-    print(plot_df)
 
     # ── 2 build display names & colours in one pass ───────────────────────
     flat_cols, colours = [], []
@@ -311,7 +323,7 @@ def plot_object_class_success(args, df):
 
     # re-index & flatten columns as before
     plot_df = plot_df.reindex(columns=pd.MultiIndex.from_tuples(flat_cols))
-    plot_df.columns = [f"{_pretty_task(t)}\n{ag}" for t,ag in flat_cols]
+    plot_df.columns = [f"{_pretty_task(t)}\n{_pretty_agent(ag)}" for t,ag in flat_cols]
 
     # draw the bars
     ax = plot_df.plot(
