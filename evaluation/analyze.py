@@ -156,14 +156,14 @@ def analyze_results(
                 rows.append(row)
 
     df = pd.DataFrame(rows)
-    def pick_success(row):
-        # Use the first available, in order of priority
-        for k in ("last_known_state_success", "success", "latest_retrieval_success"):
-            if k in row and pd.notnull(row[k]):
-                return row[k]
-        return np.nan
+    # def pick_success(row):
+    #     # Use the first available, in order of priority
+    #     for k in ("last_known_state_success", "success", "latest_retrieval_success"):
+    #         if k in row and pd.notnull(row[k]):
+    #             return row[k]
+    #     return np.nan
 
-    df["success"] = df.apply(pick_success, axis=1)
+    # df["success"] = df.apply(pick_success, axis=1)
 
     rates: Dict[str, Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     for agent in agent_types:
