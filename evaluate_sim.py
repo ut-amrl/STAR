@@ -83,7 +83,7 @@ def extract_dataname_from_vidpath(vidpath: str) -> str:
 def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
     full_result = agent.run(
         question=task['task'],
-        eval_search_in_time=True,
+        eval=True,
         class_type=task["instance_class"],
     )
     result = full_result["task_result"]

@@ -360,7 +360,7 @@ class LowLevelAgent:
             self.logger.info(f"[SEARCH IN SPACE] Pick operation successful: {self.task.search_proposal.instance_name} (has_picked={self.task.search_proposal.has_picked}).")
         return
             
-    def build_graph(self, eval_search_in_time: bool):
+    def build_graph(self, eval: bool):
         """
         Build the graph for the agent.
         """
@@ -380,7 +380,7 @@ class LowLevelAgent:
                 "next": "prepare_search_in_space",
             }
         )
-        if eval_search_in_time:
+        if eval:
             workflow.add_node("evaluate_search_in_time", lambda state: try_except_continue(state, self.evaluate_search_in_time))
             workflow.add_edge("prepare_search_in_space", "evaluate_search_in_time")
             workflow.add_edge("evaluate_search_in_time", "search_in_space")
@@ -396,7 +396,7 @@ class LowLevelAgent:
         self.memory = memory
         self.setup_tools(memory)
         
-    def run(self, question: str, eval_search_in_time: bool = False, class_type: str = None):
+    def run(self, question: str, eval: bool = False, class_type: str = None):
         self.class_type = class_type # TODO delete this after testing
         
         if self.logger:
@@ -407,7 +407,7 @@ class LowLevelAgent:
         
         self.search_in_time_cnt = 0
         
-        self.build_graph(eval_search_in_time=eval_search_in_time)
+        self.build_graph(eval=eval)
         
         inputs = { "messages": [
                 (("user", self.task.task_desc)),
