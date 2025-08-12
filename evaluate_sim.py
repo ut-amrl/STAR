@@ -83,8 +83,7 @@ def extract_dataname_from_vidpath(vidpath: str) -> str:
 def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
     full_result = agent.run(
         question=task['task'],
-        eval=True,
-        class_type=task["instance_class"],
+        # class_type=task["instance_class"],
     )
     result = full_result["task_result"]
     if result is None:
@@ -193,7 +192,7 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
             "has_picked": result.has_picked,
             "retrieved_instance_name": result.instance_name
         },
-        "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", []),
+        "reasoning_toolcalls": full_result.get("toolcalls", []),
     }
     
 def evaluate(args):
@@ -283,7 +282,14 @@ def evaluate(args):
                     before_one_task_finish(results, result, pbar)
                     continue
                 
-            if "high_level" in args.agent_type:
+            if "low_level" in args.agent_type and "replan" in args.agent_type:
+                from agent.agent_lowlevel_replan import ReplanLowLevelAgent
+                agent = ReplanLowLevelAgent(
+                    prompt_type=args.prompt_type,
+                    logdir=result_dir,
+                    logger_prefix=args.agent_type
+                )
+            elif "high_level" in args.agent_type:
                 from agent.agent_highlevel import HighLevelAgent
                 agent = HighLevelAgent(
                     promt_type=args.prompt_type,
@@ -369,7 +375,7 @@ def evaluate(args):
                     json.dump(reasoning_toolcalls, f, indent=2)
                 
                 reasoning_toolcalls_path = os.path.join(result_dir, f"reasoning_toolcalls_{args.agent_type}_{task_id}.txt")
-                ARG_ORDER = ["x", "time", "position", "record_id", "record_ids", "start_time", "end_time", "k"]
+                ARG_ORDER = ["x", "time", "position", "record_id", "record_ids", "start_time", "end_time", "k", "pos", "theta", "query_text", "instance_id"]
                 with open(reasoning_toolcalls_path, "w") as f:
                     for toolcall in reasoning_toolcalls:
                         toolname = toolcall.get("name", "unknown_tool")

@@ -14,61 +14,52 @@ from amrl_msgs.srv import (
     PickObjectSrvResponse,
 )
 
-class LowLevelAgent:
+class ReplanLowLevelAgent:
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
-        search_in_time_history: Annotated[Sequence[BaseMessage], add_messages]
-        search_in_time_toolcalls: Annotated[Sequence, add_messages]
+        history: Annotated[Sequence[BaseMessage], add_messages]
+        toolcalls: Annotated[Sequence[BaseMessage], add_messages]
+        next_state: str
         
     @staticmethod
-    def from_search_in_time_to(state: AgentState):
-        messages = state["messages"]
-        last_message = messages[-1] if messages else None
-        
-        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            for call in last_message.tool_calls:
-                if call.get("name") == "terminate":
-                    return "next"
-        return "search_in_time_action"
+    def from_agent_to(state: AgentState):
+        next_state = state.get("next_state", "agent")
+        return next_state
     
-    def __init__(self,
-                 prompt_type: str = "gt",  
+    def __init__(self, 
+                 prompt_type: str,
                  verbose: bool = False,
-                 navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
-                 find_object_fn: Callable[[str], List[List[int]]] = None,
-                 observe_fn: Callable[[], GetImageSrvResponse] = None,
-                 pick_fn: Callable[[str], PickObjectSrvResponse] = None,
                  logdir: str = None,
-                 logger_prefix: str = ""
-    ):
+                 logger_prefix: str = "",):
         self.prompt_type = prompt_type
         self.verbose = verbose
-        
-        self.navigate_fn = navigate_fn
-        self.find_object_fn = find_object_fn
-        self.observe_fn = observe_fn
-        self.pick_fn = pick_fn
         
         self.logger = get_logger(logdir=logdir, prefix=logger_prefix, flatten=True) if logdir else get_logger(prefix=logger_prefix, flatten=True)
         
         self.task: Task = None
         
-        self.vlm_raw = ChatOpenAI(model="o3", temperature=1, api_key=os.environ.get("OPENAI_API_KEY"))
+        self.vlm_raw = ChatOpenAI(model="gpt-5", temperature=1, api_key=os.environ.get("OPENAI_API_KEY"))
         self.vlm = FunctionsWrapper(self.vlm_raw)
         
-        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", self.prompt_type, "low_level_agent")
-        self.search_in_time_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_prompt.txt"))
-        self.search_in_time_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
-        self.search_in_time_reflection_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_reflection_prompt.txt"))
+        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", f"replan_{self.prompt_type}", "low_level_agent")
+        self.agent_prompt = file_to_string(os.path.join(prompt_dir, "agent_prompt.txt"))
+        self.agent_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "agent_gen_only_prompt.txt"))
+        self.agent_reflect_prompt = file_to_string(os.path.join(prompt_dir, "agent_reflect_prompt.txt"))
         
         eval_prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "evaluation")
         self.eval_ref_and_ret_prompt = file_to_string(os.path.join(eval_prompt_dir, "eval_ref_and_ret_prompt.txt"))
         
-        self.temporal_tools, self.spatial_tools = None, None
-        self.temporal_tool_definitions = None
-        self.spatial_tool_definitions = None
-        
         self.search_in_time_cnt = 0
+        self.json_store = TempJsonStore()
+        
+        self.search_tools = None
+        self.reflection_tools = None
+        self.terminate_tools = None
+        self.eval_tools = None
+        self.search_tool_definitions = None
+        self.reflection_tool_definitions = None
+        self.terminate_tool_definitions = None
+        self.eval_tool_definitions = None
         
     def set_task(self, task_desc: str):
         self.task = Task(task_desc)
@@ -76,23 +67,24 @@ class LowLevelAgent:
             print(f"Task set: {task_desc}")
             
     def setup_tools(self, memory: MilvusMemory):
-        search_tools = create_memory_search_tools(memory)
+        memory_search_tools = create_memory_search_tools(memory)
         inspect_tools = create_memory_inspection_tool(memory)
-        response_tools = create_memory_terminate_tool()
+        terminate_tools = create_memory_terminate_tool()
         reflection_tools = create_pause_and_think_tool()
+        robot_tools = create_physical_skills(self.json_store)
         
-        self.temporal_tools = search_tools + inspect_tools + response_tools + reflection_tools
-        self.temporal_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_tools]
+        self.search_tools = memory_search_tools + inspect_tools + robot_tools
+        self.search_tool_definitions = [convert_to_openai_function(t) for t in self.search_tools]
         
         self.reflection_tools = reflection_tools
         self.reflection_tool_definitions = [convert_to_openai_function(t) for t in self.reflection_tools]
-        self.temporal_search_terminate_tool = response_tools
-        self.temporal_search_terminate_tool_definitions = [convert_to_openai_function(t) for t in self.temporal_search_terminate_tool]
+        self.terminate_tools = terminate_tools
+        self.terminate_tool_definitions = [convert_to_openai_function(t) for t in self.terminate_tools]
         
-        eval_search_in_time_tools = create_search_in_time_evaluation_tool()
-        self.eval_search_in_time_tools = eval_search_in_time_tools
-        self.eval_search_in_time_tool_definitions = [convert_to_openai_function(t) for t in self.eval_search_in_time_tools]
-    
+        eval_tools = create_search_in_time_evaluation_tool()
+        self.eval_tools = eval_tools
+        self.eval_tool_definitions = [convert_to_openai_function(t) for t in self.eval_tools]
+        
     def flush_tool_threads(self):
         """
         Wait until all background tool calls finish, then shut down the pool.
@@ -108,8 +100,8 @@ class LowLevelAgent:
                 handler.close()
                 logger.removeHandler(handler)
         _close_logger(self.logger)
-    
-    def search_in_time(self, state: AgentState):
+        
+    def agent(self, state: AgentState):
         messages = state["messages"]
         
         additional_search_history = []
@@ -128,7 +120,7 @@ class LowLevelAgent:
                     break
                 idx -= 1
 
-            # ===  Step 2: Append all following ToolMessages into search_in_time_history
+            # ===  Step 2: Append all following ToolMessages into `history`
             if last_ai_idx is not None:
                 image_messages = []
                 for msg in messages[last_ai_idx+1:]:
@@ -137,20 +129,28 @@ class LowLevelAgent:
                         if isinstance(msg.content, str):
                             msg.content = parse_and_pretty_print_tool_message(msg.content)
                         additional_search_history.append(msg)
-                        # state["search_in_time_history"].append(msg)
                         
+                        import pdb; pdb.set_trace()
                         if isinstance(original_msg_content, str) and is_image_inspection_result(original_msg_content):
                             inspection = eval(original_msg_content)
                             for id, path in inspection.items():
                                 content = get_image_message_for_record(id, path, msg.tool_call_id)
                                 message = HumanMessage(content=content)
                                 image_messages.append(message)
+                        elif isinstance(original_msg_content, str) and has_file_id(original_msg_content):
+                            import pdb; pdb.set_trace()
+                            file_id = get_file_id(original_msg_content)
+                            content = get_file_id_messages(self.json_store, file_id)
+                            message = HumanMessage(content=content)
+                            if message:
+                                image_messages.append(message)
+                                
                         if self.logger:
-                            self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
+                            self.logger.info(f"[SEARCH] Tool Response: {msg.content}")
                 
                 additional_search_history += image_messages
-        
-        chat_history = copy.deepcopy(state.get("search_in_time_history", []))
+                
+        chat_history = copy.deepcopy(state.get("history", []))
         chat_history += additional_search_history
         
         max_search_in_time_cnt = 20
@@ -161,22 +161,22 @@ class LowLevelAgent:
             if self.search_in_time_cnt % n_reflection_intervals == 0:
                 current_tool_defs = self.reflection_tool_definitions
             else:
-                current_tool_defs = self.temporal_tool_definitions
+                current_tool_defs = self.search_tool_definitions
         else:
-            current_tool_defs = self.temporal_search_terminate_tool_definitions
-
+            current_tool_defs = self.terminate_tool_definitions
+            
         model = model.bind_tools(current_tool_defs)
         tool_names = [tool['name'] for tool in current_tool_defs]
         tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
-
+        
         # Select prompt template
         if self.search_in_time_cnt < max_search_in_time_cnt:
             if self.search_in_time_cnt % n_reflection_intervals == 0:
-                prompt = self.search_in_time_reflection_prompt
+                prompt = self.agent_reflect_prompt
             else:
-                prompt = self.search_in_time_prompt
+                prompt = self.agent_prompt
         else:
-            prompt = self.search_in_time_gen_only_prompt
+            prompt = self.agent_gen_only_prompt
             
         chat_template = [
             ("human", f"User has asked you to fulfill this task: {self.task.task_desc}. You are a memory-capable robot assistant. Your goal is to **help the user retrieve a physical object in the real world** by reasoning over **past observations stored in memory**. Right now, you need to decide what to do next based on the chat history of the tools you called previously as well as tool responses. "),
@@ -196,7 +196,6 @@ class LowLevelAgent:
             chat_template += [
                 ("system", f"You must strictly follow the JSON output format. Since you have already reached the maximum number of iterations, you should finalize your decision now by calling `terminate` tool with right JSON format."),
             ]
-
         chat_prompt = ChatPromptTemplate.from_messages(chat_template)
         
         chained_model = chat_prompt | model
@@ -217,14 +216,30 @@ class LowLevelAgent:
                 for call in response.tool_calls:
                     args_str = ", ".join(f"{k}={repr(v)}" for k, v in call.get("args", {}).items())
                     log_str = f"{call.get('name')}({args_str})"
-                    self.logger.info(f"[SEARCH IN TIME] Tool call: {log_str}")
+                    self.logger.info(f"[SEARCH] Tool call: {log_str}")
             else:
-                self.logger.info(f"[SEARCH IN TIME] {response}")
+                self.logger.info(f"[SEARCH] {response}")
 
         self.search_in_time_cnt += 1
-        return {"messages": [response], 
-                "search_in_time_history": additional_search_history + [response],
-                "search_in_time_toolcalls": last_tool_calls}
+        
+        next_state = "agent"
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            tool_call_names = [call.get("name") for call in response.tool_calls]
+            if "terminate" in tool_call_names:
+                next_state = "end"
+            elif "pause_and_think" in tool_call_names:
+                next_state = "reflection"
+            elif "pick" in tool_call_names:
+                next_state = "end"
+        
+        import pdb; pdb.set_trace()  # NOTE: Debugging point
+        
+        return {
+            "messages": [response], 
+            "history": additional_search_history + [response],
+            "toolcalls": last_tool_calls,
+            "next_state": next_state,
+        }
     
     def prepare_search_in_space(self, state: AgentState):
         messages = state["messages"]
@@ -259,8 +274,8 @@ class LowLevelAgent:
         # TODO: Should never go here; add fallback logic
         import pdb; pdb.set_trace()
         
-    def evaluate_search_in_time(self, state: AgentState):
-        chat_history = copy.deepcopy(state.get("search_in_time_history", []))[:-1]
+    def evaluate(self, state: AgentState):
+        chat_history = copy.deepcopy(state.get("history", []))[:-1]
         
         model = self.vlm
         model = model.bind_tools(self.eval_search_in_time_tool_definitions)
@@ -302,8 +317,8 @@ class LowLevelAgent:
                             retrieval_grounding_record = records[0]
                     
                     if self.logger:
-                        self.logger.info(f"[EVALUATE SEARCH IN TIME] Reference resolution record: {reference_resolution_record}")
-                        self.logger.info(f"[EVALUATE SEARCH IN TIME] Retrieval grounding record: {retrieval_grounding_record}")
+                        self.logger.info(f"[EVALUATE SEARCH] Reference resolution record: {reference_resolution_record}")
+                        self.logger.info(f"[EVALUATE SEARCH] Retrieval grounding record: {retrieval_grounding_record}")
                         
                     self.task.search_proposal.reference_resolution_records = reference_resolution_record
                     self.task.search_proposal.retrieval_grounding_records = retrieval_grounding_record
@@ -357,55 +372,53 @@ class LowLevelAgent:
         if self.logger:
             self.logger.info(f"[SEARCH IN SPACE] Pick operation successful: {self.task.search_proposal.instance_name} (has_picked={self.task.search_proposal.has_picked}).")
         return
-            
-    def build_graph(self, eval: bool):
-        """
-        Build the graph for the agent.
-        """
-        workflow = StateGraph(LowLevelAgent.AgentState)
+    
+    def build_graph(self):
+        workfllow = StateGraph(ReplanLowLevelAgent.AgentState)
         
-        workflow.add_node("search_in_time", lambda state: try_except_continue(state, self.search_in_time))
-        workflow.add_node("search_in_time_action", ToolNode(self.temporal_tools))
-        workflow.add_node("prepare_search_in_space", lambda state: try_except_continue(state, self.prepare_search_in_space))
-        workflow.add_node("search_in_space", lambda state: try_except_continue(state, self.search_in_space))
+        workfllow.add_node("agent", lambda state: try_except_continue(state, self.agent))
+        workfllow.add_node("search_action", ToolNode(self.search_tools))
+        workfllow.add_node("reflection_action", ToolNode(self.reflection_tools))
+        workfllow.add_node("terminate_action", ToolNode(self.terminate_tools))
+        workfllow.add_node("prepare_search_in_space", lambda state: try_except_continue(state, self.prepare_search_in_space))
+        workfllow.add_node("search_in_space", lambda state: try_except_continue(state, self.search_in_space))
+        workfllow.add_node("evaluate", lambda state: try_except_continue(state, self.evaluate))
         
-        workflow.add_edge("search_in_time_action", "search_in_time")
-        workflow.add_conditional_edges(
-            "search_in_time",
-            LowLevelAgent.from_search_in_time_to,
-            {
-                "search_in_time_action": "search_in_time_action",
-                "next": "prepare_search_in_space",
+        workfllow.add_conditional_edges(
+            "agent",
+            ReplanLowLevelAgent.from_agent_to,
+            {   
+                "agent": "search_action",
+                "reflection": "reflection_action",
+                "terminate": "terminate_action",
+                "end": "evaluate",
             }
         )
-        if eval:
-            workflow.add_node("evaluate_search_in_time", lambda state: try_except_continue(state, self.evaluate_search_in_time))
-            workflow.add_edge("prepare_search_in_space", "evaluate_search_in_time")
-            workflow.add_edge("evaluate_search_in_time", "search_in_space")
-        else:
-            workflow.add_edge("prepare_search_in_space", "search_in_space")
-        # TODO
-        workflow.add_edge("search_in_space", END)
+        workfllow.add_edge("search_action", "agent")
+        workfllow.add_edge("reflection_action", "agent")
+        workfllow.add_edge("terminate_action", "prepare_search_in_space")
+        workfllow.add_edge("prepare_search_in_space", "search_in_space")
+        workfllow.add_edge("search_in_space", "evaluate")
+        workfllow.add_edge("evaluate", END)
         
-        workflow.set_entry_point("search_in_time")
-        self.graph = workflow.compile()
+        workfllow.set_entry_point("agent")
+        self.graph = workfllow.compile()
         
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory
         self.setup_tools(memory)
         
-    def run(self, question: str, eval: bool = False, class_type: str = None):
-        self.class_type = class_type # TODO delete this after testing
+    def run(self, question: str):
         
         if self.logger:
             self.logger.info("=============== START ===============")
             self.logger.info(f"User question: {question}.")
-        
+            
         self.set_task(question)
         
         self.search_in_time_cnt = 0
         
-        self.build_graph(eval=eval)
+        self.build_graph()
         
         inputs = { "messages": [
                 (("user", self.task.task_desc)),
@@ -417,12 +430,11 @@ class LowLevelAgent:
         
         if self.logger:
             self.logger.info("=============== END =============== \n\n\n")
-        
+            
         toolcalls = []
-        for msg in state.get("search_in_time_toolcalls", []):
+        for msg in state.get("toolcalls", []):
             toolcalls += msg.tool_calls
         return {
             "task_result": self.task.search_proposal,
-            "search_in_time_toolcalls": toolcalls,
+            "toolcalls": toolcalls,
         }
-        

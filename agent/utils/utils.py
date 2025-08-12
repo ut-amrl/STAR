@@ -335,7 +335,49 @@ def is_recall_all_result(content: str) -> bool:
 
     except Exception:
         return False
+    
+def has_file_id(content: str) -> bool:
+    try:
+        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+        parsed = ast.literal_eval(normalized)
 
+        if not isinstance(parsed, dict):
+            return False
+
+        return "file_id" in parsed
+
+    except Exception:
+        return False
+    
+def get_file_id(content: str) -> Optional[str]:
+    """
+    Extracts the file_id from the content if it exists.
+    Returns None if no file_id is found.
+    """
+    try:
+        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+        parsed = ast.literal_eval(normalized)
+
+        if not isinstance(parsed, dict):
+            return None
+
+        return parsed.get("file_id")
+
+    except Exception:
+        return ""
+    
+def get_file_id_messages(store: TempJsonStore, file_id: str):
+    try:
+        data = store.load(file_id)
+        messages = [
+            {"type": "text", "text": f"This is the observation stored in file_id {file_id}:"},
+        ]
+        messages += data.get("messages", [])
+        return messages
+    except Exception as e:
+        import pdb; pdb.set_trace()
+        return None
+        
 def parse_and_pretty_print_tool_message(content: str) -> str:
     
     def is_memory_record_list(obj) -> bool:
