@@ -7,13 +7,16 @@ from io import BytesIO
 from typing import Sequence
 import json
 import cv2
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
 import numpy as np
 import math
 from typing import Callable
 from datetime import datetime, timezone
+import time
+import uuid, tempfile
+from pathlib import Path
 
 # LangeChain imports
 from langchain_core.messages import ToolMessage
@@ -24,6 +27,78 @@ from sensor_msgs.msg import Image
 
 # Custom imports
 from memory.memory import MilvusMemory, MemoryItem
+
+class TempJsonStore:
+    """
+    Save short-lived JSON blobs to a temp dir with manual GC.
+    - Atomic writes (write to .tmp then os.replace)
+    - 0600 perms
+    - GC by age (mtime)
+    """
+    def __init__(self, app_subdir: str = "agent_tmp_json"):
+        # default under system /tmp, e.g. /tmp/agent_tmp_json
+        self.root = Path(tempfile.gettempdir()) / app_subdir
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _path_for(self, file_id: str) -> Path:
+        return self.root / f"{file_id}.json"
+
+    def save(self, payload: Any, file_id: Optional[str] = None) -> dict:
+        """
+        Save JSON and return metadata with id & path.
+        """
+        file_id = file_id or uuid.uuid4().hex
+        path = self._path_for(file_id)
+        tmp = path.with_suffix(".json.tmp")
+
+        # write atomically
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        os.chmod(path, 0o600)
+
+        # return {"id": file_id, "path": str(path), "uri": f"tmpjson://{file_id}"}
+        return file_id
+
+    def load(self, file_id_or_path: str) -> Any:
+        """
+        Load JSON (by id or full path).
+        """
+        path = Path(file_id_or_path)
+        if path.suffix != ".json" or not path.exists():
+            path = self._path_for(str(file_id_or_path).replace("tmpjson://", ""))
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def delete(self, file_id_or_path: str) -> bool:
+        """
+        Delete file if present. Returns True if deleted.
+        """
+        path = Path(file_id_or_path)
+        if path.suffix != ".json" or not path.exists():
+            path = self._path_for(str(file_id_or_path).replace("tmpjson://", ""))
+        try:
+            path.unlink()
+            return True
+        except FileNotFoundError:
+            return False
+
+    def gc(self, max_age_seconds: int = 3600) -> int:
+        """
+        Remove files older than `max_age_seconds`. Returns count removed.
+        """
+        now = time.time()
+        removed = 0
+        for p in self.root.glob("*.json"):
+            try:
+                if now - p.stat().st_mtime > max_age_seconds:
+                    p.unlink()
+                    removed += 1
+            except FileNotFoundError:
+                pass
+        return removed
 
 class SearchProposal:
     def __init__(self, 
@@ -447,6 +522,11 @@ def ros_image_to_pil(ros_image):
 
     return PILImage.fromarray(image)
 
+def ros_image_to_vlm_message(ros_image):
+    pil_img = ros_image_to_pil(ros_image)
+    utf8_img = pil_to_utf8(pil_img)
+    return [get_vlm_img_message(utf8_img)]
+
 def pil_to_utf8(pil_img: PILImage) -> str:
     buffer = BytesIO()
     pil_img.save(buffer, format="PNG")  # or "JPEG" etc.
@@ -578,13 +658,8 @@ def debug_vid(vid, debugdir: str):
             imgpath = os.path.join(debugdir, f"{i:06d}.png")
             import cv2; cv2.imwrite(imgpath, img)
 
-def get_vlm_img_message(img, type: str = "qwen"):
-    if "qwen" in type:
-        return {"type": "image", "image": f"data:image/png;base64,{img}"}
-    # elif "gpt" in type:
-        # return {"type": "input_image", "image_url": f"data:image/png;base64,{img}"}
-    else:
-        return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}}
+def get_vlm_img_message(img, type: str = ""):
+    return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}}
         
 def replace_messages(current: Sequence, new: Sequence):
     """Custom update strategy to replace the previous value with the new one."""
@@ -637,8 +712,6 @@ def parse_db_records_for_llm(messages):
 
 
 ### LLM/VLM/ML tools
-from qwen_vl_utils import process_vision_info
-
 def get_depth(xyxy, depth, padding:int=8):
     xyxy = [int(x) for x in xyxy]
     # If object is too small, return invalid depth
@@ -776,39 +849,6 @@ def request_get_image_at_pose_service(goal_x:float, goal_y:float, goal_theta:flo
         else:
             logger.info(f"Failed to navgiate to ({goal_x:.2f}, {goal_y:.2f}, {goal_theta:.2f})")
     return response
-
-def ask_qwen(vlm_model, vlm_processor, prompt: str, image, question: str):
-    messages = [
-        {"role": "system", "content": prompt},
-        {
-            "role": "user",
-            "content": [
-                image,
-                {"type": "text", "text": question},
-            ],
-        },
-    ]
-
-    # Process inputs
-    text = vlm_processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    image_inputs, video_inputs = process_vision_info(messages)
-    inputs = vlm_processor(
-        text=[text],
-        images=image_inputs,
-        videos=video_inputs,
-        padding=True,
-        return_tensors="pt",
-    )
-    inputs = inputs.to(vlm_model.device)
-    
-    generated_ids = vlm_model.generate(**inputs, max_new_tokens=128)
-    generated_ids_trimmed = [
-        out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-    ]
-    output_text = vlm_processor.batch_decode(
-        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-    )
-    return output_text[0]
 
 def ask_chatgpt(model, prompt: str, images, question: str):
     from langchain.prompts import ChatPromptTemplate

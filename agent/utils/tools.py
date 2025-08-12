@@ -21,6 +21,143 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from memory.memory import MilvusMemory
 from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
+from agent.utils.skills import *
+
+def create_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
+    class NavigateInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
+        pos: List[float] = Field(
+            description="Target position in 3D space as [x, y, z]. If z is not provided, it should be defaulted to 0."
+        )
+        theta: float = Field(
+            description="Orientation angle in radians."
+        )
+        
+    def _navigate(
+        store: TempJsonStore,
+        tool_rationale: str,
+        pos: List[float],
+        theta: float
+    ) -> dict:
+        response = navigate(pos, theta)
+        images = []
+        for img_msg in response.pano_images:
+            images += ros_image_to_vlm_message(img_msg)
+        payload = {
+            "type": "navigate",
+            "success": response.success,
+            "images": images,
+        }
+        file_id = store.save(payload)
+        return {
+            "success": response.success,
+            "file_id": file_id,
+        }
+        
+    navigate_tool = StructuredTool.from_function(
+        func=lambda tool_rationale, pos, theta: _navigate(store, tool_rationale, pos, theta),
+        name="robot_navigate",
+        description=(
+            "Navigate the robot to a specific position and orientation in the environment. "
+            "This tool allows the agent to move to a desired location and capture images of the surroundings.\n\n"
+        ),
+        args_schema=NavigateInput,  
+    )
+    
+    class DetectInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
+        query_text: str = Field(
+            description="The class label of the object to detect. It must be one of 'book', 'magazine', 'toy', 'folder', 'cabinet'"
+        )
+        
+    def _detect(store: TempJsonStore, tool_rationale: str, query_text: str) -> dict:
+        response = detect_virtual_home_object(query_text)
+        if not response.success:
+            return {"success": False, "message": "Detection failed."}
+        
+        images = []
+        for img_msg in response.images:
+            images += ros_image_to_vlm_message(img_msg)
+        
+        payload = {
+            "type": "detect",
+            "success": response.success,
+            "images": images,
+            "instance_ids": response.ids,
+        }
+        file_id = store.save(payload)
+        
+        return {
+            "success": response.success,
+            "file_id": file_id,
+            "instance_ids": response.instance_ids,
+        }
+    
+    detect_tool = StructuredTool.from_function(
+        func=lambda tool_rationale, query_text: _detect(store, tool_rationale, query_text),
+        name="robot_detect",
+        description=(
+            "Detect all objects in the environment based on the given class label. "
+            "It will return all detected bounding boxes as well as the instance IDs (required by other skills such as robot_pick and robot_open)"
+        ),
+        args_schema=DetectInput,
+    )
+    
+    class PickInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
+        instance_id: int = Field(
+            description="The instance ID of the object to pick. If you don't know the instance ID, you can use robot_detect to get all detected objects and their IDs."
+        )
+    
+    def _pick(store: TempJsonStore, tool_rationale: str, instance_id: int) -> dict:
+        response = pick_by_instance_id(instance_id)
+        return {
+            "success": response.success,
+            "instance_uid": response.instance_uid,
+        }
+    
+    pick_tool = StructuredTool.from_function(
+        func=lambda tool_rationale, instance_id: _pick(store, tool_rationale, instance_id),
+        name="robot_pick",
+        description=(
+            "Pick an object by its instance ID. "
+            "You can use robot_detect to get the instance ID of the object you want to pick."
+        ),
+        args_schema=PickInput,
+    )
+    
+    class OpenInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
+        instance_id: int = Field(
+            description="The instance ID of the object to open. If you don't know the instance ID, you can use robot_detect to get all detected objects and their IDs."
+        )
+    
+    def _open(store: TempJsonStore, tool_rationale: str, instance_id: int) -> dict:
+        response = open_by_instance_id(instance_id)
+        return {
+            "success": response.success,
+            "instance_uid": response.instance_uid,
+        }
+    
+    open_tool = StructuredTool.from_function(
+        func=lambda tool_rationale, instance_id: _open(store, tool_rationale, instance_id),
+        name="robot_open",
+        description=(
+            "Open an object by its instance ID. "
+            "You can use robot_detect to get the instance ID of the object you want to open."
+        ),
+        args_schema=OpenInput,
+    )
+    
+    return [navigate_tool, detect_tool, pick_tool, open_tool]
 
 TOOL_RATIONALE_DESC = (
     "Explain briefly why this tool is being called. The rationale should clarify how this tool helps move the reasoning forward — "
@@ -1395,743 +1532,3 @@ def create_recall_all_tool(
     )
     
     return [recall_all_tool]
-
-
-def create_determine_search_instance_tool(
-    memory: MilvusMemory,
-    llm,
-    llm_raw,
-    vlm,
-    vlm_raw,
-    logger=None
-) -> StructuredTool:
-    
-    class AgentState(TypedDict):
-        messages: Annotated[Sequence[BaseMessage], add_messages]
-        output: Annotated[Sequence, replace_messages] = None
-        
-    def from_decide_to(state: AgentState):
-        messages = state["messages"]
-        last_message = messages[-1]
-        if not last_message.tool_calls:
-            return "end"
-        else:
-            return "action"
-        
-    class DetermineSearchInstanceAgent:
-        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
-            self.memory = memory
-            self.llm = llm
-            self.llm_raw = llm_raw
-            self.vlm = vlm
-            self.vlm_raw = vlm_raw
-            self.logger = logger
-            
-            self.setup_tools(memory)
-            
-            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/determine_search_instance_tool/'
-            self.decide_prompt = file_to_string(prompt_dir+'decide_prompt.txt')
-            self.decide_gen_only_prompt = file_to_string(prompt_dir+'decide_gen_only_prompt.txt')
-            
-            self.decide_call_count = 0
-            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
-            
-        def setup_tools(self, memory: MilvusMemory):
-            self.tools = create_memory_inspection_tool(memory)
-            self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
-            
-        def _parse_memory_records(self, messages: Sequence[BaseMessage]) -> List[Dict]:
-            image_paths = {}
-            for msg in filter(lambda x: isinstance(x, ToolMessage), messages):
-                if not msg.content:
-                    continue
-                try:
-                    val = eval(msg.content)
-                    for k, v in val.items():
-                        image_paths[int(k)] = v
-                except Exception:
-                    continue
-
-            memory_messages = []
-            is_grouped = (
-                isinstance(self.memory_records, list)
-                and all(isinstance(x, dict) and "instance_desc" in x for x in self.memory_records)
-            )
-
-            if is_grouped:
-                for i, group in enumerate(self.memory_records):
-                    instance_desc = group.get("instance_desc", "(no description)")
-                    records = group.get("records", [])
-                    memory_messages.append({"type": "text", "text": f"--- Instance {i+1}: {instance_desc} ---"})
-                    for record in records:
-                        memory_messages += self._record_to_message(record, image_paths)
-            else:
-                for record in self.memory_records:
-                    memory_messages += self._record_to_message(record, image_paths)
-
-            return memory_messages
-
-        def _record_to_message(self, record: Dict, image_paths: Dict[int, str]) -> List[Dict]:
-            msgs = [{"type": "text", "text": parse_db_records_for_llm(record)}]
-            if int(record["id"]) in image_paths:
-                image_path = image_paths[int(record["id"])]
-                img = PILImage.open(image_path).convert("RGB")
-                img = img.resize((512, 512), PILImage.BILINEAR)
-                
-                draw = ImageDraw.Draw(img)
-                text = f"record_id: {record['id']}"
-                font = ImageFont.load_default()
-                text_size = draw.textbbox((0, 0), text, font=font)
-                padding = 4
-                bg_rect = (
-                    text_size[0] - padding,
-                    text_size[1] - padding,
-                    text_size[2] + padding,
-                    text_size[3] + padding
-                )
-                draw.rectangle(bg_rect, fill=(0, 0, 0))
-                draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
-
-                buffer = BytesIO()
-                img.save(buffer, format="PNG")
-                img_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                msgs.append(get_vlm_img_message(img_b64, type="gpt"))
-            return msgs
-            
-        def decide(self, state: AgentState):
-            messages = state["messages"]
-            
-            model = self.vlm
-            if self.decide_call_count > 2:
-                prompt = self.decide_gen_only_prompt
-            else:
-                prompt = self.decide_prompt
-                model = model.bind_tools(self.tool_definitions)
-                
-            memory_messages = self._parse_memory_records(messages)
-            chat_prompt = ChatPromptTemplate.from_messages([
-                HumanMessage(content=memory_messages),
-                # ("human", self.previous_tool_requests),
-                ("user", prompt),
-                ("human", "{question}"),
-                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. If you are not sure, call the most appropriate tool to make a best answer.")
-            ])
-            chained_model = chat_prompt | model
-            question  = f"User Task: {self.user_task}\n" \
-                        f"History Summary: {self.history_summary}\n" \
-                        f"Current Task: {self.current_task}\n"
-                        
-            response = chained_model.invoke({"question": question, "memory_records": memory_messages})
-        
-            if self.logger:
-                if getattr(response, 'tool_calls'):
-                    self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] decide() - Tool calls present: {response.tool_calls}")
-                else:
-                    self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] decide() - {response.content}.")
-        
-            if hasattr(response, "tool_calls") and response.tool_calls:
-                for tool_call in response.tool_calls:
-                    if tool_call['name'] != "__conversational_response":
-                        args = re.sub(r'^\{(.*)\}$', r'(\1)', str(tool_call['args'])) # remove curly braces
-                        self.previous_tool_requests += f" {tool_call['name']} tool with the arguments: {args}.\n"
-                        
-            self.decide_call_count += 1
-            return {"messages": [response]}
-        
-        def generate(self, state: AgentState):
-            messages = state["messages"]
-            keys_to_check_for = ["found_in_memory", "instance_desc", "record_id"]
-            valid_found_values = {"yes", "no", "unknown"}
-            
-            prompt = self.decide_gen_only_prompt
-            
-            memory_messages = self._parse_memory_records(messages)
-            chat_prompt = ChatPromptTemplate.from_messages([
-                HumanMessage(content=memory_messages),
-                ("user", prompt),
-                ("human", "{question}"),
-                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. If you are not sure, call the most appropriate tool to make a best answer.")
-            ])
-            model = self.vlm
-            chained_model = chat_prompt | model
-            question  = f"User Task: {self.user_task}\n" \
-                        f"History Summary: {self.history_summary}\n" \
-                        f"Current Task: {self.current_task}\n"
-                        
-            response = chained_model.invoke({"question": question, "memory_records": memory_messages})
-
-            parsed = eval(response.content)
-            for key in keys_to_check_for:
-                if key not in parsed:
-                    raise ValueError("Missing required keys during generate. Retrying...")
-            
-            found_value = parsed["found_in_memory"]
-            if found_value not in valid_found_values:
-                raise ValueError(f"Invalid value for found_in_memory: '{found_value}'. Must be one of {valid_found_values}.")
-            output = {
-                "found_in_memory": found_value,
-                "instance_desc": parsed["instance_desc"],
-            }
-            target_record = None
-            if found_value == "yes":
-                if self.memory_records and isinstance(self.memory_records[0], dict) and "instance_desc" in self.memory_records[0]:
-                    # Grouped format
-                    for group in self.memory_records:
-                        for record in group.get("records", []):
-                            if int(record["id"]) == int(parsed["record_id"]):
-                                target_record = record
-                                break
-                        if target_record:
-                            break
-                else:
-                    # Flat format
-                    for record in self.memory_records:
-                        if int(record["id"]) == int(parsed["record_id"]):
-                            target_record = record
-                            break
-                if target_record is None:
-                    raise ValueError(f"Could not find record with ID {parsed['record_id']} in memory records. Retrying...")
-
-                image_path_fn = lambda vidpath, frame: os.path.join(vidpath, f"{frame:06d}.png")
-                vidpath = target_record["vidpath"]
-                start_frame = int(target_record["start_frame"])
-                end_frame = int(target_record["end_frame"])
-                frame = (start_frame + end_frame) // 2
-                instance_viz_path = image_path_fn(vidpath, frame)
-            else:
-                instance_viz_path = None
-
-            output["instance_viz_path"] = instance_viz_path
-            output["past_observations"] = [target_record] if target_record else []
-                
-            if self.logger:
-                self.logger.info(f"[DETERMINE_SEARCH_INSTANCE] generate() - Output keys: found_in_memory={output['found_in_memory']}, instance_desc={output['instance_desc']}, instance_viz_path={output['instance_viz_path']}")
-                
-            return {"messages": [response], "output": output}
-        
-        def build_graph(self):
-            workflow = StateGraph(AgentState)
-            
-            workflow.add_node("decide", lambda state: try_except_continue(state, self.decide))
-            workflow.add_node("action", ToolNode(self.tools))
-            workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
-            
-            workflow.add_conditional_edges(
-                "decide",
-                from_decide_to,
-                {
-                    "action": "action",
-                    "end": "generate",
-                },
-            )
-            workflow.add_edge('action', 'decide')
-            workflow.add_edge("generate", END)
-            workflow.set_entry_point("decide")
-            self.graph = workflow.compile()
-            
-            
-        def run(self, user_task: str, history_summary: str, current_task: str, memory_records: Optional[List[Dict]] = None) -> SearchInstance:
-            if self.logger:
-                self.logger.info(
-                    f"[DETERMINE_SEARCH_INSTANCE] Running tool with user_task: {user_task}, "
-                    f"current_task: {current_task}, memory_records: {memory_records}"
-                )
-            
-            self.decide_call_count = 0
-            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
-            
-            self.user_task = user_task
-            self.history_summary = history_summary
-            self.current_task = current_task
-            self.memory_records = memory_records
-            
-            self.build_graph()
-            
-            question = f"In your context, you have the following information, and you will need to address some user request -" \
-                       f"User Task: {user_task}\n" \
-                       f"History Summary: {history_summary}\n" \
-                       f"Current Task: {current_task}\n" \
-                       f"Memory Records: {memory_records if memory_records else 'None'}\n"
-            inputs = { "messages": [
-                    (("user", question))
-                ]
-            }
-            state = self.graph.invoke(inputs)
-            
-            output = state.get("output", [])
-            return output
-            
-    class DetermineSearchInstanceInput(BaseModel):
-        user_task: str = Field(
-            description="The high-level task the user wants to perform. For example, 'bring me the book I was reading yesterday'."
-        )
-        history_summary: str = Field(
-            description="A summary of the conversation history leading up to this point. This can help the agent understand the context better."
-        )
-        current_task: str = Field(
-            description="The current goal or subtask the system is working on. For example, 'resolve which book the user is referring to', 'identify where (or how) to retrieve ths instance."
-        )
-        memory_records: Optional[List[Dict]] = Field(
-            default=None,
-            description="(Optional) Memory records retrieved earlier. Can be in one of two formats:\n"
-                        "1. A flat list of memory records, where each item includes fields like caption, time, position, and possibly an image path.\n"
-                        "2. A grouped list, where each item includes an 'instance_description' (a string) and 'records' (a list of memory records as above) "
-                        "representing related observations for a specific instance."
-        )
-        
-    memory_instance_tool_runner = DetermineSearchInstanceAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
-    memory_instance_tool = StructuredTool.from_function(
-        func=lambda user_task, history_summary, current_task, memory_records: memory_instance_tool_runner.run(user_task, history_summary, current_task, memory_records),
-        name="create_or_update_target_search_instance",
-        description="Create or Update the memory search instance based on the high-level user task, current reasoning step, and optionally retrieved memory records. This would be the next memory search target for the agent.",
-        args_schema=DetermineSearchInstanceInput
-    )
-    
-    real_world_instance_tool_runner = DetermineSearchInstanceAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
-    real_world_instance_tool = StructuredTool.from_function(
-        func=lambda user_task, history_summary, current_task, memory_records: real_world_instance_tool_runner.run(user_task, history_summary, current_task, memory_records),
-        name="create_or_update_target_search_instance",
-        description="Create or Update the real world search instance based on the high-level user task, current reasoning step, and optionally retrieved memory records.",
-        args_schema=DetermineSearchInstanceInput
-    )
-    
-    return [memory_instance_tool, real_world_instance_tool]
-
-def create_determine_unique_instances_tool(
-    memory: MilvusMemory,
-    llm,
-    llm_raw,
-    vlm,
-    vlm_raw,
-    logger=None
-):
-    class AgentState(TypedDict):
-        messages: Annotated[Sequence[BaseMessage], add_messages]
-        output: Annotated[Sequence, replace_messages] = None
-        
-    def from_decide_to(state: AgentState):
-        messages = state["messages"]
-        last_message = messages[-1]
-        if not last_message.tool_calls:
-            return "end"
-        else:
-            return "action"
-        
-    class DetermineUniqueInstancesAgent:
-        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
-            self.memory = memory
-            self.llm = llm
-            self.llm_raw = llm_raw
-            self.vlm = vlm
-            self.vlm_raw = vlm_raw
-            self.logger = logger
-            
-            self.setup_tools(memory)
-            
-            prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/determine_unique_instances_tool/'
-            self.decide_prompt = file_to_string(prompt_dir+'decide_prompt.txt')
-            self.decide_gen_only_prompt = file_to_string(prompt_dir+'decide_gen_only_prompt.txt')
-            self.generate_prompt = file_to_string(prompt_dir+'generate_prompt.txt')
-            
-            self.decide_call_count = 0
-            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
-            
-        def setup_tools(self, memory: MilvusMemory):
-            self.tools = create_memory_inspection_tool(memory)
-            self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
-            
-        def _parse_memory_records(self, messages: Sequence[BaseMessage]) -> List[Dict]:
-            image_paths = {}
-            for msg in filter(lambda x: isinstance(x, ToolMessage), messages):
-                if not msg.content:
-                    continue
-                try:
-                    val = eval(msg.content)
-                    for k, v in val.items():
-                        image_paths[int(k)] = v
-                except Exception:
-                    continue
-
-            memory_messages = []
-            is_grouped = (
-                isinstance(self.memory_records, list)
-                and all(isinstance(x, dict) and "instance_desc" in x for x in self.memory_records)
-            )
-
-            if is_grouped:
-                for i, group in enumerate(self.memory_records):
-                    instance_desc = group.get("instance_desc", "(no description)")
-                    records = group.get("records", [])
-                    memory_messages.append({"type": "text", "text": f"--- Instance {i+1}: {instance_desc} ---"})
-                    for record in records:
-                        memory_messages += self._record_to_message(record, image_paths)
-            else:
-                for record in self.memory_records:
-                    memory_messages += self._record_to_message(record, image_paths)
-
-            return memory_messages
-
-        def _record_to_message(self, record: Dict, image_paths: Dict[int, str]) -> List[Dict]:
-            msgs = [{"type": "text", "text": parse_db_records_for_llm(record)}]
-            if int(record["id"]) in image_paths:
-                image_path = image_paths[int(record["id"])]
-                img = PILImage.open(image_path).convert("RGB")
-                img = img.resize((512, 512), PILImage.BILINEAR)
-                
-                draw = ImageDraw.Draw(img)
-                text = f"record_id: {record['id']}"
-                font = ImageFont.load_default()
-                text_size = draw.textbbox((0, 0), text, font=font)
-                padding = 4
-                bg_rect = (
-                    text_size[0] - padding,
-                    text_size[1] - padding,
-                    text_size[2] + padding,
-                    text_size[3] + padding
-                )
-                draw.rectangle(bg_rect, fill=(0, 0, 0))
-                draw.text((text_size[0], text_size[1]), text, fill=(255, 255, 255), font=font)
-
-                buffer = BytesIO()
-                img.save(buffer, format="PNG")
-                img_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                msgs.append(get_vlm_img_message(img_b64, type="gpt"))
-            return msgs
-        
-        def decide(self, state: AgentState):
-            messages = state["messages"]
-            
-            model = self.vlm
-            if self.decide_call_count > 2:
-                prompt = self.decide_gen_only_prompt
-            else:
-                prompt = self.decide_prompt
-                model = model.bind_tools(self.tool_definitions)
-                
-            memory_messages = self._parse_memory_records(messages)
-            chat_prompt = ChatPromptTemplate.from_messages([
-                MessagesPlaceholder(variable_name="chat_history"),
-                # ("human", "{memory_records}"),
-                HumanMessage(content=memory_messages),
-                ("system", prompt),
-                ("human", "{question}"),
-                ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls.")
-            ])
-            chained_model = chat_prompt | model
-            question  = f"User Task: {self.user_task}\n" \
-                        f"History Summary: {self.history_summary}\n" \
-                        f"Current Task: {self.current_task}\n"
-            response = chained_model.invoke({
-                "chat_history": messages[1:],
-                "question": question, 
-                # "memory_records": memory_messages
-            })
-            
-            # from openai import OpenAI
-            # client = OpenAI() 
-            # messages = [
-            #     {"role": "system", "content": prompt},  # text only
-            #     {"role": "user", "content": memory_messages + [{"type": "text", "text": question}]},
-            #     {"role": "system", "content": "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls."}
-            # ]
-            # response = client.chat.completions.create(
-            #     model="gpt-4o",
-            #     messages=messages
-            # )
-            # import pdb; pdb.set_trace()
-            # try:
-            #     stripped_response = response.choices[0].message.content.strip()
-            #     parsed = parse_json(stripped_response)
-            #     parsed = parsed["tool_input"]["response"]
-            # except Exception as e:
-            #     raise ValueError(f"Failed to parse response: {e}. Response content: {response.choices[0].message.content}. Retrying...")
-            
-            if self.logger:
-                if getattr(response, 'tool_calls'):
-                    self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - Tool calls present: {response.tool_calls}")
-                else:
-                    self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] decide() - {response.content}.")
-                
-            if hasattr(response, "tool_calls") and response.tool_calls:
-                for tool_call in response.tool_calls:
-                    if tool_call['name'] != "__conversational_response":
-                        args = re.sub(r'^\{(.*)\}$', r'(\1)', str(tool_call['args'])) # remove curly braces
-                        self.previous_tool_requests += f" {tool_call['name']} tool with the arguments: {args}.\n"
-                        
-            self.decide_call_count += 1
-            return {"messages": [response]}
-        
-        def generate(self, state: AgentState):
-            messages = state["messages"]
-            keys_to_check_for = ["instance_desc", "record_ids"]
-            
-            prompt = self.generate_prompt
-            # chat_prompt = ChatPromptTemplate.from_messages([
-            #     # MessagesPlaceholder(variable_name="chat_history"),
-            #     ("system", prompt),
-            #     ("user", "{memory_records}"),
-            #     ("user", "{question}"),
-            #     ("system", "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. You must now list all distinct, plausible instances using rich, **visual-appearance-based** descriptions.")
-            # ])
-            # model = self.vlm
-            # chained_model = chat_prompt | model
-            question  = f"User Task: {self.user_task}\n" \
-                        f"History Summary: {self.history_summary}\n" \
-                        f"Current Task: {self.current_task}\n"
-            
-            memory_messages = self._parse_memory_records(messages)
-            
-            ###### Debug image messages #######
-            # def dump_memory_messages(memory_messages, save_dir="debug/dumped_memory_messages"):
-            #     os.makedirs(save_dir, exist_ok=True)
-            #     msg_list = []
-            #     for i, msg in enumerate(memory_messages):
-            #         if msg["type"] == "text":
-            #             with open(os.path.join(save_dir, f"msg_{i:03d}.txt"), "w") as f:
-            #                 f.write(msg["text"])
-            #             msg_list.append({"type": "text", "file": f"msg_{i:03d}.txt"})
-            #         elif msg["type"] in ["image", "image_url"]:
-            #             img_data = msg["image"] if "image" in msg else msg["image_url"]["url"]
-            #             encoded = img_data.split("base64,")[-1]
-            #             with open(os.path.join(save_dir, f"msg_{i:03d}.png"), "wb") as f:
-            #                 f.write(base64.b64decode(encoded))
-            #             msg_list.append({"type": "image", "file": f"msg_{i:03d}.png"})
-            #     with open(os.path.join(save_dir, "messages.json"), "w") as f:
-            #         json.dump(msg_list, f, indent=2)
-
-            # dump_memory_messages(memory_messages)
-            # import pdb; pdb.set_trace()
-            
-            # visualize_memory_messages(memory_messages)
-            # import pdb; pdb.set_trace()
-            
-            # system_prompt = (
-            #     "You are an expert instance summarizer.\n"
-            #     "You are given a list of memory records consisting of textual descriptions and visual observations.\n"
-            #     "Please caption all images you saw. You should give a concise image description, as well as the record id on the images. In the description, you should include the visual appearance of the object, such as color, shape, size, and any other relevant features.\n"
-            # )
-            # model = self.vlm_raw
-            # chat_prompt = ChatPromptTemplate.from_messages([
-            #     ("human", system_prompt),
-            #     ("human", "{memory_records}"),
-            # ])
-            # chained_model = chat_prompt | model
-            # response = chained_model.invoke({
-            #     "memory_records": memory_messages})
-            # import pdb; pdb.set_trace()
-            ###### Debug image messages #######
-            
-            # response = chained_model.invoke({
-            #     # "chat_history": messages[1:],
-            #     "question": question, 
-            #     "memory_records": memory_messages})
-            
-            from openai import OpenAI
-            client = OpenAI() 
-            messages = [
-                {"role": "system", "content": prompt},  # text only
-                {"role": "user", "content": memory_messages + [{"type": "text", "text": question}]},
-                {"role": "system", "content": "Remember to follow the json format strictly and only use the tools provided. Do not generate any text outside of tool calls. You must now list all distinct, plausible instances using rich, **visual-appearance-based** descriptions."}
-            ]
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages
-            )
-            try:
-                stripped_response = response.choices[0].message.content.strip()
-                parsed = parse_json(stripped_response)
-                parsed = parsed["tool_input"]["response"]
-            except Exception as e:
-                raise ValueError(f"Failed to parse response: {e}. Response content: {response.choices[0].message.content}. Retrying...")
-                
-            # Build a mapping from record ID to record for fast lookup
-            ids_to_records = {int(record["id"]): record for record in self.memory_records}
-            # parsed = eval(response.content)
-            if type(parsed) is not list:
-                raise ValueError("Expected a list of unique instances, but got something else. Retrying...")
-            for item in parsed:
-                for key in keys_to_check_for:
-                    if key not in item:
-                        raise ValueError("Missing required keys during generate. Retrying...")
-
-                # Parse record_ids into a list of ints
-                record_ids_str = item["record_ids"]
-                if not isinstance(record_ids_str, str):
-                    raise ValueError(f"record_ids must be a string, got {type(record_ids_str)}")
-                try:
-                    record_ids = [int(x.strip()) for x in record_ids_str.split(",") if x.strip().isdigit()]
-                except Exception as e:
-                    raise ValueError(f"Failed to parse record_ids '{record_ids_str}': {e}")
-                # Check that the parsed list matches the expected format (at least one int, no junk)
-                if not record_ids or ",".join(str(i) for i in record_ids) != ",".join(x.strip() for x in record_ids_str.split(",") if x.strip()):
-                    raise ValueError(f"record_ids format is invalid: '{record_ids_str}'")
-                # Check that all record_ids exist in ids_to_records
-                for rid in record_ids:
-                    if rid not in ids_to_records:
-                        raise ValueError(f"record_id {rid} not found in memory_records. Retrying...")
-                item["record_ids"] = record_ids
-                
-            output = []
-            for item in parsed:
-                output_item = {}
-                output_item["instance_desc"] = item["instance_desc"]
-                output_item["records"] = []
-                for id in item["record_ids"]:
-                    output_item["records"].append(ids_to_records[id])
-                output.append(output_item)
-                
-            if self.logger:
-                self.logger.info(f"[DETERMINE_UNIQUE_INSTANCES] generate() - Output contains {len(output)} unique instances.")
-                for i, inst in enumerate(output):
-                    self.logger.info(f"Instance {i+1}: desc={inst['instance_desc']}, records={len(inst['records'])}")
-        
-            # return {"messages": [response], "output": output}
-            return {"output": output}
-        
-        def build_graph(self):
-            workflow = StateGraph(AgentState)
-            
-            workflow.add_node("decide", lambda state: try_except_continue(state, self.decide))
-            workflow.add_node("action", ToolNode(self.tools))
-            workflow.add_node("generate", lambda state: try_except_continue(state, self.generate))
-            
-            workflow.add_conditional_edges(
-                "decide",
-                from_decide_to,
-                {
-                    "action": "action",
-                    "end": "generate",
-                },
-            )
-            workflow.add_edge('action', 'decide')
-            workflow.add_edge("generate", END)
-            workflow.set_entry_point("decide")
-            self.graph = workflow.compile()
-        
-        def run(self, user_task: str, history_summary: str, current_task: str, memory_records: Optional[List[Dict]] = None) -> SearchInstance:
-            if self.logger:
-                self.logger.info(
-                    f"[DETERMINE_UNIQUE_INSTANCES] Running tool with user_task: {user_task}, "
-                    f"current_task: {current_task}, memory_records: {memory_records}"
-                )
-                
-            self.decide_call_count = 0
-            self.previous_tool_requests = "I have already used the following retrieval tools and the results are included below. Do not repeat them:\n"
-            
-            self.user_task = user_task
-            self.history_summary = history_summary
-            self.current_task = current_task
-            self.memory_records = memory_records
-            
-            self.build_graph()
-            
-            question = f"In your context, you have the following information, and you will need to address some user request -" \
-                       f"User Task: {user_task}\n" \
-                       f"History Summary: {history_summary}\n" \
-                       f"Current Task: {current_task}\n" \
-                       f"Memory Records: {memory_records if memory_records else 'None'}\n" \
-                       "Based on the information retrieved from your previous tool calls, could you list out all unique instances and their task-relevant observations?"
-            inputs = { "messages": [
-                    (("user", question))
-                ]
-            }
-            state = self.graph.invoke(inputs)
-            
-            output = state.get("output", [])
-            return output
-        
-    class DetermineUniqueInstancesInput(BaseModel):
-        user_task: str = Field(
-            description="The high-level task the user wants to perform. For example, 'bring me the book I was reading yesterday'."
-        )
-        history_summary: str = Field(
-            description="A summary of the conversation history leading up to this point. This can help the agent understand the context better."
-        )
-        current_task: str = Field(
-            description="The current goal or subtask the system is working on. For example, 'resolve which book the user is referring to', 'identify where (or how) to retrieve ths instance."
-        )
-        memory_records: Optional[List[Dict]] = Field(
-            default=None,
-            description="(Optional) A list of memory records retrieved earlier. Each record includes a caption, time, position, and possibly an image path."
-        )
-        
-    tool_runner = DetermineUniqueInstancesAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
-    tool = StructuredTool.from_function(
-        func=lambda user_task, history_summary, current_task, memory_records: 
-            tool_runner.run(user_task, history_summary, current_task, memory_records),
-        name="determine_unique_instances_from_working_memory",
-        description="Determine unique instances from the memory records based on the high-level user task, current reasoning step, and optionally retrieved memory records. This would be used to identify distinct objects or events in the user's context.",
-        args_schema=DetermineUniqueInstancesInput
-    )
-    return [tool]
-    
-def visualize_memory_messages(memory_messages, output_dir="debug/unique_instances"):
-    os.makedirs(output_dir, exist_ok=True)
-
-    i = 0
-    current_text = "unknown"
-
-    for msg in memory_messages:
-        if msg["type"] == "text":
-            # Save this for naming the image later
-            current_text = msg["text"].strip().replace("\n", " ")[:100]  # truncate long text
-        elif msg["type"] in ["image", "image_url"]:
-            # Decode base64 image
-            if msg["type"] == "image":
-                img_data = msg["image"].split("base64,")[-1]
-            else:
-                img_data = msg["image_url"]["url"].split("base64,")[-1]
-
-            try:
-                img_bytes = base64.b64decode(img_data)
-                img = PILImage.open(BytesIO(img_bytes)).convert("RGB")
-            except Exception as e:
-                print(f"[Warning] Failed to decode image at index {i}: {e}")
-                continue
-
-            # Use index + short text preview to name file
-            filename = f"msg_{i:03d}.png"
-            img_path = os.path.join(output_dir, filename)
-            img.save(img_path)
-
-            # Also save the text in a .txt file
-            txt_path = os.path.join(output_dir, f"msg_{i:03d}.txt")
-            with open(txt_path, "w") as f:
-                f.write(current_text)
-
-            i += 1
-            
-def create_search_in_time_evaluation_tool():
-    
-    class ReviewObjectReferenceAndRetrievalTerminateInput(BaseModel):
-        review_rationale: str = Field(
-            description="A concise explanation of your reasoning for both answers. Include how the agent’s actions support your selected records and note any ambiguity or uncertainty."
-        )
-        reference_resolution_record_id: int = Field(
-            description="The memory record ID that best shows which object the agent took the user to be referring to, satisfying any key constraints in the user query (e.g., spatial, temporal, descriptive)."
-        )
-        retrieval_grounding_record_id: int = Field(
-            description="The memory record ID that shows where the agent retrieved the object from, and whether this was the most recent valid sighting of the same object."
-        )
-
-    def _terminate_review_fn(
-        review_rationale: str,
-        reference_resolution_record_id: int,
-        retrieval_grounding_record_id: int,
-    ) -> bool:
-        # Dummy implementation: always return True
-        return True
-
-    review_terminate_tool = StructuredTool.from_function(
-        func=_terminate_review_fn,
-        name="review_object_reference_and_retrieval_terminate",
-        description=(
-            "Use this tool to **finalize your review** of the agent’s object retrieval decision.\n"
-            "You must answer two questions based solely on the agent’s tool use and reasoning trace:\n"
-            "1. Which memory record shows the object instance the agent believed the user was referring to?\n"
-            "2. Which memory record shows where the agent retrieved that object from — and is it the most recent sighting?\n\n"
-        ),
-        args_schema=ReviewObjectReferenceAndRetrievalTerminateInput,
-    )
-
-    return [review_terminate_tool]

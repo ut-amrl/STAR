@@ -17,7 +17,13 @@ from amrl_msgs.srv import (
     SemanticObjectDetectionSrvResponse,
     FindObjectSrv,
     FindObjectSrvRequest,
-    FindObjectSrvResponse
+    FindObjectSrvResponse,
+    DetectVirtualHomeObjectSrv,
+    DetectVirtualHomeObjectSrvRequest,
+    DetectVirtualHomeObjectSrvResponse,
+    OpenVirtualHomeObjectSrv,
+    OpenVirtualHomeObjectSrvRequest,
+    OpenVirtualHomeObjectSrvResponse,
 )
 from agent.utils.utils import *
 
@@ -66,7 +72,7 @@ def pick(query_text: str) -> PickObjectSrvResponse: # TODO need to change functi
     except rospy.ServiceException as e:
         print("Service call failed:", e)
         
-def pick_by_instance_id(query_text: str, instance_id: str) -> PickObjectSrvResponse:
+def pick_by_query_text_and_instance_id(query_text: str, instance_id: str) -> PickObjectSrvResponse:
     rospy.wait_for_service("/moma/pick_object")
     try:
         pick_service = rospy.ServiceProxy("/moma/pick_object", PickObjectSrv)
@@ -77,7 +83,45 @@ def pick_by_instance_id(query_text: str, instance_id: str) -> PickObjectSrvRespo
         return response
     except rospy.ServiceException as e:
         print("Service call failed:", e)
-
+        
+def pick_by_instance_id(instance_id: str) -> PickObjectSrvResponse:
+    """
+    Pick an object by its instance ID.
+    """
+    rospy.wait_for_service("/moma/pick_object")
+    try:
+        pick_service = rospy.ServiceProxy("/moma/pick_object", PickObjectSrv)
+        response = pick_service(instance_id=instance_id)
+        return response
+    except rospy.ServiceException as e:
+        print("Service call failed:", e)
+        
+def open_by_instance_id(instance_id: str) -> PickObjectSrvResponse:
+    """
+    Open an object by its instance ID.
+    """
+    rospy.wait_for_service("/moma/open_object")
+    try:
+        open_service = rospy.ServiceProxy("/moma/open_object", OpenVirtualHomeObjectSrv)
+        response = open_service(instance_id=instance_id)
+        return response
+    except rospy.ServiceException as e:
+        print("Service call failed:", e)
+        
+def detect_virtual_home_object(query_text: str) -> DetectVirtualHomeObjectSrvResponse:
+    """
+    Detect a virtual home object by its class label.
+    """
+    rospy.wait_for_service("/moma/detect_virtual_home_object")
+    try:
+        detect_service = rospy.ServiceProxy("/moma/detect_virtual_home_object", DetectVirtualHomeObjectSrv)
+        req = DetectVirtualHomeObjectSrvRequest()
+        req.query_text = query_text
+        response = detect_service(req)
+        return response
+    except rospy.ServiceException as e:
+        print("Service call failed:", e)
+        
 def get_visible_objects() -> GetVisibleObjectsSrvResponse:
     """
     Get a list of visible objects.

@@ -14,4 +14,3 @@ langchain_nvidia_ai_endpoints
 langchain_community
 langchain_huggingface
 pymilvus
-qwen_vl_utils

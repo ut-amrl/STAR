@@ -27,9 +27,6 @@ def load_task_metadata(
             full_path = os.path.join(benchmark_dir, prefix, category, filename)
             for version in versions:
                 task_dict[f"{category}{version}"].append(full_path)
-            # task_dict[category].append(full_path)
-            # task_dict[f"{category}_wp_only"].append(full_path)
-            # task_dict[f"{category}_recaption_wp_only"].append(full_path)
 
     return task_dict
 
