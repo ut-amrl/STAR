@@ -24,7 +24,7 @@ The robot’s memory is a collection of time-stamped, egocentric observations ga
 Each memory record captures what the robot saw, when it saw it, and where it was at that moment. Each record contains:
 - A **timestamp** (when the robot saw something)
 - A **3D position** (where the robot was)
-- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_memory_image` to access it, which is explained in details later.)
+- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_observations_in_memory` to access it, which is explained in details later.)
 - A **caption** - a language summary that includes an exhaustive list of ground-truth visible classes for that record.
   - Trust class presence/absence: if a class appears in the caption, it is visible in that record; if it doesn’t, treat it as not visible.
   - Use captions to retrieve and to filter by class; use images to decide instance identity.

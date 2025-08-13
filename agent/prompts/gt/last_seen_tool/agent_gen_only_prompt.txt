@@ -28,7 +28,7 @@ The robot’s memory is a collection of time-stamped, egocentric observations ga
 Each memory record captures what the robot saw, when it saw it, and where it was at that moment. Each record contains:
 - A **timestamp** (when the robot saw something)
 - A **3D position** (where the robot was)
-- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_memory_image` to access it, which is explained in details later.)
+- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_observations_in_memory` to access it, which is explained in details later.)
 - A **caption** - a language summary that includes an exhaustive list of ground-truth visible classes for that record.
   - Trust class presence/absence: if a class appears in the caption, it is visible in that record; if it doesn’t, treat it as not visible.
   - Use captions to retrieve and to filter by class; use images to decide instance identity.
@@ -64,7 +64,7 @@ This ensures both good temporal coverage and efficient inspection within context
 
 A reference image (from a past memory record) **anchors identity**: it tells you **which specific object** the caller means.
 - Treat this as **instance re-identification**. The **image fixes *which one***; the **text points to it** within the image (“the thin red paperback on the left”).
-- Use `inspect_memory_image` to read the scene and confirm the pointer.
+- Use `inspect_observations_in_memory` to read the scene and confirm the pointer.
 - When searching, **do not enforce the reference scene as a constraint**; the object may later appear elsewhere.
 - If multiple similar objects are visible in the reference image, use the text pointer to choose. If still ambiguous, favor candidates with **clearest identity cues** and note the ambiguity briefly (the caller can judge with common sense).
 Always **use images to decide**; captions only help you **find** candidates.
@@ -74,7 +74,7 @@ Always **use images to decide**; captions only help you **find** candidates.
 
 A “last seen” record is the most recent point in time where the object, entity, or scene was visibly or textually confirmed to exist in the robot’s memory.
 It helps the caller agent determine the last known state or location of the target — often used as a starting point for search, recovery, or change detection.
-You must ensure that your result reflects the latest available sighting, not just any semantically matching record. If visual ambiguity exists, use inspect_memory_image to confirm presence or absence.
+You must ensure that your result reflects the latest available sighting, not just any semantically matching record. If visual ambiguity exists, use inspect_observations_in_memory to confirm presence or absence.
 Do **not** require the last-seen frame to include the scene in the `description` when a reference image is provided; the image anchors **which instance**, and the last-seen may occur on a different surface, container, or in a different room, etc..
 The image defines the instance. If the object later moves — e.g., from a shelf to a sofa — your job is to follow that object. Do not return older records that better match the original setting if a newer record shows the same object elsewhere.
 

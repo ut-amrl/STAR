@@ -187,7 +187,7 @@ Example:
 
 ### 🧠 `recall_all`
 Retrieve **all plausible memory records** where the described object or scene may have appeared, optionally guided by a reference image, time range, and caller context.
-Due to the potential huge amount of returns, I will not demonstrate the raw observations for you. Please use `inspect_memory_image` to inspect the raw observations at these records if you think it is necessary.
+Due to the potential huge amount of returns, I will not demonstrate the raw observations for you. Please use `inspect_observations_in_memory` to inspect the raw observations at these records if you think it is necessary.
 
 - **When to Use**:
   - Two modes: text-only defines the target; image + text anchors the instance and the text points to it in the image.
@@ -256,7 +256,7 @@ Example:
 
 ___
 
-### 🖼️ `inspect_memory_image`
+### 🖼️ `inspect_observations_in_memory`
 
 Use this tool to visually inspect one or more memory records.  
 It returns a **JSON map** `{{ record_id → image_path }}`, where each image is the **middle frame** of its corresponding memory record.  
@@ -275,7 +275,7 @@ Employ it as a **strategic aid for resolving ambiguity**—especially when decid
 Example:
 ```json
 {{
-  "tool": "inspect_memory_image",
+  "tool": "inspect_observations_in_memory",
   "tool_input": {{
     "record_id": [103, 108, 119]
   }}
@@ -326,7 +326,7 @@ Example
   Search results may sorted by **semantic similarity**, not by time.  
   This means the first result may not be the most recent — only inspection or explicit time filtering will tell you.
 - **Plan for visual inspection.**  
-  If textual descriptions alone are not sufficient to confirm object identity, co-location, or category match, use `inspect_memory_image` on candidate records.
+  If textual descriptions alone are not sufficient to confirm object identity, co-location, or category match, use `inspect_observations_in_memory` on candidate records.
 - Reason across nearby records when one view is insufficient.
   A single memory record may only capture part of the scene. To resolve object relationships or confirm identity, examine records close in time or space.
 

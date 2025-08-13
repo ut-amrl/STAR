@@ -190,7 +190,7 @@ Example:
 
 ### 🧠 `recall_all`
 Retrieve **all plausible memory records** where the described object or scene may have appeared, optionally guided by a reference image, time range, and caller context.
-Due to the potential huge amount of returns, I will not demonstrate the raw observations for you. Please use `inspect_memory_image` to inspect the raw observations at these records if you think it is necessary.
+Due to the potential huge amount of returns, I will not demonstrate the raw observations for you. Please use `inspect_observations_in_memory` to inspect the raw observations at these records if you think it is necessary.
 
 - **When to Use**:
   - Two modes: text-only defines the target; image + text anchors the instance and the text points to it in the image.
@@ -259,7 +259,7 @@ Example:
 
 ___
 
-### 🖼️ `inspect_memory_image`
+### 🖼️ `inspect_observations_in_memory`
 
 Use this tool to visually inspect one or more memory records.  
 It returns a **JSON map** `{{ record_id → image_path }}`, where each image is the **middle frame** of its corresponding memory record.  
@@ -278,7 +278,7 @@ Employ it as a **strategic aid for resolving ambiguity**—especially when decid
 Example:
 ```json
 {{
-  "tool": "inspect_memory_image",
+  "tool": "inspect_observations_in_memory",
   "tool_input": {{
     "record_id": [103, 108, 119]
   }}
@@ -326,7 +326,7 @@ Example
       "caller_context": "Find all cups that appear on a table; will pick the instance most often on a table."
     }}
   }},
-  {{ "tool": "inspect_memory_image",
+  {{ "tool": "inspect_observations_in_memory",
     "tool_input": {{ "record_id": [/* candidate_ids from recall_all */] }}
   }},
   {{ "tool": "recall_last_seen",
@@ -361,7 +361,7 @@ Explanation: Get all “cup on table” records → pick the instance most often
       "caller_context": "Resolve which specific book was read yesterday."
     }}
   }},
-  {{ "tool": "inspect_memory_image",
+  {{ "tool": "inspect_observations_in_memory",
     "tool_input": {{ "record_id": [/* ids from yesterday to resolve instance */] }}
   }},
   {{ "tool": "recall_last_seen",

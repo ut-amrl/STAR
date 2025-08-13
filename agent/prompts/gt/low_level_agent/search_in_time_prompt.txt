@@ -134,7 +134,7 @@ The robot will retrieve the object from that **last seen location**, even if it 
 
 ## 🛠️ Available Tools
 
-You may call multiple `search_*` or `inspect_memory_image` tools **at the same time**.  
+You may call multiple `search_*` or `inspect_observations_in_memory` tools **at the same time**.  
 However, you must only call **one** of rest tools at a time.
 You MUST follow the JSON format strictly.
 
@@ -259,7 +259,7 @@ Example:
 
 ___
 
-### 🖼️ `inspect_memory_image`
+### 🖼️ `inspect_observations_in_memory`
 
 Use this tool to visually inspect one or more memory records.  
 It returns a **JSON map** `{{ record_id → image_path }}`, where each image is the **middle frame** of its corresponding memory record.  
@@ -283,7 +283,7 @@ This is a very expensive tool, but also a very informative one. Therefore, if th
 Example:
 ```json
 {{
-  "tool": "inspect_memory_image",
+  "tool": "inspect_observations_in_memory",
   "tool_input": {{
     "record_id": [103, 108, 119]
   }}
@@ -374,12 +374,12 @@ Example:
   A large `k` gives more semantic candidates, but may still miss the right one unless you chunk time.  
 - **Chunk time *backwards* when recency matters.**  
   Always search recent time windows first if your goal is to find the latest appearance of an object.
-  Use `inspect_memory_image` or temporal + spatial continuity to verify it is the **same object**, not just a similar one.  
+  Use `inspect_observations_in_memory` or temporal + spatial continuity to verify it is the **same object**, not just a similar one.  
 - **Do not rely solely on tool output order.**  
   Search results may sorted by **semantic similarity**, not by time.  
   This means the first result may not be the most recent — only inspection or explicit time filtering will tell you.
 - **Plan for visual inspection.**  
-  If textual descriptions alone are not sufficient to confirm object identity, co-location, or category match, use `inspect_memory_image` on candidate records.
+  If textual descriptions alone are not sufficient to confirm object identity, co-location, or category match, use `inspect_observations_in_memory` on candidate records.
 - Reason across nearby records when one view is insufficient.
   A single memory record may only capture part of the scene. To resolve object relationships or confirm identity, examine records close in time or space.
 

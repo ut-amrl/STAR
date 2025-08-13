@@ -423,6 +423,6 @@ class LowLevelAgent:
             toolcalls += msg.tool_calls
         return {
             "task_result": self.task.search_proposal,
-            "search_in_time_toolcalls": toolcalls,
+            "toolcalls": toolcalls,
         }
         

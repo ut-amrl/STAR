@@ -37,7 +37,7 @@ Once you’ve determined what object the user means:
 1. **Search memory backward** to find the **most recent time** that object was seen.  
    Retrieval must be from this **last seen location**, not just where the object was mentioned.
 2. **Confirm object identity**, especially across time.  
-   Use `inspect_memory_image` when appearance or context must be verified.
+   Use `inspect_observations_in_memory` when appearance or context must be verified.
 3. **Gather supporting evidence** from nearby records when necessary (e.g., for co-occurrence or continuity).
 4. **Terminate** only when you have a clear, grounded answer:
    - What object to retrieve (with physical description)
@@ -81,7 +81,7 @@ The robot’s memory is a collection of time-stamped, egocentric observations ga
 Each memory record captures what the robot saw, when it saw it, and where it was at that moment. Each record contains:
 - A **timestamp** (when the robot saw something)
 - A **3D position** (where the robot was)
-- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_memory_image` to access it, which would be explained in details later.)
+- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_observations_in_memory` to access it, which would be explained in details later.)
 - A **caption** (a natural language description generated from the full video captured around that time)
 ⚠️ Because each observation reflects only a single viewpoint, it offers just a partial glimpse of the surrounding space. Even if two objects are in the same room, they may appear in separate records if they weren’t visible at the same time or from the same angle.
 Memory is also temporally continuous. As the robot moves, it collects observations in sequence, often capturing overlapping areas from different viewpoints. This means that nearby memory records — both in time and space — can provide complementary information about the same scene, object, their spatial relationships, or activity.

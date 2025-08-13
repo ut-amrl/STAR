@@ -23,7 +23,7 @@ The robot’s memory is a collection of time-stamped, egocentric observations ga
 Each memory record captures what the robot saw, when it saw it, and where it was at that moment. Each record contains:
 - A **timestamp** (when the robot saw something)
 - A **3D position** (where the robot was)
-- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_memory_image` to access it, which is explained in details later.)
+- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_observations_in_memory` to access it, which is explained in details later.)
 - A **caption** (a natural language description generated from the full video captured around that time) - Captions can be noisy or incomplete because they come from an automatic captioner. Treat them only as hints; Verify key record visually before making important decisions.
 ⚠️ Because each observation reflects only a single viewpoint, it offers just a partial glimpse of the surrounding space. Even if two objects are in the same room, they may appear in separate records if they weren’t visible at the same time or from the same angle.
 Memory is also temporally continuous. As the robot moves, it collects observations in sequence, often capturing overlapping areas from different viewpoints. This means that nearby memory records — both in time and space — the same scene, object, spatial relationships, or activity..

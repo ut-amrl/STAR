@@ -92,7 +92,7 @@ This ensures both good temporal coverage and efficient inspection within context
 
 A reference image (from a past memory record) **anchors identity**: it tells you **which specific object** the caller means.
 - Treat this as **instance re-identification**. The **image fixes *which one***; the **text points to it** within the image (“the thin red paperback on the left”).
-- Use `inspect_memory_image` to read the scene and confirm the pointer.
+- Use `inspect_observations_in_memory` to read the scene and confirm the pointer.
 - When searching, **do not enforce the reference scene as a constraint**; the object may later appear elsewhere.
 - If multiple similar objects are visible in the reference image, use the text pointer to choose. If still ambiguous, favor candidates with **clearest identity cues** and note the ambiguity briefly (the caller can judge with common sense).
 Always **use images to decide**; captions only help you **find** candidates.
@@ -128,8 +128,8 @@ In the next section, you will be introduced to your available tools.
 
 ## 🛠️ Available Tools
 
-You may call multiple `search_*` or `inspect_memory_image` tools **at the same time**, by simply including multiple tool calls in the list (see example).
-If you decide to call multiple `inspect_memory_image` in parallel, it will greatly save iteration times as well as query time. It can be useful if there are multiple candidate records equally likely or worth checking.
+You may call multiple `search_*` or `inspect_observations_in_memory` tools **at the same time**, by simply including multiple tool calls in the list (see example).
+If you decide to call multiple `inspect_observations_in_memory` in parallel, it will greatly save iteration times as well as query time. It can be useful if there are multiple candidate records equally likely or worth checking.
 However, you must only call **one** of rest tools at a time.
 You MUST follow the JSON format strictly.
 
@@ -254,7 +254,7 @@ Example:
 
 ___
 
-### 🖼️ `inspect_memory_image`
+### 🖼️ `inspect_observations_in_memory`
 
 Use this tool to visually inspect one or more memory records.  
 It returns a **JSON map** `{{ record_id → image_path }}`, where each image is the **middle frame** of its corresponding memory record.  
@@ -278,7 +278,7 @@ This is a very expensive tool, but also a very informative one. Therefore, if th
 Example:
 ```json
 {{
-  "tool": "inspect_memory_image",
+  "tool": "inspect_observations_in_memory",
   "tool_input": {{
     "record_id": [103, 108, 119]
   }}
@@ -413,12 +413,12 @@ search_in_memory_by_text_within_time_range(
 # Step 3: Check retrieved captions
 # Some say "a red cup" → accept directly
 # Some say just "a cup" → need to verify
-# You can call multiple inspect_memory_image in parallel (see tool descriptions)
+# You can call multiple inspect_observations_in_memory in parallel (see tool descriptions)
 [ 
-  inspect_memory_image(record_id=133)  # caption: "a cup on table"
-  inspect_memory_image(record_id=145)  # caption: "cup next to window"
-  inspect_memory_image(record_id=159)  # caption: "a red cup on counter"
-  inspect_memory_image(record_id=173)  # caption: "a cup in hand"
+  inspect_observations_in_memory(record_id=133)  # caption: "a cup on table"
+  inspect_observations_in_memory(record_id=145)  # caption: "cup next to window"
+  inspect_observations_in_memory(record_id=159)  # caption: "a red cup on counter"
+  inspect_observations_in_memory(record_id=173)  # caption: "a cup in hand"
 ]
 # Confirm that 133 and 159 show red cups; 145 and 173 do not
 

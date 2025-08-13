@@ -29,7 +29,7 @@ The robot’s memory is a collection of time-stamped, egocentric observations ga
 Each memory record captures what the robot saw, when it saw it, and where it was at that moment. Each record contains:
 - A **timestamp** (when the robot saw something)
 - A **3D position** (where the robot was)
-- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_memory_image` to access it, which is explained in details later.)
+- A **visual observation** (an image captured from the robot’s camera. You need to call `inspect_observations_in_memory` to access it, which is explained in details later.)
 - A **caption** - a language summary that includes an exhaustive list of ground-truth visible classes for that record.
   - Trust class presence/absence: if a class appears in the caption, it is visible in that record; if it doesn’t, treat it as not visible.
   - Use captions to retrieve and to filter by class; use images to decide instance identity.
@@ -73,7 +73,7 @@ This ensures both good temporal coverage and efficient inspection within context
 If a **reference image** is provided, it comes from a **past memory record** where the target object was previously observed.  
 This image serves as a **visual grounding cue** for identifying the same physical object instance in later records — even if the appearance, lighting, or context has changed.
 You should treat this as an **instance re-identification** task:
-- Use `inspect_memory_image` to compare candidate records against the reference.
+- Use `inspect_observations_in_memory` to compare candidate records against the reference.
 - Prioritize matches that **visually resemble the object** in the reference image.
 - Do **not** rely solely on captions when a reference image is given — visual confirmation is essential.
 
