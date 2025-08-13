@@ -12,7 +12,7 @@ _SUCCESS_FLAGS = [
     "reference_resolution_successs",
     "retrieval_grounding_success",
     "latest_retrieval_success",
-    # "last_known_state_success",
+    "last_known_state_success",
     "success",
 ]
 
@@ -22,8 +22,8 @@ _OBJECT_FLAGS = [
 ]
 
 _AGENT_DISPLAY = {
-    "replan_low_level_gt": "low-level + replan",
-    "low_level_gt": "low-level",
+    "replan_low_level_gt": "Interleaving Exec.",
+    "low_level_gt": "One-shot Exec.",
     "high_level_gt": "high-level",
     # Add more mappings as needed
 }
@@ -169,11 +169,11 @@ def analyze_results(
 
     df = pd.DataFrame(rows)
     # def pick_success(row):
-    #     # Use the first available, in order of priority
-    #     for k in ("last_known_state_success", "success", "latest_retrieval_success"):
-    #         if k in row and pd.notnull(row[k]):
-    #             return row[k]
-    #     return np.nan
+        # Use the first available, in order of priority
+        # for k in ("latest_retrieval_success",):
+            # if k in row and pd.notnull(row[k]):
+                # return row[k]
+        # return np.nan
 
     # df["success"] = df.apply(pick_success, axis=1)
 
@@ -269,7 +269,7 @@ def plot_overall_success(args, df):
             mpatches.Patch(
                 facecolor=_COLOR_GROUP.get(tasks[0].replace("-", "_"), plt.cm.tab10)(shade_points[i]),
                 edgecolor="black",
-                label=ag,
+                label=_pretty_agent(ag),
                 linewidth=0.7,
                 hatch=hatches[i],   # <<--- add hatch to legend patch as well!
             )
