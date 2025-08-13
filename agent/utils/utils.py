@@ -112,6 +112,7 @@ class SearchProposal:
         self.position: List[float] = position  # [x, y, z]
         self.theta: float = theta  # Orientation in radians
         self.records: List[dict] = records  # Original record from the database
+        self.searched_poses: List[tuple] = []  # List of (position, theta) tuples for all searched poses
         
         self.reference_resolution_records: dict = None
         self.retrieval_grounding_records: dict = None
@@ -338,8 +339,8 @@ def is_recall_all_result(content: str) -> bool:
     
 def has_file_id(content: str) -> bool:
     try:
-        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
-        parsed = ast.literal_eval(normalized)
+        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+        parsed = json.loads(normalized)
 
         if not isinstance(parsed, dict):
             return False
@@ -355,8 +356,8 @@ def get_file_id(content: str) -> Optional[str]:
     Returns None if no file_id is found.
     """
     try:
-        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
-        parsed = ast.literal_eval(normalized)
+        normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+        parsed = json.loads(normalized)
 
         if not isinstance(parsed, dict):
             return None
@@ -370,9 +371,9 @@ def get_file_id_messages(store: TempJsonStore, file_id: str):
     try:
         data = store.load(file_id)
         messages = [
-            {"type": "text", "text": f"This is the observation stored in file_id {file_id}:"},
+            {"type": "text", "text": f"These are the observations stored in file_id {file_id}:"},
         ]
-        messages += data.get("messages", [])
+        messages += data.get("images", [])
         return messages
     except Exception as e:
         import pdb; pdb.set_trace()

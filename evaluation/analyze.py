@@ -12,7 +12,7 @@ _SUCCESS_FLAGS = [
     "reference_resolution_successs",
     "retrieval_grounding_success",
     "latest_retrieval_success",
-    "last_known_state_success",
+    # "last_known_state_success",
     "success",
 ]
 
@@ -22,17 +22,27 @@ _OBJECT_FLAGS = [
 ]
 
 _AGENT_DISPLAY = {
+    "replan_low_level_gt": "low-level + replan",
     "low_level_gt": "low-level",
     "high_level_gt": "high-level",
     # Add more mappings as needed
 }
 
-_TASK_DISPLAY = {
+_TASK_DISPLAY_TWO_LINES = {
     "classonly":        "class-\nbased",
     "unambiguous":      "attribute-\nbased",
     "spatial_temporal": "spatial-\ntemporal",
     "spatial":          "spatial",
     "frequency":        "spatial-\nfreqentist",
+    # add more renames here if needed
+}
+
+_TASK_DISPLAY = {
+    "classonly":        "class-based",
+    "unambiguous":      "attribute-based",
+    "spatial_temporal": "spatial-temporal",
+    "spatial":          "spatial",
+    "frequency":        "spatial-freqentist",
     # add more renames here if needed
 }
 
@@ -59,9 +69,11 @@ def _task_sort_key(t):
     except ValueError:
         return len(_TASK_ORDER) + hash(t)
 
-def _pretty_task(raw: str) -> str:
+def _pretty_task(raw: str, oneline: bool = False) -> str:
     """Human-friendly label for legends / tick-labels."""
-    for orig, nice in _TASK_DISPLAY.items():
+    task_display = _TASK_DISPLAY if oneline else _TASK_DISPLAY_TWO_LINES
+    
+    for orig, nice in task_display.items():
         if raw.startswith(orig):
             return f"{nice}{raw[len(orig):]}"     # keep any suffix
     return raw
@@ -82,7 +94,7 @@ def parse_args():
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--task_config", type=str, default="evaluation/config/task_sim_all.txt")
-    parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "high_level_gt"])
+    parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "high_level_gt", "replan_low_level_gt"])
     return parser.parse_args()
 
 def _load_json_safe(path: str):
@@ -210,7 +222,7 @@ def plot_overall_success(args, df):
 
         fig, ax = plt.subplots(figsize=(11, 6))
 
-        shade_points = np.linspace(0.45, 0.75, n_agents)    # same as helper
+        shade_points = np.linspace(0.25, 0.85, n_agents)    # same as helper
 
         for i_agent, (ag, shade) in enumerate(zip(args.agent_types, shade_points)):
             for i_task, task in enumerate(tasks):
@@ -311,7 +323,7 @@ def plot_object_class_success(args, df):
         cmap   = _COLOR_GROUP.get(task, plt.cm.tab10)       # fallback palette
         agents = args.agent_types
         # pick evenly spaced shades   light → dark
-        shade_points = np.linspace(0.45, 0.75, len(agents))
+        shade_points = np.linspace(0.25, 0.85, len(agents))
         for shade, ag in zip(shade_points, agents):
             flat_cols.append((task, ag))
             colours.append(cmap(shade))
@@ -323,7 +335,7 @@ def plot_object_class_success(args, df):
 
     # re-index & flatten columns as before
     plot_df = plot_df.reindex(columns=pd.MultiIndex.from_tuples(flat_cols))
-    plot_df.columns = [f"{_pretty_task(t)}\n{_pretty_agent(ag)}" for t,ag in flat_cols]
+    plot_df.columns = [f"{_pretty_task(t, oneline=True)}\n{_pretty_agent(ag)}" for t,ag in flat_cols]
 
     # draw the bars
     ax = plot_df.plot(

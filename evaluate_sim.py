@@ -83,40 +83,31 @@ def extract_dataname_from_vidpath(vidpath: str) -> str:
 def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
     full_result = agent.run(
         question=task['task'],
-        # class_type=task["instance_class"],
+        class_type=task["instance_class"],
     )
     result = full_result["task_result"]
+    empty_result = {
+        "success": False,
+        "reference_resolution_successs": False,
+        "reference_resoluation_path": "",
+        "retrieval_grounding_success": False,
+        "retrieval_grounding_path": "",
+        "latest_retrieval_success": False,
+        "last_known_state_success": False,
+        "position": None,
+        "theta": None,
+        "has_picked": False,
+        "retrieved_instance_name": "",
+        "searched_poses": [],
+    }
     if result is None:
-        return {"result": {
-                    "success": False,
-                    "reference_resolution_successs": False,
-                    "reference_resoluation_path": "",
-                    "retrieval_grounding_success": False,
-                    "retrieval_grounding_path": "",
-                    "latest_retrieval_success": False,
-                    "last_known_state_success": False,
-                    "position": None,
-                    "theta": None,
-                    "has_picked": False,
-                    "retrieved_instance_name": ""
-                },
-                "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", [])}
+        return {"result": empty_result,
+                "reasoning_toolcalls": full_result.get("toolcalls", [])
+            }
 
     if result.has_picked is None or result.instance_name is None:
-        return {"result": {
-                    "success": False,
-                    "reference_resolution_successs": False,
-                    "reference_resoluation_path": "",
-                    "retrieval_grounding_success": False,
-                    "retrieval_grounding_path": "",
-                    "latest_retrieval_success": False,
-                    "last_known_state_success": False,
-                    "position": None,
-                    "theta": None,
-                    "has_picked": False,
-                    "retrieved_instance_name": ""
-                },
-                "reasoning_toolcalls": full_result.get("search_in_time_toolcalls", [])}
+        return {"result": empty_result,
+                "reasoning_toolcalls": full_result.get("toolcalls", [])}
     success = task["instance_name"].lower() in result.instance_name.lower()
     
     ref_record = result.reference_resolution_records
@@ -190,7 +181,8 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
             "position": result.position,
             "theta": result.theta,
             "has_picked": result.has_picked,
-            "retrieved_instance_name": result.instance_name
+            "retrieved_instance_name": result.instance_name,
+            "searcdhed_poses": result.searched_poses if hasattr(result, "searched_poses") else [],
         },
         "reasoning_toolcalls": full_result.get("toolcalls", []),
     }
@@ -286,6 +278,9 @@ def evaluate(args):
                 from agent.agent_lowlevel_replan import ReplanLowLevelAgent
                 agent = ReplanLowLevelAgent(
                     prompt_type=args.prompt_type,
+                    navigate_fn=navigate,
+                    find_object_fn=find_object,
+                    pick_fn=pick_by_query_text_and_instance_id,
                     logdir=result_dir,
                     logger_prefix=args.agent_type
                 )

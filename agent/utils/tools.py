@@ -29,7 +29,7 @@ def create_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
             description=TOOL_RATIONALE_DESC
         )
         pos: List[float] = Field(
-            description="Target position in 3D space as [x, y, z]. If z is not provided, it should be defaulted to 0."
+            description="Target position in 3D space as [x, y, z]."
         )
         theta: float = Field(
             description="Orientation angle in radians. If theta is not known, it can be set to 0. "
@@ -88,13 +88,15 @@ def create_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
             "success": response.success,
             "images": images,
             "instance_ids": response.ids,
+            "visible_instances": response.visible_instances,
         }
         file_id = store.save(payload)
         
         return {
             "success": response.success,
             "file_id": file_id,
-            "instance_ids": response.instance_ids,
+            "instance_ids": response.ids,
+            "visible_instances": response.visible_instances,
         }
     
     detect_tool = StructuredTool.from_function(

@@ -488,3 +488,118 @@ class MilvusMemory(Memory):
             f"and the most recent memory was recorded at {end_time_str} UTC. "
             f"Today is {end_day_of_week}, {end_date_str}."
         )
+        
+    def _format_duration(self, seconds: float) -> str:
+        """Small helper to pretty-print a duration (e.g., '12m 3s')."""
+        seconds = int(max(0, round(seconds)))
+        m, s = divmod(seconds, 60)
+        h, m = divmod(m, 60)
+        if h:
+            return f"{h}h {m}m {s}s"
+        if m:
+            return f"{m}m {s}s"
+        return f"{s}s"
+
+    def get_contiguous_record_groups(
+        self,
+        max_gap_seconds: float = 300.0,
+        min_group_size: int = 1,
+    ) -> List[dict]:
+        """
+        Group records whose timestamps are within `max_gap_seconds` of each other,
+        ordered by time. Returns a list of groups with counts and spans.
+
+        Each item in the returned list has:
+            {
+              "count": int,
+              "start_ts": float,        # unix timestamp (UTC)
+              "end_ts": float,          # unix timestamp (UTC)
+              "start_str": str,         # 'YYYY-MM-DD HH:MM:SS' UTC
+              "end_str": str,           # 'YYYY-MM-DD HH:MM:SS' UTC
+              "duration_seconds": float,
+              "duration_str": str
+            }
+
+        Args:
+            max_gap_seconds: Max allowed gap between consecutive records
+                             for them to be in the same group (default 300s = 5 min).
+            min_group_size:  Only keep groups with at least this many records.
+
+        Returns:
+            List[Dict]: One dict per contiguous group (ascending by start time).
+        """
+        # Ensure fresh view of the collection
+        self.milv_wrapper.reload()
+        self.milv_wrapper.collection.flush()
+
+        num_records = self.milv_wrapper.collection.num_entities
+        if num_records == 0:
+            return []
+
+        # Pull timestamps (unordered), then sort locally
+        results = self.milv_wrapper.collection.query(
+            expr="id >= 0",
+            output_fields=["timestamp"],
+            limit=num_records,
+            consistency_level="Strong",
+        )
+        timestamps = sorted(float(r["timestamp"]) for r in results if "timestamp" in r)
+        if not timestamps:
+            return []
+
+        groups: List[Tuple[int, float, float]] = []  # (count, start_ts, end_ts)
+        start_ts = prev_ts = timestamps[0]
+        count = 1
+
+        for t in timestamps[1:]:
+            if (t - prev_ts) <= max_gap_seconds:
+                count += 1
+                prev_ts = t
+            else:
+                groups.append((count, start_ts, prev_ts))
+                start_ts = prev_ts = t
+                count = 1
+        groups.append((count, start_ts, prev_ts))  # close last group
+
+        # Format output and apply min_group_size filter
+        out: List[Dict] = []
+        for c, s, e in groups:
+            if c < min_group_size:
+                continue
+            dur = max(0.0, e - s)
+            s_dt = datetime.utcfromtimestamp(s)
+            e_dt = datetime.utcfromtimestamp(e)
+            out.append({
+                "count": c,
+                "start_ts": s,
+                "end_ts": e,
+                "start_str": s_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_str": e_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "duration_seconds": dur,
+                "duration_str": self._format_duration(dur),
+            })
+
+        return out
+
+    def get_contiguous_record_groups_for_llm(
+        self,
+        max_gap_seconds: float = 300.0,
+        min_group_size: int = 1,
+    ) -> str:
+        """
+        Pretty, LLM-friendly summary string, e.g.:
+        '1) 100 records between 2025-08-12 10:00:00 and 2025-08-12 10:42:00 (42m 0s)'
+        """
+        groups = self.get_contiguous_record_groups(
+            max_gap_seconds=max_gap_seconds,
+            min_group_size=min_group_size,
+        )
+        if not groups:
+            return "No contiguous record groups found."
+
+        lines = []
+        for i, g in enumerate(groups, 1):
+            lines.append(
+                f"{i}) {g['count']} records between {g['start_str']} and {g['end_str']} ({g['duration_str']})"
+            )
+        return "\n".join(lines)

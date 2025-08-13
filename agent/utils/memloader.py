@@ -14,6 +14,7 @@ def remember(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: l
                 if ("waypoint" in entry) and waypoint_only and (int(entry["waypoint"]) < 0):
                     continue
                 t, pos, caption, text_embedding, start_frame, end_frame = entry["time"], entry["base_position"], entry["base_caption"], entry["base_caption_embedding"], entry["start_frame"], entry["end_frame"]
+                pos = [pos[0], pos[2], pos[1]]  # convert from (x, z, y) to (x, y, z)
                 t += time_offset
                 start_frame, end_frame = int(start_frame), int(end_frame)
                 memory_item = MemoryItem(
