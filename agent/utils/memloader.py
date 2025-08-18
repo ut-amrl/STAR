@@ -15,6 +15,8 @@ def remember(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: l
                     continue
                 t, pos, caption, text_embedding, start_frame, end_frame = entry["time"], entry["base_position"], entry["base_caption"], entry["base_caption_embedding"], entry["start_frame"], entry["end_frame"]
                 pos = [pos[0], pos[2], pos[1]]  # convert from (x, z, y) to (x, y, z)
+                if "interactive" in inpath:
+                    pos[2] += 0.5
                 t += time_offset
                 start_frame, end_frame = int(start_frame), int(end_frame)
                 memory_item = MemoryItem(

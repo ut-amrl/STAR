@@ -10,6 +10,8 @@ classonly/1215bffa.json
 classonly/f180fd83.json
 classonly/11154af3.json
 classonly/d3e34041.json
+classonly_interactive/f180fd83.json                                                                                                                                                                                                                 
+classonly_interactive/3dae9fb7.json
 unambiguous/46b44da6.json
 unambiguous/51818dfa.json
 unambiguous/8abab93b.json

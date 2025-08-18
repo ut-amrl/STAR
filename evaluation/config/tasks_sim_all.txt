@@ -34,6 +34,8 @@ classonly/9a987b45.json
 classonly/434e08da.json
 classonly/eda2297b.json
 classonly/323dc282.json
+classonly_interactive/f180fd83.json                                                                                                                                                                                                                 
+classonly_interactive/3dae9fb7.json
 unambiguous/46b44da6.json
 unambiguous/51818dfa.json
 unambiguous/8abab93b.json

@@ -154,7 +154,7 @@ class LowLevelAgent:
         chat_history += additional_search_history
         
         max_search_in_time_cnt = 20
-        n_reflection_intervals = 4
+        n_reflection_intervals = 5
         
         model = self.vlm
         if self.search_in_time_cnt < max_search_in_time_cnt:
@@ -405,7 +405,7 @@ class LowLevelAgent:
         
         self.search_in_time_cnt = 0
         
-        self.build_graph(eval=eval)
+        self.build_graph(eval=True)
         
         inputs = { "messages": [
                 (("user", self.task.task_desc)),
