@@ -17,8 +17,8 @@ from amrl_msgs.srv import (
 class HighLevelAgent:
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
-        search_in_time_history: Annotated[Sequence[BaseMessage], add_messages]
-        search_in_time_toolcalls: Annotated[Sequence, add_messages]
+        history: Annotated[Sequence[BaseMessage], add_messages]
+        toolcalls: Annotated[Sequence, add_messages]
         
     @staticmethod
     def from_search_in_time_to(state: AgentState):
@@ -148,7 +148,7 @@ class HighLevelAgent:
                     break
                 idx -= 1
 
-            # ===  Step 2: Append all following ToolMessages into search_in_time_history
+            # ===  Step 2: Append all following ToolMessages into history
             if last_ai_idx is not None:
                 image_messages = []
                 for msg in messages[last_ai_idx+1:]:
@@ -157,7 +157,6 @@ class HighLevelAgent:
                         if isinstance(msg.content, str):
                             msg.content = parse_and_pretty_print_tool_message(msg.content)
                         additional_search_history.append(msg)
-                        # state["search_in_time_history"].append(msg)
                         
                         if isinstance(original_msg_content, str) and is_image_inspection_result(original_msg_content):
                             inspection = eval(original_msg_content)
@@ -182,10 +181,8 @@ class HighLevelAgent:
                             self.logger.info(f"[SEARCH IN TIME] Tool Response: {msg.content}")
                 
                 additional_search_history += image_messages
-                # state["search_in_time_history"] += image_messages
-                
         
-        chat_history = copy.deepcopy(state.get("search_in_time_history", []))
+        chat_history = copy.deepcopy(state.get("history", []))
         chat_history += additional_search_history
         
         max_search_in_time_cnt = 10
@@ -258,8 +255,8 @@ class HighLevelAgent:
 
         self.search_in_time_cnt += 1
         return {"messages": [response], 
-                "search_in_time_history": additional_search_history + [response],
-                "search_in_time_toolcalls": last_tool_calls}
+                "history": additional_search_history + [response],
+                "toolcalls": last_tool_calls}
     
     def prepare_search_in_space(self, state: AgentState):
         messages = state["messages"]
@@ -295,7 +292,7 @@ class HighLevelAgent:
         import pdb; pdb.set_trace()
         
     def evaluate_search_in_time(self, state: AgentState):
-        chat_history = copy.deepcopy(state.get("search_in_time_history", []))[:-1]
+        chat_history = copy.deepcopy(state.get("history", []))[:-1]
         
         model = self.vlm
         model = model.bind_tools(self.eval_search_in_time_tool_definitions)
@@ -458,7 +455,7 @@ class HighLevelAgent:
             self.logger.info("=============== END =============== \n\n\n")
         
         toolcalls = []
-        for msg in state.get("search_in_time_toolcalls", []):
+        for msg in state.get("toolcalls", []):
             toolcalls += msg.tool_calls
         return {
             "task_result": self.task.search_proposal,
