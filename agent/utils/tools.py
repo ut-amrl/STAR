@@ -210,7 +210,7 @@ def create_pause_and_think_tool() -> List[StructuredTool]:
 
     return [pause_tool]
 
-def create_memory_terminate_tool() -> List[StructuredTool]:
+def create_memory_terminate_tool(memory: MilvusMemory) -> List[StructuredTool]:
 
     class MemoryTerminateInput(BaseModel):
         summary: str = Field(
@@ -226,7 +226,14 @@ def create_memory_terminate_tool() -> List[StructuredTool]:
             description="Orientation angle in radians"
         )
         record_ids: List[int] = Field(
-            description="A list of memory record IDs that support the decision"
+            description=(
+                "A set of memory record IDs that are directly useful for downstream planning and execution. "
+                "Include the most recent verified record that shows the object at `position`/`theta`, "
+                "plus any additional records that provide supporting evidence for re-identification, "
+                "landmark context, or visibility transitions. "
+                "The robot should be able to rely on this evidence pack alone to localize and interactively "
+                "retrieve the target instance."
+            )
         )
 
     def _terminate_fn(
@@ -237,25 +244,33 @@ def create_memory_terminate_tool() -> List[StructuredTool]:
         record_ids: List[int],
     ) -> bool:
         # Dummy implementation: always return True
-        return True
+        records = []
+        for record_id in record_ids:
+            record = eval(memory.get_by_id(record_id))
+            if record:
+                records += record
+        return str(records)
 
     terminate_tool = StructuredTool.from_function(
         func=_terminate_fn,
         name="terminate",
         description=(
-            "Use this to **finalize the task** once you are confident about what to retrieve and where to go.\n\n"
+            "Finalize the MEMORY-ONLY retrieval once the object's identity and LAST-KNOWN STATE are grounded in memory.\n\n"
             "- Required fields:\n"
-            "  - `position`: 3D target coordinate (e.g., `[x, y, z]`)\n"
-            "  - `theta`: Orientation angle in radians\n"
-            "  - `record_ids`: A list of record IDs that support your conclusion\n"
-            "  - `summary`: A short explanation of what is being retrieved and why\n\n"
-            "- Constraint: Must be called **alone** (no other tools should be used in the same step)."
+            "  - `summary`: What to retrieve and why these records support it.\n"
+            "  - `instance_description`: Visual cues for re-identification of the exact instance.\n"
+            "  - `position`: 3D coordinate [x, y, z] from the most recent verified record of the object.\n"
+            "  - `theta`: Orientation (radians) from the same record as `position`.\n"
+            "  - `record_ids`: Set of memory record IDs that provide actionable evidence for downstream robot planning. "
+            "Include the most recent verified record plus any additional supporting records needed for "
+            "identity confirmation, container disambiguation, or planning approach. "
+            "The robot should be able to rely on these records to continue interactive retrieval.\n\n"
+            "- Constraint: Must be called ALONE (no other tools in the same step)."
         ),
         args_schema=MemoryTerminateInput,
     )
 
     return [terminate_tool]
-        
 
 def create_memory_search_tools(memory: MilvusMemory):
 
@@ -429,9 +444,9 @@ def create_recall_best_matches_terminate_tool(memory: MilvusMemory) -> Structure
     ) -> str:
         records = []
         for record_id in record_ids:
-            record = memory.get_by_id(record_id)
+            record = eval(memory.get_by_id(record_id))
             if record:
-                records.append(record)
+                records += record
         return str(records)
 
     terminate_tool = StructuredTool.from_function(
@@ -1181,9 +1196,9 @@ def create_recall_all_terminate_tool(memory: MilvusMemory) -> StructuredTool:
     ) -> str:
         records = []
         for record_id in record_ids[:50]:  # Enforce hard cap
-            record = memory.get_by_id(record_id)
+            record = eval(memory.get_by_id(record_id))
             if record:
-                records.append(record)
+                records += record
         return str(records)
 
     terminate_tool = StructuredTool.from_function(

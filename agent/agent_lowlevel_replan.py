@@ -7,13 +7,6 @@ from agent.utils.debug import get_logger
 from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.tools import *
 
-import roslib; roslib.load_manifest('amrl_msgs')
-from amrl_msgs.srv import (
-    GetImageSrvResponse,
-    GetImageAtPoseSrvResponse, 
-    PickObjectSrvResponse,
-)
-
 class ReplanLowLevelAgent:
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -34,17 +27,10 @@ class ReplanLowLevelAgent:
     def __init__(self, 
                  prompt_type: str,
                  verbose: bool = False,
-                 navigate_fn: Callable[[List[float], float], GetImageAtPoseSrvResponse] = None,
-                 find_object_fn: Callable[[str], List[List[int]]] = None,
-                 pick_fn: Callable[[str], PickObjectSrvResponse] = None,
                  logdir: str = None,
                  logger_prefix: str = "",):
         self.prompt_type = prompt_type
         self.verbose = verbose
-        
-        self.navigate_fn = navigate_fn
-        self.find_object_fn = find_object_fn
-        self.pick_fn = pick_fn
         
         self.logger = get_logger(logdir=logdir, prefix=logger_prefix, flatten=True) if logdir else get_logger(prefix=logger_prefix, flatten=True)
         
@@ -88,7 +74,7 @@ class ReplanLowLevelAgent:
     def setup_tools(self, memory: MilvusMemory):
         memory_search_tools = create_memory_search_tools(memory)
         inspect_tools = create_memory_inspection_tool(memory)
-        terminate_tools = create_memory_terminate_tool()
+        terminate_tools = create_memory_terminate_tool(memory)
         reflection_tools = create_pause_and_think_tool()
         robot_tools = create_physical_skills(self.json_store)
         
@@ -162,11 +148,24 @@ class ReplanLowLevelAgent:
                                 content = get_image_message_for_record(id, path, msg.tool_call_id)
                                 message = HumanMessage(content=content)
                                 image_messages.append(message)
+                                
                         elif isinstance(original_msg_content, str) and has_file_id(original_msg_content):
                             file_id = get_file_id(original_msg_content)
                             content = get_file_id_messages(self.json_store, file_id)
                             message = HumanMessage(content=content)
                             if len(content) > 1:
+                                image_messages.append(message)
+                                
+                        elif is_search_in_time_terminate_result(msg):
+                            normalized = original_msg_content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+                            records = ast.literal_eval(normalized)
+                            records = sorted(records, key=lambda d: float(d["timestamp"]))
+                            for record in records:
+                                content = get_image_message_for_record(
+                                    int(record["id"]), 
+                                    get_viz_path(self.memory, int(record["id"])),
+                                    msg.tool_call_id)
+                                message = HumanMessage(content=content)
                                 image_messages.append(message)
                                 
                         if self.logger:
@@ -427,11 +426,22 @@ class ReplanLowLevelAgent:
                 idx -= 1
                 
             if last_ai_idx is not None:
+                image_messages = []
                 for msg in messages[last_ai_idx+1:]:
                     if isinstance(msg, ToolMessage):
+                        original_msg_content = copy.copy(msg.content)
                         if isinstance(msg.content, str):
                             msg.content = parse_and_pretty_print_tool_message(msg.content)
                         additional_search_history.append(msg)
+                        
+                    if isinstance(original_msg_content, str) and has_file_id(original_msg_content):
+                            file_id = get_file_id(original_msg_content)
+                            content = get_file_id_messages(self.json_store, file_id)
+                            message = HumanMessage(content=content)
+                            if len(content) > 1:
+                                image_messages.append(message)
+                                
+                additional_search_history += image_messages
                         
         if hasattr(last_tool_calls, "tool_calls") and last_tool_calls.tool_calls:
             for tool_call in last_tool_calls.tool_calls:
@@ -442,8 +452,9 @@ class ReplanLowLevelAgent:
                     if visible_instances:
                         self.searched_visible_instances.append(visible_instances)
                     instance_ids = parsed.get("instance_ids", [])
+                    success = parsed.get("success", False)
                     
-                    if instance_ids is None or len(instance_ids) == 0:
+                    if not success or instance_ids is None or len(instance_ids) == 0:
                         pos = [-1, -1, -1]  # Default position if no search proposal
                         theta = -1
                         if len(self.searched_poses) > 0:
@@ -471,6 +482,30 @@ class ReplanLowLevelAgent:
                     position = fn_args.get("pos")
                     theta = fn_args.get("theta")
                     self.searched_poses.append((position, theta))
+                    
+                    normalized = last_message.content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+                    parsed = json.loads(normalized)
+                    success = parsed.get("success", False)
+                    if not success:
+                        pos = [-1, -1, -1]  # Default position if no search proposal
+                        theta = -1
+                        if len(self.searched_poses) > 0:
+                            pos = self.searched_poses[-1][0]
+                            theta = self.searched_poses[-1][1]
+                        self.task.search_proposal = SearchProposal(
+                            summary="",
+                            instance_description="",
+                            position=pos,
+                            theta=theta,
+                            records=[]
+                        )
+                        if len(self.searched_visible_instances) > 0:
+                            self.task.search_proposal.visible_instances = self.searched_visible_instances[-1]
+                        return {
+                            "history": additional_search_history,
+                            "toolcalls": last_tool_calls,
+                            "next_state": "end"
+                        }
                     break
                 
                 elif tool_call["name"] == "robot_pick":
@@ -498,6 +533,31 @@ class ReplanLowLevelAgent:
                         "toolcalls": last_tool_calls,
                         "next_state": "end"
                     }
+                    
+                elif tool_call["name"] == "robot_open":
+                    normalized = last_message.content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+                    parsed = json.loads(normalized)
+                    success = parsed.get("success", False)
+                    if not success:
+                        pos = [-1, -1, -1]  # Default position if no search proposal
+                        theta = -1
+                        if len(self.searched_poses) > 0:
+                            pos = self.searched_poses[-1][0]
+                            theta = self.searched_poses[-1][1]
+                        self.task.search_proposal = SearchProposal(
+                            summary="",
+                            instance_description="",
+                            position=pos,
+                            theta=theta,
+                            records=[]
+                        )
+                        if len(self.searched_visible_instances) > 0:
+                            self.task.search_proposal.visible_instances = self.searched_visible_instances[-1]
+                        return {
+                            "history": additional_search_history,
+                            "toolcalls": last_tool_calls,
+                            "next_state": "end"
+                        }
         
         next_state = state.get("next_state", "agent")
         if next_state == "end" or self.search_in_space_cnt >= max_search_in_space_cnt:
@@ -567,16 +627,17 @@ class ReplanLowLevelAgent:
         }
     
     def build_graph(self):
-        workfllow = StateGraph(ReplanLowLevelAgent.AgentState)
+        workflow = StateGraph(ReplanLowLevelAgent.AgentState)
         
-        workfllow.add_node("agent", lambda state: try_except_continue(state, self.agent))
-        workfllow.add_node("search_action", ToolNode(self.search_tools))
-        workfllow.add_node("reflection_action", ToolNode(self.reflection_tools))
-        workfllow.add_node("terminate_action", ToolNode(self.terminate_tools))
-        workfllow.add_node("search_in_space", lambda state: try_except_continue(state, self.search_in_space))
-        workfllow.add_node("evaluate", lambda state: try_except_continue(state, self.evaluate))
+        workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
+        workflow.add_node("search_action", ToolNode(self.search_tools))
+        workflow.add_node("reflection_action", ToolNode(self.reflection_tools))
+        workflow.add_node("terminate_action", ToolNode(self.terminate_tools))
+        workflow.add_node("search_in_space", lambda state: try_except_continue(state, self.search_in_space))
+        workflow.add_node("search_in_space_action", ToolNode(self.search_in_space_tools))
+        workflow.add_node("evaluate", lambda state: try_except_continue(state, self.evaluate))
         
-        workfllow.add_conditional_edges(
+        workflow.add_conditional_edges(
             "agent",
             ReplanLowLevelAgent.from_agent_to,
             {   
@@ -587,21 +648,23 @@ class ReplanLowLevelAgent:
                 "end": "evaluate",
             }
         )
-        workfllow.add_edge("search_action", "agent")
-        workfllow.add_edge("reflection_action", "agent")
-        workfllow.add_edge("terminate_action", "agent")
-        workfllow.add_conditional_edges(
+        workflow.add_edge("search_action", "agent")
+        workflow.add_edge("reflection_action", "agent")
+        workflow.add_edge("terminate_action", "agent")
+        
+        workflow.add_conditional_edges(
             "search_in_space",
             ReplanLowLevelAgent.from_search_in_space_to,
             {
                 "end": "evaluate",
-                "agent": "search_in_space",
+                "agent": "search_in_space_action",
             }
         )
-        workfllow.add_edge("evaluate", END)
+        workflow.add_edge("search_in_space_action", "search_in_space")
+        workflow.add_edge("evaluate", END)
         
-        workfllow.set_entry_point("agent")
-        self.graph = workfllow.compile()
+        workflow.set_entry_point("agent")
+        self.graph = workflow.compile()
         
     def set_memory(self, memory: MilvusMemory):
         self.memory = memory

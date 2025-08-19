@@ -19,6 +19,7 @@ class HighLevelAgent:
         messages: Annotated[Sequence[BaseMessage], add_messages]
         history: Annotated[Sequence[BaseMessage], add_messages]
         toolcalls: Annotated[Sequence, add_messages]
+        next_state: str
         
     @staticmethod
     def from_search_in_time_to(state: AgentState):
@@ -96,7 +97,7 @@ class HighLevelAgent:
         
         search_tools = recall_best_matches_tool + recall_last_seen_tool + recall_all_tools
         inspect_tools = create_memory_inspection_tool(memory)
-        response_tools = create_memory_terminate_tool()
+        response_tools = create_memory_terminate_tool(memory)
         reflection_tools = create_pause_and_think_tool()
         
         self.all_temporal_tools = search_tools + inspect_tools + response_tools + reflection_tools
@@ -165,7 +166,7 @@ class HighLevelAgent:
                                 message = HumanMessage(content=content)
                                 image_messages.append(message)
                              
-                        elif isinstance(original_msg_content, str) and is_recall_tool_result(original_msg_content):
+                        elif isinstance(original_msg_content, str) and is_recall_tool_result(original_msg_content): # TODO: bug???
                             records = eval(original_msg_content).get("records", [])
                             if is_recall_all_result(original_msg_content):
                                 records = sorted(records, key=lambda d: float(d["timestamp"]))

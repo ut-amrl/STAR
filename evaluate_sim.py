@@ -278,9 +278,6 @@ def evaluate(args):
                 from agent.agent_lowlevel_replan import ReplanLowLevelAgent
                 agent = ReplanLowLevelAgent(
                     prompt_type=args.prompt_type,
-                    navigate_fn=navigate,
-                    find_object_fn=find_object,
-                    pick_fn=pick_by_query_text_and_instance_id,
                     logdir=result_dir,
                     logger_prefix=args.agent_type
                 )
@@ -298,9 +295,6 @@ def evaluate(args):
                 from agent.agent_lowlevel import LowLevelAgent
                 agent = LowLevelAgent(
                     prompt_type=args.prompt_type,
-                    navigate_fn=navigate,
-                    find_object_fn=find_object,
-                    pick_fn=pick_by_query_text_and_instance_id,
                     logdir=result_dir,
                     logger_prefix=args.agent_type
                 )

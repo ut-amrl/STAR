@@ -337,6 +337,15 @@ def is_recall_all_result(content: str) -> bool:
     except Exception:
         return False
     
+def is_search_in_time_terminate_result(msg) -> bool:
+    try:
+        if type(msg) == ToolMessage and hasattr(msg, "name") and msg.name == "terminate":
+            return True
+        return False
+
+    except Exception:
+        return False
+    
 def has_file_id(content: str) -> bool:
     try:
         normalized = content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
