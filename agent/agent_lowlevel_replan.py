@@ -26,6 +26,11 @@ class ReplanLowLevelAgent:
         next_state = state.get("next_state", "agent")
         return next_state
     
+    @staticmethod
+    def from_search_in_space_to(state: AgentState):
+        next_state = state.get("next_state", "terminate")
+        return next_state
+    
     def __init__(self, 
                  prompt_type: str,
                  verbose: bool = False,
@@ -56,7 +61,11 @@ class ReplanLowLevelAgent:
         eval_prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "evaluation")
         self.eval_ref_and_ret_prompt = file_to_string(os.path.join(eval_prompt_dir, "eval_ref_and_ret_prompt.txt"))
         
+        search_in_space_prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "search_in_space")
+        self.search_in_space_prompt = file_to_string(os.path.join(search_in_space_prompt_dir, "search_in_space_prompt.txt"))
+
         self.search_in_time_cnt = 0
+        self.search_in_space_cnt = 0
         self.json_store = TempJsonStore()
         
         self.searched_poses = []
@@ -90,6 +99,9 @@ class ReplanLowLevelAgent:
         self.reflection_tool_definitions = [convert_to_openai_function(t) for t in self.reflection_tools]
         self.terminate_tools = terminate_tools
         self.terminate_tool_definitions = [convert_to_openai_function(t) for t in self.terminate_tools]
+        
+        self.search_in_space_tools = robot_tools
+        self.search_in_space_tool_definitions = [convert_to_openai_function(t) for t in self.search_in_space_tools]
         
         eval_tools = create_search_in_time_evaluation_tool()
         self.eval_tools = eval_tools
@@ -179,8 +191,11 @@ class ReplanLowLevelAgent:
                     theta = fn_args.get("theta")
                     self.searched_poses.append((position, theta))
                     if len(self.searched_poses) > max_search_in_space_cnt:
-                        self.search_in_time_cnt = max_search_in_time_cnt + 1 # Force to end search in time
-                    break
+                        return {
+                            "history": additional_search_history,
+                            "toolcalls": last_tool_calls,
+                            "next_state": "search_in_space",
+                        }
                 
                 elif tool_call["name"] == "robot_pick":
                     pos = [-1, -1, -1]  # Default position if no search proposal
@@ -207,15 +222,23 @@ class ReplanLowLevelAgent:
                         "toolcalls": last_tool_calls,
                         "next_state": "end"
                     }
-                
-        next_state = state.get("next_state", "agent")
-        if next_state == "end":
-            return {
-                "history": additional_search_history,
-                "toolcalls": last_tool_calls,
-                "next_state": "end",
-            }
-                
+                    
+                elif tool_call["name"] == "terminate":
+                    fn_args = tool_call["args"]
+                    summary = fn_args["summary"]
+                    isinstance_description = fn_args.get("instance_description", "")
+                    position = fn_args["position"]
+                    theta = fn_args["theta"]
+                    
+                    if self.logger:
+                        self.logger.info(f"[SEARCH] Search proposal summary: {summary}. instance descritption = {isinstance_description}, pos = {position}, theta = {theta}")
+
+                    return {
+                        "history": additional_search_history,
+                        "toolcalls": last_tool_calls,
+                        "next_state": "search_in_space",
+                    }
+                    
         chat_history = copy.deepcopy(state.get("history", []))
         chat_history += additional_search_history
         
@@ -300,20 +323,6 @@ class ReplanLowLevelAgent:
             elif "pause_and_think" in tool_call_names:
                 next_state = "reflection"
                 
-            if "robot_navigate" in tool_call_names:
-                for tool_call in response.tool_calls:
-                    if tool_call.get("name") == "robot_navigate":
-                        fn_args = tool_call.get("args", {})
-                        position = fn_args.get("pos")
-                        theta = fn_args.get("theta")
-                        self.searched_poses.append((position, theta))
-                        break
-                
-                if len(self.searched_poses) > max_search_in_space_cnt:
-                    next_state = "terminate"
-                    if self.logger:
-                        self.logger.warning(f"[SEARCH] Reached maximum search in space iterations ({max_search_in_space_cnt}). Ending search.")
-        
         return {
             "messages": [response], 
             "history": additional_search_history + [response],
@@ -321,41 +330,6 @@ class ReplanLowLevelAgent:
             "next_state": next_state,
         }
     
-    def prepare_search_in_space(self, state: AgentState):
-        messages = state["messages"]
-        last_message = messages[-2] if messages else None
-        
-        # Check if response contains a 'terminate' tool call
-        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            for call in last_message.tool_calls:
-                if call.get("name") == "terminate":
-                    fn_args = call.get("args", {})
-                    summary = fn_args["summary"]
-                    instance_description = fn_args.get("instance_description", "")
-                    position = fn_args["position"]
-                    theta = fn_args["theta"]
-                    
-                    self.searched_poses.append((position, theta))
-                    
-                    records = []
-                    record_ids = [int(x) for x in fn_args["record_ids"]]
-                    for record_id in record_ids:
-                        record = eval(self.memory.get_by_id(record_id))[0]
-                        record["position"] = eval(record["position"])
-                        records.append(record)
-                    
-                    self.task.search_proposal = SearchProposal(summary=summary,
-                                                          instance_description=instance_description,
-                                                          position=position,
-                                                          theta=theta,
-                                                          records=records,)
-                    if self.logger:
-                        self.logger.info(f"[PREPARE SEARCH IN SPACE] Search proposal prepared: {self.task.search_proposal}")
-                    return
-                
-        # TODO: Should never go here; add fallback logic
-        import pdb; pdb.set_trace()
-        
     def evaluate(self, state: AgentState):
         
         if type(state.get("history", [])[-1]) == ToolMessage:
@@ -432,49 +406,165 @@ class ReplanLowLevelAgent:
         raise ValueError("No terminate tool call found in the response")
     
     def search_in_space(self, state: AgentState):
-        if not self.task.search_proposal:
-            # TODO: Handle the case where search proposal is not set
-            if self.logger:
-                self.logger.warning("[SEARCH IN SPACE] No search proposal set. Cannot proceed with search in space.")
-            return
+        max_search_in_space_cnt = 5
         
-        nav_response = self.navigate_fn(
-            self.task.search_proposal.position,
-            self.task.search_proposal.theta
-        )
-        if not nav_response.success:
-            if self.logger:
-                self.logger.error(f"[SEARCH IN SPACE] Navigation failed!")
-            return
-        if self.logger:
-            self.logger.info(f"[SEARCH IN SPACE] Navigation successful to position {self.task.search_proposal.position} with theta {self.task.search_proposal.theta}.")
+        messages = state["messages"]
         
-        find_response = self.find_object_fn(
-            self.task.search_proposal.instance_description,
-            self.task.search_proposal.get_viz_path()
-        ) 
-        if not find_response:
-            if self.logger:
-                self.logger.error(f"[SEARCH IN SPACE] Object not found in the current view.")
-            return
-        if self.logger:
-            self.logger.info(f"[SEARCH IN SPACE] Object found in the current view: {find_response}.")
-        self.task.search_proposal.visible_instances = find_response.visible_instances
-            
-        pick_response = self.pick_fn(
-            # self.task.search_proposal.instance_description,
-            self.class_type,  # TODO
-            find_response.id
-        )
-        if not pick_response.success:
-            if self.logger:
-                self.logger.error(f"[SEARCH IN SPACE] Pick operation failed!")
+        additional_search_history = []
+        last_tool_calls = []
         
-        self.task.search_proposal.instance_name = pick_response.instance_uid
-        self.task.search_proposal.has_picked = pick_response.success
+        last_message = messages[-1]
+        if self.search_in_space_cnt > 0 and isinstance(last_message, ToolMessage):
+            # ===  Step 1: Find last AIMessage with tool_calls
+            idx = len(messages) - 1
+            last_ai_idx = None
+            while idx >= 0:
+                msg = messages[idx]
+                if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                    last_tool_calls = copy.deepcopy(msg)
+                    last_ai_idx = idx
+                    break
+                idx -= 1
+                
+            if last_ai_idx is not None:
+                for msg in messages[last_ai_idx+1:]:
+                    if isinstance(msg, ToolMessage):
+                        if isinstance(msg.content, str):
+                            msg.content = parse_and_pretty_print_tool_message(msg.content)
+                        additional_search_history.append(msg)
+                        
+        if hasattr(last_tool_calls, "tool_calls") and last_tool_calls.tool_calls:
+            for tool_call in last_tool_calls.tool_calls:
+                if tool_call["name"] == "robot_detect":
+                    normalized = last_message.content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+                    parsed = json.loads(normalized)
+                    visible_instances = parsed.get("visible_instances", [])
+                    if visible_instances:
+                        self.searched_visible_instances.append(visible_instances)
+                    instance_ids = parsed.get("instance_ids", [])
+                    
+                    if instance_ids is None or len(instance_ids) == 0:
+                        pos = [-1, -1, -1]  # Default position if no search proposal
+                        theta = -1
+                        if len(self.searched_poses) > 0:
+                            pos = self.searched_poses[-1][0]
+                            theta = self.searched_poses[-1][1]
+                        self.task.search_proposal = SearchProposal(
+                            summary="",
+                            instance_description="",
+                            position=pos,
+                            theta=theta,
+                            records=[]
+                        )
+                        if len(self.searched_visible_instances) > 0:
+                            self.task.search_proposal.visible_instances = self.searched_visible_instances[-1]
+                        return {
+                            "history": additional_search_history,
+                            "toolcalls": last_tool_calls,
+                            "next_state": "end"
+                        }
+                        
+                    break
+                
+                elif tool_call["name"] == "robot_navigate":
+                    fn_args = tool_call.get("args", {})
+                    position = fn_args.get("pos")
+                    theta = fn_args.get("theta")
+                    self.searched_poses.append((position, theta))
+                    break
+                
+                elif tool_call["name"] == "robot_pick":
+                    pos = [-1, -1, -1]  # Default position if no search proposal
+                    theta = -1
+                    if len(self.searched_poses) > 0:
+                        pos = self.searched_poses[-1][0]
+                        theta = self.searched_poses[-1][1]
+                    self.task.search_proposal = SearchProposal(
+                        summary="",
+                        instance_description="",
+                        position=pos,
+                        theta=theta,
+                        records=[]
+                    )
+                    fn_args = tool_call["args"]
+                    normalized = last_message.content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
+                    parsed = json.loads(normalized)
+                    self.task.search_proposal.has_picked = parsed.get("success", False)
+                    self.task.search_proposal.instance_name = parsed.get("instance_uid", "")
+                    if len(self.searched_visible_instances) > 0:
+                        self.task.search_proposal.visible_instances = self.searched_visible_instances[-1]
+                    return {
+                        "history": additional_search_history,
+                        "toolcalls": last_tool_calls,
+                        "next_state": "end"
+                    }
+        
+        next_state = state.get("next_state", "agent")
+        if next_state == "end" or self.search_in_space_cnt >= max_search_in_space_cnt:
+            return {
+                "history": additional_search_history,
+                "toolcalls": last_tool_calls,
+                "next_state": "end",
+            }
+        
+        chat_history = copy.deepcopy(state.get("history", []))
+        chat_history += additional_search_history
+        
+        model = self.vlm
+        model = model.bind_tools(self.search_in_space_tool_definitions)
+        prompt = self.search_in_space_prompt
+        
+        chat_template = [
+            ("human", "This is previous tool calls and the responses:"),
+            MessagesPlaceholder("chat_history"),
+            ("system", prompt),
+            ("system", "{fact_prompt}"),
+            ("human", "{question}"),
+            ("system", "You should now decide the **next action** based on everything you've seen so far. Use the available tools to continue your memory search, or finalize your decision if you're confident. Reason carefully about what you have done, what you have known, what your current subgoal is, and what user's task is to decide what to do next."),
+        ]
+        if len(self.searched_poses) > 0:
+            searched_poses_str = "\n".join([f"{i+1}. Position: {pos[0]}, Theta: {pos[1]}" for i, pos in enumerate(self.searched_poses)])
+        else:
+            searched_poses_str = "None."
+        chat_template += [
+            ("system", f"You must strictly follow the JSON output format and do not provide any additional contexts."),
+            ("system", f"🔄 You are allowed up to **{max_search_in_space_cnt} iterations** total. This is iteration **#{self.search_in_space_cnt}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration."),
+            ("system", f"You are allowed to search in real=world (navigate and search in space) up to **{max_search_in_space_cnt} iterations**. You have searched in space **{len(self.searched_poses)}** times so far: \n{searched_poses_str}"),
+        ]
+        chat_prompt = ChatPromptTemplate.from_messages(chat_template)
+        
+        chained_model = chat_prompt | model
+        question = f"User Task: {self.task.task_desc}\n" \
+                   f"Have you figured out which instance is user referring to? Do you know where this instance was last seen? Do you know how to search this item in the real-world? What should you do next?"
+        fact_prompt = f"Here are some facts for your context:\n" \
+                      f"1. {self.memory.get_memory_stats_for_llm()}\n" \
+                      f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n" \
+                      f"3. {self.memory.get_contiguous_record_groups_for_llm()}\n"
+        
+        response = chained_model.invoke({
+            "chat_history": chat_history,
+            "fact_prompt": fact_prompt,
+            "question": question,
+        })
+        
         if self.logger:
-            self.logger.info(f"[SEARCH IN SPACE] Pick operation successful: {self.task.search_proposal.instance_name} (has_picked={self.task.search_proposal.has_picked}).")
-        return
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                for call in response.tool_calls:
+                    args_str = ", ".join(f"{k}={repr(v)}" for k, v in call.get("args", {}).items())
+                    log_str = f"{call.get('name')}({args_str})"
+                    self.logger.info(f"[SEARCH IN SPACE] Tool call: {log_str}")
+            else:
+                self.logger.info(f"[SEARCH IN SPACE] {response}")
+
+        self.search_in_space_cnt += 1
+        
+        next_state = "agent"
+        return {
+            "messages": [response], 
+            "history": additional_search_history + [response],
+            "toolcalls": last_tool_calls,
+            "next_state": next_state,
+        }
     
     def build_graph(self):
         workfllow = StateGraph(ReplanLowLevelAgent.AgentState)
@@ -483,7 +573,6 @@ class ReplanLowLevelAgent:
         workfllow.add_node("search_action", ToolNode(self.search_tools))
         workfllow.add_node("reflection_action", ToolNode(self.reflection_tools))
         workfllow.add_node("terminate_action", ToolNode(self.terminate_tools))
-        workfllow.add_node("prepare_search_in_space", lambda state: try_except_continue(state, self.prepare_search_in_space))
         workfllow.add_node("search_in_space", lambda state: try_except_continue(state, self.search_in_space))
         workfllow.add_node("evaluate", lambda state: try_except_continue(state, self.evaluate))
         
@@ -494,14 +583,21 @@ class ReplanLowLevelAgent:
                 "agent": "search_action",
                 "reflection": "reflection_action",
                 "terminate": "terminate_action",
+                "search_in_space": "search_in_space",
                 "end": "evaluate",
             }
         )
         workfllow.add_edge("search_action", "agent")
         workfllow.add_edge("reflection_action", "agent")
-        workfllow.add_edge("terminate_action", "prepare_search_in_space")
-        workfllow.add_edge("prepare_search_in_space", "search_in_space")
-        workfllow.add_edge("search_in_space", "evaluate")
+        workfllow.add_edge("terminate_action", "agent")
+        workfllow.add_conditional_edges(
+            "search_in_space",
+            ReplanLowLevelAgent.from_search_in_space_to,
+            {
+                "end": "evaluate",
+                "agent": "search_in_space",
+            }
+        )
         workfllow.add_edge("evaluate", END)
         
         workfllow.set_entry_point("agent")

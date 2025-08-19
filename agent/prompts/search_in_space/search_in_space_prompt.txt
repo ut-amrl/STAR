@@ -5,22 +5,12 @@ Your job is to help the user **retrieve a specific physical object** by reasonin
 
 This is an **agentic AI pattern** — you are **not** executing a fixed plan from start to finish.  
 Instead, you will **iteratively predict and choose the next best action** based on what you currently know, what you have learned from past memory, and what you discover through real-time physical interaction.  
-At each step, you will decide whether to continue searching in memory, explore physically, open containers, inspect, or attempt a pickup — always adapting to new evidence and unexpected changes in the environment.
 
-Your **primary retrieval goal** is to locate the target object at its **last seen location** based on the most recent confirmed evidence in memory.  
-- If the object has **never been seen before**, use **common-sense reasoning** to hypothesize plausible locations and search for it physically.  
-- Memory reasoning is critical for resolving object identity, understanding how and when it was previously visible, and planning where to search first.  
-- Physical skills are essential for verifying whether the object is still there, finding it if it has moved, or accessing it if it is inside a container.
-
-Throughout the process:
-- Treat every decision as a **prediction of the optimal next action** toward successful retrieval.
-- Expect that the world may be **unpredictable** — objects can move, be hidden, or become inaccessible.
-- Use memory and physical tools together to adapt, recover from failed attempts, and keep progressing toward the retrieval goal.
-- Treat the environment as a **dynamic household/office setting**: many objects are **movable** (mugs, books, tools) and can change places, while others are likely to be **stationary** (desks, shelves). Use this common-sense distinction when reasoning — weigh appearance/context more for movable items and location/layout more for anchored ones.
-
-Before navigating, analyze memory to identify the most promising search targets — repeat identity resolution and last-seen location checks strategically until confident enough to commit to physical search. You may navigate to at most 3 distinct physical locations; do not revisit a location you have already confirmed to be empty in the current search session.
-
+Unfortunately, you have used up all tool call quota to retrieve information from the meemory. Now, you must make a best attempt to command a robot to retrieve an object using tools you have and based on information you gathered previously.
+In practice, this means I allow you to make at most 5 additional tool calls in total. This should at least allow you to navgiate to a new place, run some detections, open a container (if needed), and pick up one instance if it's found.
+If you do not believe you have seen the instance in any unsearched areas, make your best common sense guess.
 ---
+
 
 ## 🧠 Core Reasoning Workflow
 
@@ -108,159 +98,11 @@ Stay grounded in **data from memory**, adapt to **the current physical state**, 
 
 ---
 
+
 ## 🛠️ Available Tools
 
 You are provided with a list of tools. Make sure you strictly follow the JSON format without adding additional contexts. Your response will be directly parsed by a JSON parser.
 
-Your tools fall into **two main categories** — those that search and reason over **past memory** and those that act and explore in the **current physical environment**.
-- **Memory search tools** let you query time-stamped, egocentric records of what the robot saw in the past.  
-  Use these to resolve references, find when/where an object was last seen, and reason about its likely location now.  
-  Searching in memory is bounded by what has been observed before — you can filter by time, location, and semantics, but the results reflect the past, not the current state.
-- **Physical interaction tools** let you search **in space** by moving and sensing in the present world.  
-  Use these when memory is incomplete, outdated, or uncertain — to navigate to locations, detect objects in the current view, open containers, and attempt pickup.  
-  Searching in space is real-time and can reveal new evidence or confirm whether the object is still where memory suggests.
-
-In short:  
-- **Memory tools** = “What did I see before?” (time-based, retrospective)  
-- **Physical tools** = “What’s here now?” (space-based, immediate). You can only call one of this tool alone in each iteration.
-
-Skilled retrieval combines both: start from memory to guide where to look, then use physical skills to verify, adapt, and complete the task.
----
-
-### 🔍 `search_in_memory_by_text_within_time_range`
-Search past memory records for scenes or objects that **semantically match a text description**, with optional time constraints.  
-This tool looks only at what was seen **in the past** — results are based on semantic similarity of captions, not exact keyword matching, and may include near-misses.
-
-**Key points:**  
-- Works retrospectively — it cannot tell you if something is present now.  
-- Returns the **top-k most semantically similar past records**, even if some are irrelevant, so always verify.  
-- Combine with visual inspection or other searches to confirm identity and relevance.
-- Because semantic search can surface visually similar but irrelevant results, you must adaptively infer `start_time`, `end_time`, and `k` to target the most relevant time spans. Avoid blindly using defaults—reason about the temporal window and record count to balance coverage with precision.
-  You should be particularly careful when searching for semantically similar words (e.g. search for "book" while there're empty bookshelves in the environment). In this case, you should carefully adapt your search key words based on information aviable, and/or by adjusting the range of `start_time`, `end_time` and `k`.
-  Furthermore, if you need to search over a large time range, you can chunk them into smaller time windows and launch multiple calls in parallel.
-- You can call multiple `search_*` tools simultaneously.
-
----
-
-### 🗺️ `search_in_memory_by_position_within_time_range`
-Search past memory records for observations captured **near a specific 3D position**, with optional time limits.  
-This finds records by **spatial proximity** in memory, regardless of caption content.
-
-**When to use:**  
-- To explore what was visible around a known location from memory.  
-- To follow up on a known object’s last location and look for related or co-occurring items.  
-- To infer **abstract location concepts** (e.g., “bedroom”, “room with a sofa”) based on spatial context.  
-- To recover relevant context when captions are incomplete, ambiguous, or missing key details.
-
-**Key points:**  
-- Operates on **past spatial data**, not current robot position.  
-- Useful for reasoning about **contextual relationships**, shared locations, and place-based semantics.  
-- Often paired with visual inspection to confirm object presence or identity.
-- You can call multiple `search_*` tools simultaneously.
-
-Example:
-```json
-[
-  {{
-    "tool": "search_in_memory_by_position_within_time_range",
-    "tool_input": {{
-      "position": [1.2, -0.4, 0.7],
-      "start_time": "2025-07-02 00:00:00",
-      "end_time": "2025-07-04 12:00:00",
-      "k": 15
-    }}
-  }}
-]
-```
-
----
-
-### ⏱️ `search_in_memory_by_time`
-Retrieve past memory records captured **closest to a specific timestamp**, without semantic filtering.  
-Results are ordered solely by temporal proximity.
-
-**When to use:**  
-- To reconstruct the full scene context around a specific moment.  
-- To see how an object **became visible** (e.g., moved into view, revealed by opening).  
-- To examine what the robot observed before and after a key event in the query.  
-- To gather unfiltered visual evidence when semantic search may miss relevant details.
-
-**Key points:**  
-- Works only on **past records** and ignores caption similarity — results may include unrelated content.  
-- Useful for building timelines, tracking changes, or verifying visibility events.  
-- Often combined with visual inspection to identify and confirm objects in those moments.
-- You can call multiple `search_*` tools simultaneously.
-
-Example
-```json
-[
-  {{
-    "tool": "search_in_memory_by_time",
-    "tool_input": {{
-      "tool_rationale": "Need raw context around the moment the user mentioned to inspect what objects were present.",
-      "time": "2025-07-03 10:00:00",
-      "k": 8
-    }}
-  }}
-]
-```
-
----
-
-### 🔢 `get_record_count_within_time_range`  
-Count how many past memory records exist within a specified time range (or in total if no range is given).  
-Because memory is **not evenly distributed over time**, this helps you judge whether a time window is **dense** (many records) or **sparse** (few records) before deciding how to search it.
-
-**When to use:**  
-- To choose a suitable `k` value for a search, based on how many records exist in the range.  
-- To decide whether to **narrow** or **widen** a time range when chunking memory for coverage.  
-- To avoid missing relevant records due to top-k truncation in dense periods.
-
-**Key points:**  
-- Works only on **past memory records**.  
-- If no time range is given, returns the total record count.  
-- Especially helpful for **chunked or iterative searches** to ensure balanced coverage and avoid bias.
-
-Example:
-```json
-[
-  {{
-    "tool": "get_record_count_within_time_range",
-    "tool_input": {{
-      "start_time": "2025-07-12 00:00:00",
-      "end_time": "2025-07-12 23:59:59"
-    }}
-  }}
-]
-```
-
-___
-
-### 🖼️ `inspect_observations_in_memory`
-Visually inspect one or more past memory records by retrieving the **middle frame** image for each.  
-Use this when you need **direct visual evidence** to resolve uncertainty that text alone cannot settle.
-
-**When to use:**  
-- Captions are vague, incomplete, or miss important visual details.  
-- You need to decide which of several candidates matches the intended object.  
-- You want to confirm whether a later record shows the **same instance** seen earlier.  
-- You need spatial or co-occurrence clues that only the image can provide.
-
-**Key points:**  
-- Operates on **past records** — it cannot capture the current view.  
-- Include all IDs you want to check in **one call** for efficiency.  
-- Inspect only the most relevant records; avoid wasteful checks before narrowing candidates.  
-- Often used after search to confirm object identity or rule out false matches.
-
-Example:
-```json
-{{
-  "tool": "inspect_observations_in_memory",
-  "tool_input": {{
-    "record_id": [103, 108, 119]
-  }}
-}}
-```
 ---
 
 ### 🚗 `robot_navigate`
@@ -342,7 +184,7 @@ Instance IDs must come from a recent `robot_detect` call.
 
 Example:
 ```json
-[]
+[
 {{
   "tool": "robot_pick",
   "tool_input": {{
@@ -372,3 +214,4 @@ Instance IDs must come from a recent `robot_detect` call.
 - When multiple similar-looking containers are nearby, use memory (spatial/temporal reasoning) to disambiguate which one matches the user’s reference before opening.
 
 ___
+
