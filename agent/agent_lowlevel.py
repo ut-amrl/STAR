@@ -267,6 +267,9 @@ class LowLevelAgent(Agent):
         
         self.search_in_time_cnt = 0
         self.search_in_space_cnt = 0
+        self.searched_poses = []
+        self.searched_visible_instances = []
+        self.task.search_proposal = None
         
         self.build_graph()
         
@@ -275,7 +278,7 @@ class LowLevelAgent(Agent):
             ]
         }
         
-        config = {"recursion_limit": 50}
+        config = {"recursion_limit": 60}
         state = self.graph.invoke(inputs, config=config)
         
         if self.logger:
@@ -284,6 +287,7 @@ class LowLevelAgent(Agent):
         toolcalls = []
         for msg in state.get("toolcalls", []):
             toolcalls += msg.tool_calls
+        self.task.search_proposal.searched_poses = self.searched_poses
         return {
             "task_result": self.task.search_proposal,
             "toolcalls": toolcalls,
