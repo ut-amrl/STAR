@@ -57,10 +57,10 @@ _COLOR_GROUP = {
 # desired left-to-right order in every grouped plot  (raw names!)
 _TASK_ORDER = [
     "classonly",       # → “class-only”
-    "unambiguous",       # → “attribute-based”
+    "unambiguous",     # → “attribute-based”
     "spatial",         # → “spatial”
-    "spatial_temporal",  # → “temporal”
-    "frequency",         # → “freqencist”
+    "spatial_temporal",# → “temporal”
+    "frequency",       # → “freqencist”
 ]
 
 def _task_sort_key(t):
@@ -72,7 +72,6 @@ def _task_sort_key(t):
 def _pretty_task(raw: str, oneline: bool = False) -> str:
     """Human-friendly label for legends / tick-labels."""
     task_display = _TASK_DISPLAY if oneline else _TASK_DISPLAY_TWO_LINES
-    
     for orig, nice in task_display.items():
         if raw.startswith(orig):
             return f"{nice}{raw[len(orig):]}"     # keep any suffix
@@ -89,12 +88,24 @@ def _strip(record: dict) -> dict:
     """Return only the fields listed in _SUCCESS_FLAGS and _OBJECT_FLAGS (missing keys → None)."""
     return {k: record.get(k) for k in _SUCCESS_FLAGS + _OBJECT_FLAGS}
 
+# ── NEW: Wilson 95% CI half-width helper ───────────────────────────────────────
+def _wilson_halfwidth(succ: float, n: int, z: float = 1.96) -> float:
+    """95% Wilson interval half-width for a binomial proportion."""
+    if n <= 0:
+        return np.nan
+    p = succ / n
+    denom = 1.0 + (z**2) / n
+    return z * np.sqrt(p * (1 - p) / n + (z**2) / (4 * n * n)) / denom
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
-    parser.add_argument("--task_config", type=str, default="evaluation/config/task_sim_all.txt")
-    parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "high_level_gt", "replan_low_level_gt"])
+    parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt")
+    parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "replan_low_level_gt"])
+    # NEW: toggle error bars
+    parser.add_argument("--error_bars", action="store_true",
+                        help="If set, draw 95% Wilson CI error bars for success rates.")
     return parser.parse_args()
 
 def _load_json_safe(path: str):
@@ -168,14 +179,6 @@ def analyze_results(
                 rows.append(row)
 
     df = pd.DataFrame(rows)
-    # def pick_success(row):
-        # Use the first available, in order of priority
-        # for k in ("latest_retrieval_success",):
-            # if k in row and pd.notnull(row[k]):
-                # return row[k]
-        # return np.nan
-
-    # df["success"] = df.apply(pick_success, axis=1)
 
     rates: Dict[str, Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     for agent in agent_types:
@@ -200,7 +203,24 @@ def analyze_results(
 
 def plot_overall_success(args, df):
     import matplotlib as mpl
+    import pandas as pd
     mpl.rcParams["hatch.linewidth"] = 0.5
+
+    # Stats for error bars (per task_type, agent)
+    yerr_map = {}
+    if args.error_bars and not df.empty and "success" in df.columns:
+        stats_gb = (
+            df[["task_type", "agent", "success"]]
+            .dropna(subset=["success"])
+            .groupby(["task_type", "agent"])
+        )
+        _stats = stats_gb.agg(mean=("success", "mean"),
+                              n=("success", "count"),
+                              s=("success", "sum")).reset_index()
+        yerr_map = {
+            (r["task_type"], r["agent"]): _wilson_halfwidth(r["s"], int(r["n"]))
+            for _, r in _stats.iterrows()
+        }
 
     agg = (
         df.groupby(["task_type", "agent"])["success"]
@@ -214,7 +234,10 @@ def plot_overall_success(args, df):
     if agg.empty:
         print("[WARN] No data for overall-success plot")
     else:
-        tasks = sorted(agg.index.tolist(), key=_task_sort_key)
+        tasks = [t for t in _TASK_ORDER if t in agg.index]
+        if not tasks:
+            print("[WARN] No task types from _TASK_ORDER found in data — skipping overall plot")
+            return
         n_tasks = len(tasks)
         n_agents = len(args.agent_types)
         x = np.arange(n_tasks)
@@ -228,14 +251,27 @@ def plot_overall_success(args, df):
             for i_task, task in enumerate(tasks):
                 cmap  = _COLOR_GROUP.get(task.replace("-", "_"), plt.cm.tab10)
                 colour = cmap(shade)
-                ax.bar(
-                    x[i_task] + (i_agent - (n_agents-1)/2) * width,
-                    agg.loc[task, ag],
+                xpos = x[i_task] + (i_agent - (n_agents-1)/2) * width
+                val = agg.loc[task, ag]
+                bar = ax.bar(
+                    xpos,
+                    val,
                     width=width,
                     color=colour,
                     edgecolor="black",
                     linewidth=0.7,
-                )
+                )[0]
+
+                # error bar per bar (if enabled)
+                if args.error_bars:
+                    yerr = yerr_map.get((task, ag))
+                    if yerr is not None and np.isfinite(yerr):
+                        ax.errorbar(
+                            xpos, val, yerr=yerr,
+                            fmt="none", ecolor="black",
+                            elinewidth=0.8, capsize=3, capthick=0.8,
+                            zorder=3
+                        )
 
         # AGENT-SPECIFIC HATCHES
         hatches = ["//" if ag == args.agent_types[0] else "" for ag in args.agent_types]
@@ -257,12 +293,12 @@ def plot_overall_success(args, df):
         ax.set_axisbelow(True)
         ax.grid(axis="y", alpha=0.4)
         
-        xticks = ax.get_xticks()
-        group_width = n_agents * width
-        for i in range(0, len(xticks), 2):  # Shade every other group
-            left = xticks[i] - group_width/2
-            right = xticks[i] + group_width/2
-            ax.axvspan(left, right, color="#b7b7b7", alpha=0.8, zorder=0)
+        # FULL-BIN gray shading (midpoint to midpoint)
+        ax.set_xlim(-0.5, n_tasks - 0.5)
+        for i in range(0, n_tasks, 2):  # Shade every other task bin
+            left = i - 0.5
+            right = i + 0.5
+            ax.axvspan(left, right, color="#b7b7b7", alpha=0.15, zorder=0)
 
         # legend – one patch per agent (colour sampled from first task)
         legend_handles = [
@@ -271,7 +307,7 @@ def plot_overall_success(args, df):
                 edgecolor="black",
                 label=_pretty_agent(ag),
                 linewidth=0.7,
-                hatch=hatches[i],   # <<--- add hatch to legend patch as well!
+                hatch=hatches[i],
             )
             for i, ag in enumerate(args.agent_types)
         ]
@@ -313,11 +349,29 @@ def plot_object_class_success(args, df):
         print("[WARN] Nothing to plot – empty after pivot")
         return
 
+    # ── 1b stats for error bars (from raw df, not the means) ───────────────
+    yerr_map = {}
+    if args.error_bars:
+        stats_gb = (
+            df[["instance_class", "task_type", "agent", "success"]]
+              .dropna(subset=["success"])
+              .groupby(["instance_class", "task_type", "agent"])
+        )
+        _stats = stats_gb.agg(mean=("success", "mean"),
+                              n=("success", "count"),
+                              s=("success", "sum")).reset_index()
+        yerr_map = {
+            (r["instance_class"], r["task_type"], r["agent"]): _wilson_halfwidth(r["s"], int(r["n"]))
+            for _, r in _stats.iterrows()
+        }
+
     # ── 2 build display names & colours in one pass ───────────────────────
     flat_cols, colours = [], []
     unique_tasks = {t for t, _ in plot_df.columns}
-    ordered_tasks = [t for t in _TASK_ORDER if t in unique_tasks] + \
-                    [t for t in unique_tasks if t not in _TASK_ORDER]
+    ordered_tasks = [t for t in _TASK_ORDER if t in unique_tasks]
+    if not ordered_tasks:
+        print("[WARN] No task types from _TASK_ORDER found for object-class plot — skipping")
+        return
 
     for task in ordered_tasks:
         cmap   = _COLOR_GROUP.get(task, plt.cm.tab10)       # fallback palette
@@ -335,7 +389,9 @@ def plot_object_class_success(args, df):
 
     # re-index & flatten columns as before
     plot_df = plot_df.reindex(columns=pd.MultiIndex.from_tuples(flat_cols))
-    plot_df.columns = [f"{_pretty_task(t, oneline=True)}\n{_pretty_agent(ag)}" for t,ag in flat_cols]
+    # Keep a copy of the (task, agent) mapping per column index for error bars
+    col_keys = list(plot_df.columns)
+    plot_df.columns = [f"{_pretty_task(t, oneline=True)}\n{_pretty_agent(ag)}" for t,ag in col_keys]
 
     # draw the bars
     ax = plot_df.plot(
@@ -352,34 +408,38 @@ def plot_object_class_success(args, df):
     n_rows = plot_df.shape[0]
 
     # now, for each column j, the next n_rows patches are that column's bars:
-    for col_idx, hatch in enumerate(hatches):
+    for col_idx, ((task, agent), hatch) in enumerate(zip(col_keys, hatches)):
         start = col_idx * n_rows
         end   = start + n_rows
-        for patch in ax.patches[start:end]:
+        for row_offset, patch in enumerate(ax.patches[start:end]):
             patch.set_hatch(hatch)
-            # patch.set_linewidth(0.5)
+            # error bar per bar (if enabled)
+            if args.error_bars:
+                instance_class = plot_df.index[row_offset]   # row label
+                yerr = yerr_map.get((instance_class, task, agent))
+                if yerr is not None and np.isfinite(yerr):
+                    cx = patch.get_x() + patch.get_width()/2.0
+                    cy = patch.get_height()
+                    ax.errorbar(
+                        cx, cy, yerr=yerr,
+                        fmt="none", ecolor="black",
+                        elinewidth=0.8, capsize=3, capthick=0.8,
+                        zorder=3
+                    )
 
     ax.set_ylabel("Execution Success Rate", fontsize=14)
     ax.set_xlabel("")
     ax.set_ylim(0, 1.01)
     ax.set_axisbelow(True)        # make grid render beneath
     ax.grid(axis="y", alpha=0.4)  # horizontal grid only
-    # ax.set_title("Execution Success Rate")
     
-    # Get the x locations of bars (these are the object classes)
-    xticks = ax.get_xticks()
-    n_groups = len(xticks)
-    bar_width = ax.patches[0].get_width()  # width of one bar
-
-    # Group width: total width of all task/agent bars in a group
-    n_bars_per_group = len(plot_df.columns)
-    group_width = n_bars_per_group * bar_width
-
-    # Shade every other group background for readability
+    # FULL-BIN gray shading per instance_class
+    n_groups = n_rows
+    ax.set_xlim(-0.5, n_groups - 0.5)
     for i in range(0, n_groups, 2):  # even-indexed groups
-        left = xticks[i] - group_width/2
-        right = xticks[i] + group_width/2
-        ax.axvspan(left, right, color="#d6d6d6", alpha=0.8, zorder=0)
+        left = i - 0.5
+        right = i + 0.5
+        ax.axvspan(left, right, color="#d6d6d6", alpha=0.15, zorder=0)
     
     ax.legend(title="Task Type / Agent", bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.tight_layout()
@@ -412,7 +472,6 @@ def cascade_failure_analysis(df, success_flags=_SUCCESS_FLAGS, group_keys=["task
         print("(none)")
     else:
         print(failures[group_keys + [first_flag]])
-
 
     for i in range(1, len(success_flags)):
         prev_flag = success_flags[i-1]
