@@ -10,3 +10,4 @@ evaluation/*outputs
 test.py
 scripts/local
 test_*.py
+evaluation/config/tasks_sim.txt
