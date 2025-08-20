@@ -25,7 +25,7 @@ from langchain_core.output_parsers.json import JsonOutputParser
 from langchain_core.output_parsers.pydantic import PydanticOutputParser
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.prompts import SystemMessagePromptTemplate
-from langchain_core.pydantic_v1 import BaseModel
+from pydantic import BaseModel
 from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.runnables.base import RunnableMap
 from langchain_core.runnables.passthrough import RunnablePassthrough
@@ -204,7 +204,7 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
             .. code-block:: python
 
                 from langchain_experimental.llms import OllamaFunctions
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''
@@ -225,7 +225,7 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
             .. code-block:: python
 
                 from langchain_experimental.llms import OllamaFunctions
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''
@@ -246,7 +246,7 @@ class FunctionsWrapper(BaseChatModel, BaseLanguageModel):
             .. code-block:: python
 
                 from langchain_experimental.llms import OllamaFunctions, convert_to_ollama_tool
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''

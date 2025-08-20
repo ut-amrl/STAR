@@ -995,3 +995,29 @@ def parse_json(text: str):
         return eval(json_str, {"__builtins__": {}})
     except Exception as e:
         raise ValueError(f"Could not parse response as JSON or Python dict: {e}")
+    
+def safe_gpt_invoke(flex_model, nonflex_model, *args, **kwargs):
+    """
+    Try flex_model.invoke(...) up to 3 times on 429; waits 1s, 2s, 4s.
+    Then fall back to nonflex_model.invoke(...).
+    Works for both:
+      - safe_gpt_invoke(vlm_flex, vlm, messages)
+      - safe_gpt_invoke(vlm_flex, vlm, chat_history=..., fact_prompt=..., question=...)
+    """
+    delays = [1, 2, 4]
+    for attempt, delay in enumerate(delays, start=1):
+        try:
+            return flex_model.invoke(*args, **kwargs)
+        except Exception as e:
+            # detect 429 across SDKs/wrappers
+            code = getattr(e, "status_code", None) or getattr(e, "code", None)
+            msg = str(e).lower()
+            is_429 = (code == 429) or ("status code: 429" in msg) or ("rate limit" in msg)
+            if is_429:
+                print(f"[WARN] 429 from flex (attempt {attempt}/3). Retrying in {delay}s...")
+                time.sleep(delay)
+                continue
+            raise  # non-429 errors bubble up
+
+    print("[INFO] Switching to non-flex model after 3 failed flex attempts.")
+    return nonflex_model.invoke(*args, **kwargs)
