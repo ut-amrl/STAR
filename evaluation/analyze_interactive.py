@@ -163,6 +163,7 @@ def parse_args():
     p.add_argument("--paired_only", action="store_true", default=True)
     p.add_argument("--error_bars", action="store_true",
                    help="If set, draw 95% Wilson CI error bars for success rates.")
+    p.add_argument("--cascade_error_analysis", action="store_true", help="If set, perform cascade failure analysis.")
     return p.parse_args()
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -315,6 +316,169 @@ def analyze_results(args,
 # ────────────────────────────────────────────────────────────────────────────────
 # PLOTS
 # ────────────────────────────────────────────────────────────────────────────────
+
+def plot_overall_avg_success(args, df):
+    """
+    Bar chart of average success over ALL tasks.
+    X-axis: agent
+    Bars: [non-interactive | interactive] per agent
+    Color = agent, hatch = variant (interactive hatched and lighter)
+    Error bars styled identically to plot_overall_success.
+    """
+    import matplotlib as mpl
+    import pandas as pd
+    mpl.rcParams["hatch.linewidth"] = 0.6
+    mpl.rcParams["hatch.color"] = "black"
+
+    if df.empty or "success" not in df.columns:
+        print("[WARN] No data for overall average success plot")
+        return
+
+    # Keep only needed cols and drop NaNs
+    work = df[["agent", "variant", "success"]].dropna(subset=["success"]).copy()
+    if work.empty:
+        print("[WARN] No valid rows after dropping NaNs for overall average success plot")
+        return
+
+    # Aggregate mean success and counts (for Wilson CI)
+    stats = (
+        work.groupby(["agent", "variant"])
+            .agg(mean=("success", "mean"),
+                 n=("success", "count"),
+                 s=("success", "sum"))
+            .reset_index()
+    )
+
+    # Restrict to requested agents (preserve order)
+    stats = stats[stats["agent"].isin(args.agent_types)]
+    if stats.empty:
+        print("[WARN] No matching agents for overall average success plot")
+        return
+
+    # Compute Wilson CI half-width only if drawing error bars (match style)
+    if args.error_bars:
+        stats["yerr"] = stats.apply(lambda r: _wilson_halfwidth(r["s"], int(r["n"])), axis=1)
+    else:
+        stats["yerr"] = np.nan
+
+    agents   = [ag for ag in args.agent_types if ag in stats["agent"].unique()]
+    variants = ["noninteractive", "interactive"]
+
+    # Build plotting matrices in fixed variant order per agent
+    plot_vals, plot_errs, present_agents = [], [], []
+    for ag in agents:
+        row_vals, row_errs = [], []
+        ok_agent = False
+        for var in variants:
+            sel = stats[(stats["agent"] == ag) & (stats["variant"] == var)]
+            if len(sel) == 1:
+                ok_agent = True
+                row_vals.append(float(sel["mean"].iloc[0]))
+                row_errs.append(float(sel["yerr"].iloc[0]))
+            else:
+                row_vals.append(np.nan)
+                row_errs.append(np.nan)
+        if ok_agent:
+            present_agents.append(ag)
+            plot_vals.append(row_vals)
+            plot_errs.append(row_errs)
+
+    if not present_agents:
+        print("[WARN] Nothing to plot for overall average success")
+        return
+
+    plot_vals = np.array(plot_vals)    # shape: [n_agents, 2]
+    plot_errs = np.array(plot_errs)
+
+    n_agents = len(present_agents)
+    x = np.arange(n_agents)
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
+    max_with_err = 0.0
+
+    for i, ag in enumerate(present_agents):
+        for j, var in enumerate(variants):
+            val = plot_vals[i, j]
+            if np.isnan(val):
+                continue
+
+            base_color = _style_for_agent(ag)["color"]
+            face_color = base_color if var == "noninteractive" else _lighten(base_color, _INTERACTIVE_LIGHTEN)
+            hatch      = _VARIANT_STYLE[var]["hatch"]
+            xpos       = x[i] + (j - 0.5) * (width * 1.05)
+
+            bar = ax.bar(
+                xpos, float(val), width=width,
+                color=face_color, edgecolor="black", linewidth=0.7, zorder=2.5
+            )[0]
+            bar.set_hatch(hatch)
+            bar.set_linewidth(0.6)
+
+            # Error bars: identical styling to plot_overall_success
+            yerr = plot_errs[i, j]
+            if args.error_bars and np.isfinite(yerr):
+                ec = _darken(base_color, 0.30)
+                eb = ax.errorbar(xpos, float(val), yerr=yerr, **_err_style(ec))
+                _round_errcaps(eb)
+                max_with_err = max(max_with_err, float(val) + float(yerr))
+            else:
+                max_with_err = max(max_with_err, float(val))
+
+    # Axes / labels / grid (match plot_overall_success)
+    ax.set_ylabel("Execution Success Rate", fontsize=15)
+    ax.set_xticks(x)
+    ax.set_xticklabels([_pretty_agent(ag) for ag in present_agents], rotation=0)
+    ax.tick_params(axis="x", labelsize=12)
+    ax.tick_params(axis="y", labelsize=12)
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", alpha=0.4, zorder=0)
+    ax.set_ylim(*_nice_ylim(max_with_err, pad=0.05, clamp=False))
+
+    # Shade alternates (visual consistency)
+    ax.set_xlim(-0.5, n_agents - 0.5)
+    for i in range(0, n_agents, 2):
+        ax.axvspan(i - 0.5, i + 0.5, color="#b7b7b7", alpha=0.12, zorder=0)
+
+    # Legend: 2 agent color boxes + 2 white hatch boxes (no title)
+    legend_handles = []
+    for ag in present_agents:
+        legend_handles.append(
+            mpatches.Patch(
+                facecolor=_style_for_agent(ag)["color"],
+                edgecolor="black",
+                linewidth=0.7,
+                label=_pretty_agent(ag),
+            )
+        )
+    legend_handles.extend([
+        mpatches.Patch(
+            facecolor="white", edgecolor="black", linewidth=0.7,
+            hatch=_VARIANT_STYLE["noninteractive"]["hatch"],
+            label=_VARIANT_STYLE["noninteractive"]["label"],
+        ),
+        mpatches.Patch(
+            facecolor="white", edgecolor="black", linewidth=0.7,
+            hatch=_VARIANT_STYLE["interactive"]["hatch"],
+            label=_VARIANT_STYLE["interactive"]["label"],
+        ),
+    ])
+
+    ax.legend(
+        handles=legend_handles,
+        fontsize=11,
+        loc="upper left", bbox_to_anchor=(0.27, 1.0),
+        frameon=True, framealpha=0.9, facecolor="white", edgecolor="lightgray",
+        title=None
+    )
+
+    plt.tight_layout()
+    os.makedirs(args.output_dir, exist_ok=True)
+    out_path = os.path.join(args.output_dir, "success_overall_average.png")
+    plt.savefig(out_path, bbox_inches="tight")
+    plt.close()
+    print(f"[INFO] overall average success plot saved to {out_path}")
+
 
 def plot_interactive_vs_noninteractive(args, df):
     """
@@ -532,8 +696,10 @@ def main():
     results = parse_results(args, pairs_info)
     rates, df = analyze_results(args, results, args.agent_types)
 
+    plot_overall_avg_success(args, df)
     plot_interactive_vs_noninteractive(args, df)
-    # cascade_failure_analysis(df)
+    if args.cascade_error_analysis:
+        cascade_failure_analysis(df)
 
 if __name__ == "__main__":
     main()
