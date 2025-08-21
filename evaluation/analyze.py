@@ -5,6 +5,8 @@ from collections import defaultdict
 from typing import Dict, List, Any
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.colors as mcolors
+from matplotlib.container import ErrorbarContainer
 import numpy as np
 
 # fields we want to keep from every result file
@@ -110,23 +112,53 @@ def _wilson_halfwidth(succ: float, n: int, z: float = 1.96) -> float:
     denom = 1.0 + (z**2) / n
     return z * np.sqrt(p * (1 - p) / n + (z**2) / (4 * n * n)) / denom
 
-def _err_style():
-    """Unified, prettier errorbar style."""
-    return dict(
-        fmt="none",
-        ecolor="#333333",
-        elinewidth=1.2,
-        capsize=4,
-        capthick=1.2,
-        alpha=0.9,
-        zorder=4,
-    )
+# def _err_style():
+#     """Unified, prettier errorbar style."""
+#     return dict(
+#         fmt="none",
+#         ecolor="#333333",
+#         elinewidth=1.2,
+#         capsize=4,
+#         capthick=1.2,
+#         alpha=0.9,
+#         zorder=4,
+#     )
 
-def _nice_ylim(max_height_with_err: float, pad: float = 0.02):
-    """Clamp to [0,1], but give a bit of headroom."""
-    top = min(1.0, max(0.0, max_height_with_err) + pad)
-    return (0.0, top if top > 0 else 1.0)
+def _nice_ylim(max_height_with_err: float, pad: float = 0.02, clamp: bool = False):
+    """
+    Dynamic ylim: top = max_height_with_err + pad.
+    If clamp=True, cap at 1.0. Otherwise allow >1.0 so error bars are visible.
+    """
+    top = max_height_with_err + pad
+    if clamp:
+        top = min(1.0, top)
+    return (0.0, top)
 
+def _mix(c1, c2, a):  # linear blend in RGB
+    r1, r2 = np.array(mcolors.to_rgb(c1)), np.array(mcolors.to_rgb(c2))
+    return mcolors.to_hex((1 - a) * r1 + a * r2)
+
+def _darken(hex_color, amount=0.25):
+    """Darker shade of a color (amount in [0,1])."""
+    return _mix(hex_color, "#000000", amount)
+
+def _err_style(ecolor="#333333"):
+    """Unified, nicer errorbar style."""
+    return dict(fmt="none", ecolor=ecolor, elinewidth=1.2, capsize=4, capthick=1.2, alpha=0.9, zorder=4)
+
+def _round_errcaps(eb: ErrorbarContainer):
+    """Round line caps & joins for prettier whiskers."""
+    try:
+        # Vertical whiskers (LineCollection)
+        for lc in eb[2]:
+            lc.set_capstyle("round")
+            lc.set_joinstyle("round")
+        # Horizontal caps (Line2D objects)
+        for cap in eb[1]:
+            cap.set_solid_capstyle("round")
+            cap.set_solid_joinstyle("round")
+    except Exception:
+        pass
 
 
 def parse_args():
@@ -235,17 +267,27 @@ def analyze_results(
     return rates, df
 
 def plot_overall_success(args, df):
+    """
+    Overall success by task_type with fixed (color, hatch) per agent,
+    prettier error bars, and auto y-limits that leave headroom for caps.
+    """
     import matplotlib as mpl
     import pandas as pd
-    mpl.rcParams["hatch.linewidth"] = 0.5
 
-    # Stats for error bars (per task_type, agent)
+    mpl.rcParams["hatch.linewidth"] = 0.6
+
+    # ── 0) guard ────────────────────────────────────────────────────────────
+    if df.empty or "success" not in df.columns:
+        print("[WARN] No data for overall-success plot")
+        return
+
+    # ── 1) error bar stats (Wilson) per (task_type, agent) ─────────────────
     yerr_map = {}
-    if args.error_bars and not df.empty and "success" in df.columns:
+    if args.error_bars:
         stats_gb = (
             df[["task_type", "agent", "success"]]
-            .dropna(subset=["success"])
-            .groupby(["task_type", "agent"])
+              .dropna(subset=["success"])
+              .groupby(["task_type", "agent"])
         )
         _stats = stats_gb.agg(mean=("success", "mean"),
                               n=("success", "count"),
@@ -255,95 +297,118 @@ def plot_overall_success(args, df):
             for _, r in _stats.iterrows()
         }
 
+    # ── 2) aggregate mean success and pivot ────────────────────────────────
     agg = (
         df.groupby(["task_type", "agent"])["success"]
           .mean()
           .reset_index()
           .pivot(index="task_type", columns="agent", values="success")
-          .reindex(columns=args.agent_types)           # keep agent order
+          .reindex(columns=args.agent_types)   # keep user-provided agent order
           .sort_index()
     )
-
     if agg.empty:
-        print("[WARN] No data for overall-success plot")
-    else:
-        tasks = [t for t in _TASK_ORDER if t in agg.index]
-        if not tasks:
-            print("[WARN] No task types from _TASK_ORDER found in data — skipping overall plot")
-            return
-        n_tasks = len(tasks)
-        n_agents = len(args.agent_types)
-        x = np.arange(n_tasks)
-        width = 0.8 / n_agents
+        print("[WARN] Aggregation produced empty frame")
+        return
 
-        fig, ax = plt.subplots(figsize=(11, 6))
+    # respect desired task order
+    tasks = [t for t in _TASK_ORDER if t in agg.index]
+    if not tasks:
+        print("[WARN] No task types from _TASK_ORDER found in data — skipping")
+        return
 
-        shade_points = np.linspace(0.25, 0.85, n_agents)    # same as helper
+    n_tasks  = len(tasks)
+    n_agents = len(args.agent_types)
+    x = np.arange(n_tasks)
+    width = 0.8 / max(1, n_agents)
 
-        for i_agent, ag in enumerate(args.agent_types):
-            style = _style_for_agent(ag)
-            for i_task, task in enumerate(tasks):
-                colour = style["color"]
-                xpos = x[i_task] + (i_agent - (n_agents-1)/2) * width
-                val = agg.loc[task, ag]
-                bar = ax.bar(
-                    xpos, val, width=width, color=colour, edgecolor="black", linewidth=0.7
-                )[0]
-                bar.set_hatch(_style_for_agent(ag)["hatch"])
-                bar.set_linewidth(0.5)
+    fig, ax = plt.subplots(figsize=(11, 6))
 
-                # error bar per bar (if enabled)
-                if args.error_bars:
-                    yerr = yerr_map.get((task, ag))
-                    if yerr is not None and np.isfinite(yerr):
-                        ax.errorbar(
-                            xpos, val, yerr=yerr,
-                            fmt="none", ecolor="black",
-                            elinewidth=0.8, capsize=3, capthick=0.8,
-                            zorder=3
-                        )
+    max_with_err = 0.0  # track tallest (bar + err)
 
-        # x-tick labels
-        ax.set_xticks(x)
-        ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=45, ha="right")
+    # ── 3) draw bars (fixed style per agent) ───────────────────────────────
+    for i_agent, ag in enumerate(args.agent_types):
+        style = _style_for_agent(ag)
+        for i_task, task in enumerate(tasks):
+            # skip if this agent-task has no value
+            val = agg.loc[task, ag] if ag in agg.columns else np.nan
+            if pd.isna(val):
+                continue
 
-        # y-axis & grid
-        ax.set_ylabel("Execution Success Rate", fontsize=14)
-        ax.set_ylim(0, 1)
-        ax.set_axisbelow(True)
-        ax.grid(axis="y", alpha=0.4)
-        
-        # FULL-BIN gray shading (midpoint to midpoint)
-        ax.set_xlim(-0.5, n_tasks - 0.5)
-        for i in range(0, n_tasks, 2):  # Shade every other task bin
-            left = i - 0.5
-            right = i + 0.5
-            ax.axvspan(left, right, color="#b7b7b7", alpha=0.15, zorder=0)
+            xpos = x[i_task] + (i_agent - (n_agents - 1) / 2.0) * width
+            val = float(val)
 
-        # legend – one patch per agent (colour sampled from first task)
-        legend_handles = []
-        for ag in args.agent_types:
-            st = _style_for_agent(ag)
-            legend_handles.append(
-                mpatches.Patch(
-                    facecolor=st["color"],
-                    edgecolor="black",
-                    label=_pretty_agent(ag),
-                    linewidth=0.7,
-                    hatch=st["hatch"],
-                )
+            bar = ax.bar(
+                xpos, val, width=width,
+                color=style["color"],
+                edgecolor="black",
+                linewidth=0.7,
+                zorder=2.5
+            )[0]
+            bar.set_hatch(style["hatch"])
+            bar.set_linewidth(0.6)
+
+            # error bar (pretty style)
+            yerr = None
+            if args.error_bars:
+                yerr = yerr_map.get((task, ag))
+                if yerr is not None and np.isfinite(yerr):
+                    ec = _darken(style["color"], 0.30)               # agent‑matched, slightly darker
+                    eb = ax.errorbar(xpos, val, yerr=yerr, **_err_style(ec))
+                    _round_errcaps(eb)
+
+            top = val + (float(yerr) if (yerr is not None and np.isfinite(yerr)) else 0.0)
+            max_with_err = max(max_with_err, top)
+
+    # ── 4) axes, grid, ticks, ylim ─────────────────────────────────────────
+    ax.set_ylabel("Execution Success Rate", fontsize=16)
+    ax.set_xticks(x)
+    ax.tick_params(axis="x", labelsize=13)
+    ax.tick_params(axis="y", labelsize=13)
+    ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=45, ha="right")
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", alpha=0.4, zorder=0)
+
+    # dynamic ylim (clamped to 1.0, with small headroom for caps)
+    ax.set_ylim(*_nice_ylim(max_with_err, pad=0.05, clamp=False))
+
+    # shade alternate task bins (midpoint-to-midpoint)
+    ax.set_xlim(-0.5, n_tasks - 0.5)
+    for i in range(0, n_tasks, 2):
+        left, right = i - 0.5, i + 0.5
+        ax.axvspan(left, right, color="#b7b7b7", alpha=0.12, zorder=0)
+
+    # legend: one handle per agent using fixed style
+    legend_handles = []
+    for ag in args.agent_types:
+        st = _style_for_agent(ag)
+        legend_handles.append(
+            mpatches.Patch(
+                facecolor=st["color"],
+                edgecolor="black",
+                linewidth=0.7,
+                hatch=st["hatch"],
+                label=_pretty_agent(ag),
             )
-        ax.legend(handles=legend_handles, title="Agent",
-                  bbox_to_anchor=(1.04, 1), loc="upper left")
+        )
+    ax.legend(
+        handles=legend_handles,
+        title="Agent",
+        title_fontsize=14,
+        fontsize=12,
+        bbox_to_anchor=(0.77, 1),
+        loc="upper left"
+    ).get_title().set_fontweight("medium")
 
-        ax.set_title("Overall Execution Success by Task Type")
+    # ax.set_title("Overall Execution Success by Task Type")
 
-        plt.tight_layout()
-        os.makedirs(args.output_dir, exist_ok=True)
-        out_path = os.path.join(args.output_dir, "success.png")
-        plt.savefig(out_path, bbox_inches="tight")
-        plt.close()
-        print(f"[INFO] overall-success plot saved to {out_path}")
+    # ── 5) save ────────────────────────────────────────────────────────────
+    plt.tight_layout()
+    os.makedirs(args.output_dir, exist_ok=True)
+    out_path = os.path.join(args.output_dir, "success.png")
+    plt.savefig(out_path, bbox_inches="tight")
+    plt.close()
+    print(f"[INFO] overall-success plot saved to {out_path}")
+
 
 def plot_object_class_success(args, df):
     """
