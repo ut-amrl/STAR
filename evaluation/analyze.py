@@ -64,6 +64,18 @@ _TASK_ORDER = [
     "frequency",       # → “freqencist”
 ]
 
+# Agent-specific visual style (kept consistent across all plots)
+_AGENT_STYLE = {
+    "low_level_gt":       {"color": "#4a90d9", "hatch": "//"},   # lighter blue
+    "replan_low_level_gt":{"color": "#ff9d4d", "hatch": ""},     # lighter orange
+    "high_level_gt":      {"color": "#58c96e", "hatch": "xx"},   # lighter green
+    "random":             {"color": "#9e9e9e", "hatch": ".."},   # lighter gray
+}
+
+def _style_for_agent(agent: str) -> dict:
+    """Return {'color': hex, 'hatch': str} for an agent; fallback if unknown."""
+    return _AGENT_STYLE.get(agent, {"color": "#999999", "hatch": ""})
+
 def _task_sort_key(t):
     try:
         return _TASK_ORDER.index(t)
@@ -98,15 +110,35 @@ def _wilson_halfwidth(succ: float, n: int, z: float = 1.96) -> float:
     denom = 1.0 + (z**2) / n
     return z * np.sqrt(p * (1 - p) / n + (z**2) / (4 * n * n)) / denom
 
+def _err_style():
+    """Unified, prettier errorbar style."""
+    return dict(
+        fmt="none",
+        ecolor="#333333",
+        elinewidth=1.2,
+        capsize=4,
+        capthick=1.2,
+        alpha=0.9,
+        zorder=4,
+    )
+
+def _nice_ylim(max_height_with_err: float, pad: float = 0.02):
+    """Clamp to [0,1], but give a bit of headroom."""
+    top = min(1.0, max(0.0, max_height_with_err) + pad)
+    return (0.0, top if top > 0 else 1.0)
+
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt")
-    parser.add_argument("--agent_types", nargs="+", default=["low_level_gt", "replan_low_level_gt"])
+    parser.add_argument("--agent_types", nargs="+", default=["random", "low_level_gt", "replan_low_level_gt"])
     # NEW: toggle error bars
     parser.add_argument("--error_bars", action="store_true",
                         help="If set, draw 95% Wilson CI error bars for success rates.")
+    parser.add_argument("--cascade_error_analysis", action="store_true", help="If set, perform cascade failure analysis.")
     return parser.parse_args()
 
 def _load_json_safe(path: str):
@@ -248,20 +280,17 @@ def plot_overall_success(args, df):
 
         shade_points = np.linspace(0.25, 0.85, n_agents)    # same as helper
 
-        for i_agent, (ag, shade) in enumerate(zip(args.agent_types, shade_points)):
+        for i_agent, ag in enumerate(args.agent_types):
+            style = _style_for_agent(ag)
             for i_task, task in enumerate(tasks):
-                cmap  = _COLOR_GROUP.get(task.replace("-", "_"), plt.cm.tab10)
-                colour = cmap(shade)
+                colour = style["color"]
                 xpos = x[i_task] + (i_agent - (n_agents-1)/2) * width
                 val = agg.loc[task, ag]
                 bar = ax.bar(
-                    xpos,
-                    val,
-                    width=width,
-                    color=colour,
-                    edgecolor="black",
-                    linewidth=0.7,
+                    xpos, val, width=width, color=colour, edgecolor="black", linewidth=0.7
                 )[0]
+                bar.set_hatch(_style_for_agent(ag)["hatch"])
+                bar.set_linewidth(0.5)
 
                 # error bar per bar (if enabled)
                 if args.error_bars:
@@ -273,16 +302,6 @@ def plot_overall_success(args, df):
                             elinewidth=0.8, capsize=3, capthick=0.8,
                             zorder=3
                         )
-
-        # AGENT-SPECIFIC HATCHES
-        hatches = ["//" if ag == args.agent_types[0] else "" for ag in args.agent_types]
-        # Loop order matches plotting: for each agent, all tasks
-        for i_agent in range(n_agents):
-            for i_task in range(n_tasks):
-                patch_idx = i_agent * n_tasks + i_task
-                patch = ax.patches[patch_idx]
-                patch.set_hatch(hatches[i_agent])
-                patch.set_linewidth(0.5)  # thinner hatch, optional
 
         # x-tick labels
         ax.set_xticks(x)
@@ -302,16 +321,18 @@ def plot_overall_success(args, df):
             ax.axvspan(left, right, color="#b7b7b7", alpha=0.15, zorder=0)
 
         # legend – one patch per agent (colour sampled from first task)
-        legend_handles = [
-            mpatches.Patch(
-                facecolor=_COLOR_GROUP.get(tasks[0].replace("-", "_"), plt.cm.tab10)(shade_points[i]),
-                edgecolor="black",
-                label=_pretty_agent(ag),
-                linewidth=0.7,
-                hatch=hatches[i],
+        legend_handles = []
+        for ag in args.agent_types:
+            st = _style_for_agent(ag)
+            legend_handles.append(
+                mpatches.Patch(
+                    facecolor=st["color"],
+                    edgecolor="black",
+                    label=_pretty_agent(ag),
+                    linewidth=0.7,
+                    hatch=st["hatch"],
+                )
             )
-            for i, ag in enumerate(args.agent_types)
-        ]
         ax.legend(handles=legend_handles, title="Agent",
                   bbox_to_anchor=(1.04, 1), loc="upper left")
 
@@ -337,14 +358,22 @@ def plot_object_class_success(args, df):
     import pandas as pd
     os.makedirs(args.output_dir, exist_ok=True)
 
+    # --- only plot selected agents (drop 'random') -----------------------  # CHANGED
+    agents = [ag for ag in args.agent_types if ag != "random"]              # CHANGED
+    if not agents:
+        print("[WARN] No agents left after excluding 'random' — skipping")
+        return
+
+    df_plot = df[df["agent"].isin(agents)].copy()                           # CHANGED
+
     # ── 1 aggregate success per (instance_class, task_type, agent) ─────────
     plot_df = (
-        df.groupby(["instance_class", "task_type", "agent"])["success"]
-          .mean()
-          .reset_index()
-          .pivot(index="instance_class",
-                 columns=["task_type", "agent"],
-                 values="success")
+        df_plot.groupby(["instance_class", "task_type", "agent"])["success"] # CHANGED
+              .mean()
+              .reset_index()
+              .pivot(index="instance_class",
+                     columns=["task_type", "agent"],
+                     values="success")
     )
     if plot_df.empty:
         print("[WARN] Nothing to plot – empty after pivot")
@@ -354,9 +383,9 @@ def plot_object_class_success(args, df):
     yerr_map = {}
     if args.error_bars:
         stats_gb = (
-            df[["instance_class", "task_type", "agent", "success"]]
-              .dropna(subset=["success"])
-              .groupby(["instance_class", "task_type", "agent"])
+            df_plot[["instance_class", "task_type", "agent", "success"]]     # CHANGED
+                  .dropna(subset=["success"])
+                  .groupby(["instance_class", "task_type", "agent"])
         )
         _stats = stats_gb.agg(mean=("success", "mean"),
                               n=("success", "count"),
@@ -375,18 +404,11 @@ def plot_object_class_success(args, df):
         return
 
     for task in ordered_tasks:
-        cmap   = _COLOR_GROUP.get(task, plt.cm.tab10)       # fallback palette
-        agents = args.agent_types
-        # pick evenly spaced shades   light → dark
-        shade_points = np.linspace(0.25, 0.85, len(agents))
-        for shade, ag in zip(shade_points, agents):
+        for ag in agents:                                                   # CHANGED
             flat_cols.append((task, ag))
-            colours.append(cmap(shade))
+            colours.append(_style_for_agent(ag)["color"])
 
-    hatches = [
-        "//" if agent == args.agent_types[0] else ""   # first agent = low_level_gt
-        for (task, agent) in flat_cols
-    ]
+    hatches = [_style_for_agent(agent)["hatch"] for (task, agent) in flat_cols]
 
     # re-index & flatten columns as before
     plot_df = plot_df.reindex(columns=pd.MultiIndex.from_tuples(flat_cols))
@@ -493,10 +515,10 @@ def main():
     results = parse_results(args, tasks)
     
     rates, df = analyze_results(args, results, args.agent_types)
-    print(df)
     plot_overall_success(args, df)
     plot_object_class_success(args, df)
-    cascade_failure_analysis(df)
+    if args.cascade_error_analysis:
+        cascade_failure_analysis(df)
 
 if __name__ == "__main__":  
     main()
