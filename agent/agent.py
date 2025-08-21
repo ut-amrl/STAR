@@ -25,12 +25,10 @@ class Agent:
         return next_state
     
     def __init__(self,
-                 prompt_type: str = "gt",  
                  verbose: bool = False,
                  logdir: str = None,
                  logger_prefix: str = ""
     ):
-        self.prompt_type = prompt_type
         self.verbose = verbose
         
         self.logger = get_logger(logdir=logdir, prefix=logger_prefix, flatten=True) if logdir else get_logger(prefix=logger_prefix, flatten=True)

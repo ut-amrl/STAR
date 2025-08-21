@@ -204,6 +204,9 @@ def evaluate(args):
     elif "caption" in args.agent_type:
         args.prompt_type = "caption"
         data_metadata = load_virtualhome_data_metadata(args.data_dir, caption_type="nframe1")
+    elif args.agent_type == "random" or args.agent_type == "sg":
+        # TODO caption type is a dummy
+        data_metadata = load_virtualhome_data_metadata(args.data_dir, caption_type="gt")
     else:
         raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'low_level_gt' and 'high_level_gt'.")
     versions = [""]
@@ -297,18 +300,27 @@ def evaluate(args):
                     logdir=result_dir,
                     logger_prefix=args.agent_type
                 )
+            elif "random" == args.agent_type:
+                from agent.agent_random import RandomAgent
+                agent = RandomAgent(
+                    navigate_fn=navigate,
+                    detect_fn=detect_virtual_home_object,
+                    pick_fn=pick_by_instance_id,
+                    logdir=result_dir,
+                    logger_prefix=args.agent_type
+                )
+            elif "sg" == args.agent_type:
+                from agent.agent_scenegraph import SceneGraphAgent
+                agent = SceneGraphAgent(
+                    logdir=result_dir,
+                    logger_prefix=args.agent_type
+                )
             else:
                 raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'high_level' and 'low_level'.")
             
             with open(task_path, "r") as f:
                 task_data = json.load(f)
                 
-            db_name = f"virtualhome_{task_type}_{task_id}"
-            timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-            obs_savepath = f"data/cobot/{task_type}_{task_id}_{timestamp}/"
-            memory = MilvusMemory(db_name, obs_savepth=obs_savepath)
-            memory.reset()
-    
             bag_unix_times = []
             for bagname, (date_str, time_str) in task_data["bag_time_mapping"]:
                 try:
@@ -321,16 +333,29 @@ def evaluate(args):
     
             assert len(bag_unix_times) == len(task_data["bagnames"]), \
                 f"Number of bag names ({len(task_data['bagnames'])}) does not match number of unix times ({len(bag_unix_times)})"
+                
+            
+            if args.agent_type == "sg":
+                memory_sg = load_virtualhom_memory_sg(args.data_dir, task_data["bagnames"], bag_unix_times)
+                agent.set_memory_sg(memory_sg)
+                import pdb; pdb.set_trace()
+                
+            elif args.agent_type != "random": # Set up memory
+                db_name = f"virtualhome_{task_type}_{task_id}"
+                timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+                obs_savepath = f"data/cobot/{task_type}_{task_id}_{timestamp}/"
+                memory = MilvusMemory(db_name, obs_savepth=obs_savepath)
+                memory.reset()
     
-            inpaths, time_offsets, viddirs = [], [], []
-            for bi, bagname in enumerate(task_data["bagnames"]):
-                inpaths.append(data_metadata[bagname])
-                time_offsets.append(bag_unix_times[bi])
-                viddirs.append(os.path.join(args.data_dir, bagname, "images"))
-            remember(memory, inpaths, time_offsets, viddirs)
+                inpaths, time_offsets, viddirs = [], [], []
+                for bi, bagname in enumerate(task_data["bagnames"]):
+                    inpaths.append(data_metadata[bagname])
+                    time_offsets.append(bag_unix_times[bi])
+                    viddirs.append(os.path.join(args.data_dir, bagname, "images"))
+                remember(memory, inpaths, time_offsets, viddirs)
             
-            agent.set_memory(memory)
-            
+                agent.set_memory(memory)
+                
             exec_bagname = task_data["bagnames"][-1]
             
             for task in task_data["tasks"]:
@@ -347,6 +372,10 @@ def evaluate(args):
                 
                 task["lastest_unix_time"] = lastest_unix_time
                 
+                if args.agent_type == "random":
+                    poses = load_virtualhome_poses(args.data_dir, list(set(task_data["bagnames"])))
+                    agent.before_run(task["instance_class"], poses)
+                    
                 full_result = evaluate_one_task(agent, task, annotations, exec_bagname)
                 result = full_result["result"]
                 result["task"] = task["task"]
@@ -376,7 +405,7 @@ def evaluate(args):
             # Clean up memory and agent state
             agent.flush_tool_threads()
             import time; time.sleep(1)
-            if utility.has_collection(db_name):
+            if args.agent_type != "random" and utility.has_collection(db_name):
                 utility.drop_collection(db_name)
             import time; time.sleep(1)
             

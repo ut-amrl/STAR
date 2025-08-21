@@ -35,7 +35,6 @@ If you do not believe you have seen the instance in any unsearched areas, make y
      - If navigation yields partial visibility, reposition for a **best-in-view** observation before attempting pickup.  
      - If the environment has changed (object moved, blocked, or removed), update your plan based on what you see now.
      - When multiple similar-looking cabinets or drawers are nearby, you can and should use memory-based reasoning to disambiguate instead of treating them as identical.
-      - Use search_in_memory_by_time to reconstruct how a container became visible (e.g., which one appeared first when turning, or which side of a landmark it was on).
       - Compare relative spatial context in past records (e.g., next to sink, below shelf, near corner) to match the correct cabinet to the user’s reference.
    - Use memory and physical skills in combination — for example, confirm a container’s contents by opening it, or re-verify identity before pickup.
 

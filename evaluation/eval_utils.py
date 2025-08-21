@@ -3,7 +3,11 @@ import math
 import json
 import csv
 from collections import defaultdict
+import random
 import pandas as pd
+import numpy as np
+import yaml
+from datetime import datetime, timezone
 
 def load_task_metadata(
     task_file_path: str, 
@@ -147,3 +151,159 @@ def set_virtulhome_scene(graph_path: str, scene_id: int = None) -> bool:
     except rospy.ServiceException as e:
         print("Service call failed:", e)
         return False
+    
+def load_virtualhome_poses(data_dir: str, run_dirs: list, ds: float = 0.25) -> list:
+    """
+    Collect all runs for a given scene_id, resample each by uniform arc-length,
+    and return traversable (x,z) poses.
+
+    Args:
+        data_dir: Root directory containing subfolders.
+        scene_id: e.g. 4 -> matches 'scene4_01', 'scene4_00_classonly', etc.
+        ds: arc-length step for resampling.
+        ensure_endpoints: keep first/last original points.
+
+    Returns:
+        List of ((x,z,0.0), 0.0) tuples across all runs.
+    """
+    runs = []
+    for dataname in run_dirs:
+        pose_path = os.path.join(data_dir, dataname, "0", f"pd_{dataname}.txt")
+        if not os.path.isfile(pose_path):
+            continue
+
+        pts_xz = []
+        with open(pose_path, "r") as f:
+            for line in f.readlines()[1:]:
+                values = line.strip().split()
+                if len(values) < 4:
+                    continue
+                try:
+                    x1, y1, z1 = map(float, values[1 + 5*3 : 4 + 5*3])
+                    x2, y2, z2 = map(float, values[1 + 6*3 : 4 + 6*3])
+                except Exception:
+                    continue
+                x, y, z = (x1+x2)/2.0, (y1+y2)/2.0, (z1+z2)/2.0
+                pts_xz.append((x, z))
+        if len(pts_xz) >= 2:
+            runs.append(pts_xz)
+
+    # resample each run
+    # resampled_runs = resample_runs_by_arclength(runs, ds=ds)
+    waypoints = resample_runs_by_arclength(runs, ds=ds, merge=True, rmin=ds)
+    poses = [((float(x), float(z), 0.0), 0.0) for x,z in waypoints]
+    
+    # def debug_plot_poses(poses, outpath="debug.png"):
+    #     import matplotlib.pyplot as plt
+    #     xs = [p[0][0] for p in poses]
+    #     zs = [p[0][1] for p in poses]
+    #     plt.figure(figsize=(6,6))
+    #     plt.scatter(xs, zs, s=5, c="blue")
+    #     plt.axis("equal")
+    #     plt.tight_layout()
+    #     plt.savefig(outpath, dpi=150)
+    #     plt.close()
+    # debug_plot_poses(poses)
+    
+    return poses
+
+
+def resample_runs_by_arclength(
+    runs, ds=0.05, ensure_endpoints=True, *,
+    merge=False, rmin=None
+):
+    """
+    Resample each (x,y) trajectory to uniform arc-length spacing `ds`.
+
+    Args:
+        runs: list of iterables of (x,y)
+        ds:   spacing along each trajectory
+        ensure_endpoints: include first/last original point in each resampled run
+        merge: if True, return ONE merged array of points across all runs
+        rmin: if provided (and merge=True), thin merged points so neighbors are >= rmin
+
+    Returns:
+        If merge=False (default): list[np.ndarray(Mi,2)]
+        If merge=True: np.ndarray(M,2)
+    """
+    
+    def _grid_thin(points, rmin):
+        """
+        Fast, dependency-free thinning: keep at most one point per rmin-sized grid cell.
+        Not as uniform as Poisson-disk, but simple and robust.
+        """
+        if len(points) == 0:
+            return points
+        cell = np.floor(points / float(rmin)).astype(np.int64)
+        # unique rows, keep first occurrence
+        _, keep_idx = np.unique(cell, axis=0, return_index=True)
+        keep_idx.sort()
+        return points[keep_idx]
+    
+    out = []
+    for traj in runs:
+        pts = np.asarray(traj, dtype=float)
+        if pts.ndim != 2 or pts.shape[1] != 2 or len(pts) < 2:
+            out.append(np.empty((0, 2)))
+            continue
+        m = np.isfinite(pts).all(axis=1)
+        pts = pts[m]
+        # drop consecutive duplicates
+        if len(pts) >= 2:
+            keep = np.ones(len(pts), dtype=bool)
+            keep[1:] = np.any(np.diff(pts, axis=0) != 0.0, axis=1)
+            pts = pts[keep]
+        if len(pts) < 2:
+            out.append(pts[:1])
+            continue
+
+        seg = np.diff(pts, axis=0)
+        s = np.concatenate([[0.0], np.cumsum(np.hypot(seg[:,0], seg[:,1]))])
+        total = s[-1]
+        if total == 0.0:
+            out.append(pts[:1])
+            continue
+
+        s_new = np.arange(0.0, total + 1e-9, ds)
+        if ensure_endpoints:
+            if s_new[0] != 0.0:
+                s_new = np.insert(s_new, 0, 0.0)
+            if s_new[-1] != total:
+                s_new = np.append(s_new, total)
+        else:
+            if total - s_new[-1] < 0.5 * ds:
+                s_new[-1] = total
+
+        x_new = np.interp(s_new, s, pts[:,0])
+        y_new = np.interp(s_new, s, pts[:,1])
+        out.append(np.column_stack([x_new, y_new]))
+
+    if not merge:
+        return out
+
+    # Merge all runs into one array
+    merged = np.vstack([p for p in out if len(p) > 0]) if out else np.empty((0,2))
+    if rmin is not None and rmin > 0:
+        merged = _grid_thin(merged, rmin=rmin)
+    return merged
+
+def load_virtualhom_memory_sg(data_dir: str, datanames: list[str], bag_unix_times: list) -> list:
+    graphs = ""
+    for dataname, unix_time in zip(datanames, bag_unix_times):
+        path = os.path.join(data_dir, dataname, "0", f"graph.json")
+        with open(path, "r") as f:
+            graph = json.load(f)
+        if graph is None:
+            raise ValueError(f"Graph not found in {path}")
+        graph["nodes"] = [{"id": n["id"],
+                           "category": n["category"],
+                           "class_name": n["class_name"],
+                           "object_position": [n["obj_transform"]["position"][0], n["obj_transform"]["position"][1], n["obj_transform"]["position"][2]],
+                           "properties": n["properties"],
+                           "states": n["states"]} for n in graph["nodes"]]
+        random.shuffle(graph["nodes"])
+        graph_yaml = yaml.safe_dump(graph, sort_keys=False, allow_unicode=True)
+        readable_time = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        graph_str = f"This is how the environment was like at {readable_time}:\n{graph_yaml}\n\n"
+        graphs += graph_str
+    return graphs

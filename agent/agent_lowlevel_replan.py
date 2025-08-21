@@ -1,10 +1,7 @@
 import os
-from langchain_openai import ChatOpenAI
 from langchain.prompts import MessagesPlaceholder
-from langchain_core.messages import AIMessage, ToolMessage, BaseMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
-from agent.utils.debug import get_logger
-from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.tools import *
 from agent.agent import Agent
 
@@ -14,9 +11,9 @@ class ReplanLowLevelAgent(Agent):
                  verbose: bool = False,
                  logdir: str = None,
                  logger_prefix: str = "",):
-        super().__init__(prompt_type, verbose, logdir, logger_prefix)
+        super().__init__(verbose, logdir, logger_prefix)
         
-        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", f"replan_{self.prompt_type}", "low_level_agent")
+        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", f"replan_{prompt_type}", "low_level_agent")
         self.agent_prompt = file_to_string(os.path.join(prompt_dir, "agent_prompt.txt"))
         self.agent_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "agent_gen_only_prompt.txt"))
         self.agent_reflect_prompt = file_to_string(os.path.join(prompt_dir, "agent_reflect_prompt.txt"))

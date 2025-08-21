@@ -12,9 +12,9 @@ class LowLevelAgent(Agent):
                  logdir: str = None,
                  logger_prefix: str = ""
     ):
-        super().__init__(prompt_type, verbose, logdir, logger_prefix)
+        super().__init__(verbose, logdir, logger_prefix)
 
-        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", self.prompt_type, "low_level_agent")
+        prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", prompt_type, "low_level_agent")
         self.agent_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_prompt.txt"))
         self.agent_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
         self.agent_reflect_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_reflection_prompt.txt"))

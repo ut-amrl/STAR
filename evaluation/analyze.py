@@ -22,6 +22,7 @@ _OBJECT_FLAGS = [
 ]
 
 _AGENT_DISPLAY = {
+    "random": "Random",
     "replan_low_level_gt": "Interleaving Exec.",
     "low_level_gt": "One-shot Exec.",
     "high_level_gt": "high-level",
