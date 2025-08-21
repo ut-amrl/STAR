@@ -28,26 +28,25 @@ def _pretty_agent(raw: str) -> str:
 
 def _tool_family(name: str) -> str:
     if name.startswith("robot_"):
-        return "robot"
+        return "Robot Skills"
     if name.startswith("search_in_memory"):
-        return "search"
+        return "Memory Search"
     if name.startswith("inspect_"):
-        return "inspect"
+        return "Memory Inspect"
     if name == "pause_and_think":
-        return "meta"
-    if name == "terminate":
-        return "terminate"
-    return "other"
+        return "Reflect"
+    # if name == "terminate":
+        # return "terminate"
+    return "Other"
 
 _FAMILY_PALETTES = {
-    "robot":      plt.cm.Oranges,
-    "search":     plt.cm.Blues,
-    "inspect":    plt.cm.Purples,
-    "meta":       plt.cm.Greens,
-    "terminate":  plt.cm.Greys,
-    "other":      plt.cm.tab20c,   # fallback for misc tools
+    "Robot Skills":      plt.cm.Oranges,
+    "Memory Search":     plt.cm.Blues,
+    "Memory Inspect":    plt.cm.Purples,
+    "Reflect":       plt.cm.Greens,
+    # "terminate":  plt.cm.Greys,
+    "Other":      plt.cm.Greys,  # fallback for misc tools
 }
-
 
 # ────────────────────────────────────────────────────────────────────────────────
 # CLI
@@ -60,6 +59,8 @@ def parse_args():
     p.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt")
     p.add_argument("--agent_types", nargs="+",
                    default=["low_level_gt", "replan_low_level_gt"])
+    p.add_argument("--family_only", action="store_true",
+                   help="If set, aggregate tool calls by family in plots (robot/search/inspect/meta/terminate/other).")
     return p.parse_args()
 
 
@@ -146,11 +147,10 @@ def parse_toolcall_results(args, tasks_dict: Dict[str, List[str]]) -> pd.DataFra
 
 def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, top_k: int = 10, pct_label_min: float = 3.0):
     """
-    For each agent: donut chart of tool-call distribution with:
-      - top_k tools shown explicitly, remaining grouped into 'Other'
-      - consistent colors by tool *family* (robot/search/inspect/meta/terminate)
-      - percentages only for slices ≥ pct_label_min
-      - center label with total calls
+    For each agent: donut chart of tool-call distribution.
+
+    Default: show individual tools (top_k + 'Other').
+    If args.family_only: aggregate by family (robot/search/inspect/meta/terminate/other).
     """
     os.makedirs(args.output_dir, exist_ok=True)
     if calls_df.empty:
@@ -163,45 +163,55 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, top_k: int = 
             print(f"[INFO] No calls for agent '{agent}', skipping pie.")
             continue
 
-        counts = sub["tool_name"].value_counts()
-        # Group long tail
-        if len(counts) > top_k:
-            top = counts.iloc[:top_k]
-            other_sum = counts.iloc[top_k:].sum()
-            if other_sum > 0:
-                counts = pd.concat([top, pd.Series({"Other": int(other_sum)})])
-            else:
-                counts = top
-        # (optional) keep integer dtype
-        counts = counts.astype(int)
+        if args.family_only:
+            # ----- aggregate by family -----
+            names = sub["tool_name"].map(_tool_family).value_counts().index.tolist()
+            counts = sub["tool_name"].map(_tool_family).value_counts().astype(int)
+            values = counts.values
+            # colors: one fixed shade per family
+            def _fam_color(f):
+                if f == "other":
+                    return (0.83, 0.83, 0.83, 1.0)
+                return _FAMILY_PALETTES.get(f, plt.cm.tab20c)(0.6)
+            colors = [_fam_color(f) for f in names]
+            # legend_title = "Family (count, %)"
+            legend_title = "Tool (count, %)"
+            fname_suffix = "_family"
+        else:
+            # ----- individual tools (top_k + 'Other') -----
+            counts = sub["tool_name"].value_counts()
+            if len(counts) > top_k:
+                top = counts.iloc[:top_k]
+                other_sum = counts.iloc[top_k:].sum()
+                if other_sum > 0:
+                    counts = pd.concat([top, pd.Series({"Other": int(other_sum)})])
+                else:
+                    counts = top
+            counts = counts.astype(int)
+            names = counts.index.tolist()
+            values = counts.values
+            # shade within family for related tools; 'Other' gray
+            fam_lists: Dict[str, List[str]] = defaultdict(list)
+            for nm in names:
+                fam_lists[_tool_family(nm) if nm != "Other" else "other"].append(nm)
+            fam_shades = {fam: np.linspace(0.35, 0.85, len(nlist)) for fam, nlist in fam_lists.items()}
+            colors, fam_seen_idx = [], defaultdict(int)
+            for nm in names:
+                if nm == "Other":
+                    colors.append((0.83, 0.83, 0.83, 1.0))
+                else:
+                    fam = _tool_family(nm)
+                    palette = _FAMILY_PALETTES.get(fam, plt.cm.tab20c)
+                    i = fam_seen_idx[fam]; shade = fam_shades[fam][i]
+                    colors.append(palette(shade))
+                    fam_seen_idx[fam] += 1
+            legend_title = "Tool (count, %)"
+            fname_suffix = ""
 
-        total = int(counts.sum())
+        total = int(np.sum(values))
         if total == 0:
             print(f"[INFO] No tool calls for agent '{agent}', skipping pie.")
             continue
-
-        # Build colors: shade within family so related tools look related
-        names = counts.index.tolist()
-        values = counts.values
-        fam_lists: Dict[str, List[str]] = defaultdict(list)
-        for nm in names:
-            fam_lists[_tool_family(nm) if nm != "Other" else "other"].append(nm)
-
-        # Precompute shade positions per family
-        fam_shades = {fam: np.linspace(0.35, 0.85, len(nlist)) for fam, nlist in fam_lists.items()}
-
-        colors = []
-        fam_seen_idx: Dict[str, int] = defaultdict(int)
-        for nm in names:
-            if nm == "Other":
-                colors.append((0.83, 0.83, 0.83, 1.0))  # gentle gray for Other
-            else:
-                fam = _tool_family(nm)
-                palette = _FAMILY_PALETTES.get(fam, plt.cm.tab20c)
-                idx = fam_seen_idx[fam]
-                shade = fam_shades[fam][idx]
-                colors.append(palette(shade))
-                fam_seen_idx[fam] += 1
 
         # Percentage labels: only for sufficiently large slices
         def _autopct(pct):
@@ -215,41 +225,58 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, top_k: int = 
             labels=None,
             colors=colors,
             autopct=_autopct,
-            pctdistance=0.70,       # slightly closer to the center
+            pctdistance=0.70,
             startangle=90,
             counterclock=False,
             wedgeprops=dict(linewidth=1.2, edgecolor="white"),
             textprops=dict(color="black", fontsize=10)
         )
-
-        # 2) Donut thickness + center text
-        centre_circle = plt.Circle((0, 0), 0.50, fc="white")  # was 0.58 → thicker ring
+        # Make the percentage labels larger (and optional: bold)
+        for t in autotexts:
+            t.set_fontsize(16)       
+            # t.set_fontweight("bold")
+        # Donut hole
+        centre_circle = plt.Circle((0, 0), 0.50, fc="white")
         ax.add_artist(centre_circle)
-        ax.text(0, 0, f"n={total}", ha="center", va="center", fontsize=13, weight="bold")
+
+        # ── counts for center text ─────────────────────────────────────────────
+        # Unique tasks (variant-agnostic): base_task_type + uid
+        n_tasks = sub.drop_duplicates(["base_task_type", "uid"]).shape[0]
+        # If you want per-run (variant-aware) instead, use:
+        # n_tasks = sub.drop_duplicates(["task_type", "uid"]).shape[0]
+
+        # Two-line center label
+        ax.text(0, 0.06, f"{n_tasks} Tasks", ha="center", va="center", fontsize=16, weight="bold")
+        ax.text(0, -0.06, f"(n={total})",    ha="center", va="center", fontsize=13)
+
         ax.axis("equal")
 
-        # 3) Title & legend: move legend to bottom, two columns
-        fig.suptitle(
-            f"Tool-call distribution — { _pretty_agent(agent) }   (n={total})",
-            x=0.06, ha="left", fontsize=14
-        )
+        # fig.suptitle(
+        #     f"Tool-call distribution — { _pretty_agent(agent) }   (n={total})",
+        #     x=0.06, ha="left", fontsize=14
+        # )
 
-        pct = (counts / total * 100).round(1)
-        legend_labels = [f"{nm} ({cnt}, {p}%)" for nm, cnt, p in zip(names, values, pct)]
-
-        fig.legend(
+        pct = (pd.Series(values, index=names) / total * 100).round(1)
+        legend_labels = [f"{nm} ({int(cnt)}, {pct[nm]}%)" for nm, cnt in zip(names, values)]
+        leg = fig.legend(
             wedges, legend_labels,
-            title="Tool (count, %)",
+            title=legend_title,
             loc="lower center",
             bbox_to_anchor=(0.5, 0.03),
-            ncol=2,                 # <= multi-column legend
-            frameon=False,
-            borderpad=0.2, handlelength=1.2, handletextpad=0.6, columnspacing=1.0
+            ncol=2,
+            frameon=True,
+            fancybox=True, 
+            borderpad=0.4, handlelength=1.2, handletextpad=0.6, columnspacing=1.0
         )
+
+        # Style the legend title
+        t = leg.get_title()
+        t.set_fontsize(16)          # size
+        t.set_fontweight("medium")
 
         fig.subplots_adjust(top=0.86, bottom=0.16, left=0.06, right=0.98)
 
-        out = os.path.join(args.output_dir, f"toolcalls_pie_{agent}.png")
+        out = os.path.join(args.output_dir, f"toolcalls_pie_{agent}{fname_suffix}.png")
         plt.tight_layout()
         plt.savefig(out, bbox_inches="tight", dpi=200)
         plt.close()
