@@ -461,14 +461,7 @@ def create_recall_best_matches_terminate_tool(memory: MilvusMemory) -> Structure
     
     return [terminate_tool]
     
-def create_recall_best_matches_tool(
-    memory: MilvusMemory,
-    llm,
-    llm_raw,
-    vlm,
-    vlm_raw,
-    logger=None
-):
+def create_recall_best_matches_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None):
     class BestMatchAgent:
         class AgentState(TypedDict):
             messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -485,12 +478,10 @@ def create_recall_best_matches_tool(
                         return "next"
             return "action"
     
-        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
+        def __init__(self, memory, vlm_flex, vlm, logger=None):
             self.memory = memory
-            self.llm = llm
-            self.llm_raw = llm_raw
+            self.vlm_flex = vlm_flex
             self.vlm = vlm
-            self.vlm_raw = vlm_raw
             self.logger = logger
             
             self.setup_tools(memory)
@@ -551,24 +542,13 @@ def create_recall_best_matches_tool(
                             if self.logger:
                                 self.logger.info(f"[BEST MATCHES] Tool Response: {msg.content}")
                                 
-                    # if len(image_messages) > 0:
-                    #     chat_prompt = ChatPromptTemplate.from_messages([
-                    #         MessagesPlaceholder(variable_name="chat_history"),
-                    #         ("user", "Description of the image(s) you have seen."),
-                    #     ])
-                    #     chained_model = chat_prompt | self.vlm_raw
-                    #     response = chained_model.invoke({
-                    #         "chat_history": image_messages,
-                    #     })
-                    #     print(response)
-                    #     import pdb; pdb.set_trace()
-                    
                     additional_search_history += image_messages
             
             chat_history = copy.deepcopy(state.get("agent_history", []))
             chat_history += additional_search_history
                     
             model = self.vlm
+            model_flex = self.vlm_flex
             if self.agent_call_count < self.max_agent_call_count:
                 prompt = self.agent_prompt
                 current_tool_defs = self.tool_definitions
@@ -577,6 +557,7 @@ def create_recall_best_matches_tool(
                 current_tool_defs = self.response_tool_definitions
                 
             model = model.bind_tools(current_tool_defs)
+            model_flex = model_flex.bind_tools(current_tool_defs)
             tool_names = [tool['name'] for tool in current_tool_defs]
             tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
                 
@@ -614,7 +595,8 @@ def create_recall_best_matches_tool(
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
             chained_model = chat_prompt | model
-            
+            chained_flex_model = chat_prompt | model_flex
+
             fact_prompt = f"Here are some facts for your context:\n" \
                       f"1. {self.memory.get_memory_stats_for_llm()}\n" \
                       f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"\
@@ -623,11 +605,12 @@ def create_recall_best_matches_tool(
             caller_context_text = self.caller_context if self.caller_context else "None"
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
-            response = chained_model.invoke({
+            input = {
                 "chat_history": chat_history,
                 "fact_prompt": fact_prompt,
                 "caller_context_text": caller_context_text
-            })
+            }
+            response = safe_gpt_invoke(chained_flex_model, chained_model, input)
             
             if self.logger:
                 if hasattr(response, "tool_calls") and response.tool_calls:
@@ -758,7 +741,7 @@ def create_recall_best_matches_tool(
                     
             return output
         
-    tool_runner = BestMatchAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+    tool_runner = BestMatchAgent(memory, vlm_flex, vlm, logger)
             
     class BestMatchesInput(BaseModel):
         tool_rationale: str = Field(
@@ -838,15 +821,8 @@ def create_recall_last_seen_terminate_tool(memory: MilvusMemory) -> StructuredTo
     
     return [terminate_tool]
 
-def create_recall_last_seen_tool(
-    memory: MilvusMemory,
-    llm,
-    llm_raw,
-    vlm,
-    vlm_raw,
-    logger=None
-) -> StructuredTool:
-    
+def create_recall_last_seen_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None) -> StructuredTool:
+
     class LastSeenAgent:
         class AgentState(TypedDict):
             messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -863,12 +839,10 @@ def create_recall_last_seen_tool(
                         return "next"
             return "action"
         
-        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
+        def __init__(self, memory, vlm_flex, vlm, logger=None):
             self.memory = memory
-            self.llm = llm
-            self.llm_raw = llm_raw
+            self.vlm_flex = vlm_flex
             self.vlm = vlm
-            self.vlm_raw = vlm_raw
             self.logger = logger
             
             self.setup_tools(memory)
@@ -935,6 +909,7 @@ def create_recall_last_seen_tool(
             chat_history += additional_search_history
                     
             model = self.vlm
+            model_flex = self.vlm_flex
             if self.agent_call_count < self.max_agent_call_count:
                 prompt = self.agent_prompt
                 current_tool_defs = self.tool_definitions
@@ -943,6 +918,7 @@ def create_recall_last_seen_tool(
                 current_tool_defs = self.response_tool_definitions
                 
             model = model.bind_tools(current_tool_defs)
+            model_flex = self.vlm_flex.bind_tools(current_tool_defs)
             tool_names = [tool['name'] for tool in current_tool_defs]
             tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
                 
@@ -980,7 +956,8 @@ def create_recall_last_seen_tool(
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
             chained_model = chat_prompt | model
-            
+            chained_flex_model = chat_prompt | model_flex
+
             fact_prompt = f"Here are some facts for your context:\n" \
                       f"1. {self.memory.get_memory_stats_for_llm()}\n" \
                       f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n"\
@@ -989,11 +966,12 @@ def create_recall_last_seen_tool(
             caller_context_text = self.caller_context if self.caller_context else "None"
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
-            response = chained_model.invoke({
+            input = {
                 "chat_history": chat_history,
                 "fact_prompt": fact_prompt,
                 "caller_context_text": caller_context_text
-            })
+            }
+            response = safe_gpt_invoke(chained_flex_model, chained_model, input)
             
             if self.logger:
                 if hasattr(response, "tool_calls") and response.tool_calls:
@@ -1127,8 +1105,8 @@ def create_recall_last_seen_tool(
                     output["records"] = records
                     
             return output
-        
-    tool_runner = LastSeenAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
+
+    tool_runner = LastSeenAgent(memory, vlm_flex, vlm, logger)
 
     class LastSeenInput(BaseModel):
         tool_rationale: str = Field(
@@ -1214,15 +1192,8 @@ def create_recall_all_terminate_tool(memory: MilvusMemory) -> StructuredTool:
     return [terminate_tool]
 
 
-def create_recall_all_tool(
-    memory: MilvusMemory,
-    llm,
-    llm_raw,
-    vlm,
-    vlm_raw,
-    logger=None
-) -> StructuredTool:
-    
+def create_recall_all_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None) -> StructuredTool:
+
     class RecallAllAgent:
         class AgentState(TypedDict):
             messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -1238,13 +1209,11 @@ def create_recall_all_tool(
                     if "terminate" in call.get("name"):
                         return "next"
             return "action"
-        
-        def __init__(self, memory, llm, llm_raw, vlm, vlm_raw, logger=None):
+
+        def __init__(self, memory, vlm_flex, vlm, logger=None):
             self.memory = memory
-            self.llm = llm
-            self.llm_raw = llm_raw
+            self.vlm_flex = vlm_flex
             self.vlm = vlm
-            self.vlm_raw = vlm_raw
             self.logger = logger
             
             self.setup_tools(memory)
@@ -1311,6 +1280,7 @@ def create_recall_all_tool(
             chat_history += additional_search_history
                     
             model = self.vlm
+            model_flex = self.vlm_flex
             if self.agent_call_count < self.max_agent_call_count:
                 prompt = self.agent_prompt
                 current_tool_defs = self.tool_definitions
@@ -1319,6 +1289,7 @@ def create_recall_all_tool(
                 current_tool_defs = self.response_tool_definitions
                 
             model = model.bind_tools(current_tool_defs)
+            model_flex = model_flex.bind_tools(current_tool_defs)
             tool_names = [tool['name'] for tool in current_tool_defs]
             tool_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(tool_names)])
                 
@@ -1356,7 +1327,8 @@ def create_recall_all_tool(
             chat_prompt = ChatPromptTemplate.from_messages(chat_template)
             
             chained_model = chat_prompt | model
-            
+            chained_flex_model = chat_prompt | model_flex
+
             fact_prompt = f"Here are some facts for your context:\n" \
                       f"1. {self.memory.get_memory_stats_for_llm()}\n" \
                       f"2. You have been patrolling in a dynamic household or office environment, so objects you saw before may have been moved, or its status may be changed.\n" \
@@ -1365,11 +1337,12 @@ def create_recall_all_tool(
             caller_context_text = self.caller_context if self.caller_context else "None"
             caller_context_text = f"Additional context from the caller agent:\n→ {caller_context_text}"
             
-            response = chained_model.invoke({
+            input = {
                 "chat_history": chat_history,
                 "fact_prompt": fact_prompt,
                 "caller_context_text": caller_context_text
-            })
+            }
+            response = safe_gpt_invoke(chained_flex_model, chained_model, input)
             
             if self.logger:
                 if hasattr(response, "tool_calls") and response.tool_calls:
@@ -1499,10 +1472,10 @@ def create_recall_all_tool(
                     output["records"] = records
                     
             return output
-        
-        
-    tool_runner = RecallAllAgent(memory, llm, llm_raw, vlm, vlm_raw, logger)
-            
+
+
+    tool_runner = RecallAllAgent(memory, vlm_flex, vlm, logger)
+
     class RecallAllInput(BaseModel):
         tool_rationale: str = Field(
             description=TOOL_RATIONALE_DESC

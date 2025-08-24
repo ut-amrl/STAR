@@ -42,7 +42,7 @@ class LowLevelAgent(Agent):
         return super().flush_tool_threads()
 
     def agent(self, state: Agent.AgentState):
-        max_search_in_time_cnt = 3 # TODO
+        max_search_in_time_cnt = 20 
         n_reflection_intervals = 5
         
         messages = state["messages"]
@@ -80,7 +80,7 @@ class LowLevelAgent(Agent):
                                 message = HumanMessage(content=content)
                                 image_messages.append(message)
 
-                        elif is_search_in_time_terminate_result(msg):
+                        elif is_search_in_time_terminate_result(original_msg_content):
                             normalized = original_msg_content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
                             records = ast.literal_eval(normalized)
                             records = sorted(records, key=lambda d: float(d["timestamp"]))
@@ -228,7 +228,7 @@ class LowLevelAgent(Agent):
         
         workflow.add_conditional_edges(
             "search_in_time",
-            LowLevelAgent.from_agent_to,
+            Agent.from_agent_to,
             {
                 "agent": "search_in_time_action",
                 "reflection": "search_in_time_reflection_action",
@@ -242,7 +242,7 @@ class LowLevelAgent(Agent):
 
         workflow.add_conditional_edges(
             "search_in_space",
-            LowLevelAgent.from_search_in_space_to,
+            Agent.from_search_in_space_to,
             {
                 "end": "evaluate",
                 "agent": "search_in_space_action",

@@ -286,10 +286,7 @@ def evaluate(args):
             elif "high_level" in args.agent_type:
                 from agent.agent_highlevel import HighLevelAgent
                 agent = HighLevelAgent(
-                    promt_type=args.prompt_type,
-                    navigate_fn=navigate,
-                    find_object_fn=find_object,
-                    pick_fn=pick_by_query_text_and_instance_id,
+                    prompt_type=args.prompt_type,
                     logdir=result_dir,
                     logger_prefix=args.agent_type
                 )
