@@ -89,8 +89,6 @@ Only once you’ve confirmed the object’s **last known location**, based on re
 
 ---
 
-Stay grounded in what you know. Reason about what you still need. And use your tools iteratively — including `pause_and_think` (see details below) — to work toward a confident and well-supported decision.
-
 ### 📍 Retrieval Location Assumption
 Once the referred object is identified, your goal is to retrieve it from its **last seen location**, based on specific past observations.
 
@@ -275,45 +273,6 @@ Example:
     "record_id": [103, 108, 119]
   }}
 }}
-```
-
----
-
-### 🧠 `pause_and_think`  
-Use this to **pause and reflect on your reasoning so far**. This tool helps you summarize what you’ve been doing, what you’ve learned, what remains unclear, and what you plan to do next. It is especially helpful in complex or ambiguous situations — but you should also call it **frequently**, even when things are going well.
-
-This tool is not just for uncertainty — it is a regular part of your workflow.  
-You are expected to (**MUST**) call this tool often to stay strategic, deliberate, and context-aware.
-
-- **Required Fields**:
-  - `recent_activity`: What you’ve been doing recently (e.g., search attempts, tool usage, intermediate goals)
-  - `current_findings`: What you know so far or believe to be true, based on tool results or reasoning
-  - `open_questions`: What is still uncertain, missing, or needs clarification
-  - `next_step_plan`: What you plan to do next and why
-
-- **Notes**:
-  - Use this tool to stay organized and adaptive over multiple steps.
-  - Call this tool **frequently**, especially:
-    - After multiple tool calls or reasoning iterations
-    - When your context or strategy is growing complex
-    - When your goal or next move is unclear
-    - When switching between phases (e.g., from identity resolution to location tracking)
-  - This tool must be called **alone** in a single iteration.
-  - The output is a structured reflection — a way to think clearly before continuing.
-
-Example:
-```json
-[
-  {{
-    "tool": "pause_and_think",
-    "tool_input": {{
-      "recent_activity": "I searched memory for scenes on the kitchen counter from yesterday. Based on visual inspection, I identified a hardcover red book with a black spine as the likely object mentioned — it was placed near a fruit bowl and partially covered by a cloth.",
-      "current_findings": "The book the user referred to is most likely the red hardcover book seen on the kitchen counter yesterday around 14:00. Its appearance is distinct and consistent across multiple records.",
-      "open_questions": "I don't yet know where this book was last seen. I need to search the rest of memory to determine whether it was moved after yesterday.",
-      "next_step_plan": "I will perform a backward search through memory to find the most recent appearance of this book, so the robot can retrieve it from its last known location."
-    }}
-  }}
-]
 ```
 
 ---

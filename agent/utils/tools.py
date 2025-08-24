@@ -488,10 +488,10 @@ def create_recall_best_matches_tool(memory: MilvusMemory, vlm_flex, vlm, logger=
             
             prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/best_matches_tool/'
             self.agent_prompt = file_to_string(prompt_dir+'agent_prompt.txt')
+            self.agent_reflection_prompt = file_to_string(prompt_dir+'agent_reflection_prompt.txt')
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
-            self.max_agent_call_count = 5
             
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
@@ -508,6 +508,9 @@ def create_recall_best_matches_tool(memory: MilvusMemory, vlm_flex, vlm, logger=
             self.response_tool_definitions = [convert_to_openai_function(t) for t in self.response_tools]
             
         def agent(self, state: AgentState):
+            max_agent_call_count = 10 
+            n_reflection_intervals = 5
+            
             messages = state["messages"]
             
             additional_search_history = []
@@ -549,9 +552,13 @@ def create_recall_best_matches_tool(memory: MilvusMemory, vlm_flex, vlm, logger=
                     
             model = self.vlm
             model_flex = self.vlm_flex
-            if self.agent_call_count < self.max_agent_call_count:
-                prompt = self.agent_prompt
-                current_tool_defs = self.tool_definitions
+            if self.agent_call_count < max_agent_call_count:
+                if self.agent_call_count % n_reflection_intervals == 0:
+                    prompt = self.agent_reflection_prompt
+                    current_tool_defs = self.reflect_tool_definitions
+                else:
+                    prompt = self.agent_prompt
+                    current_tool_defs = self.tool_definitions
             else:
                 prompt = self.agent_gen_only_prompt
                 current_tool_defs = self.response_tool_definitions
@@ -582,10 +589,10 @@ def create_recall_best_matches_tool(memory: MilvusMemory, vlm_flex, vlm, logger=
                 ("human", "{caller_context_text}"),
                 ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
-            if self.agent_call_count < self.max_agent_call_count:
+            if self.agent_call_count < max_agent_call_count:
                 chat_template += [
                     ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}. You must use one of the tools to continue searching or finalize your decision without any additional explanation."),
-                    ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
+                    ("system", f"🔄 You are allowed up to **{max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
                 ]
             else:
                 chat_template += [
@@ -849,10 +856,10 @@ def create_recall_last_seen_tool(memory: MilvusMemory, vlm_flex, vlm, logger=Non
             
             prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/last_seen_tool/'
             self.agent_prompt = file_to_string(prompt_dir+'agent_prompt.txt')
+            self.agent_reflection_prompt = file_to_string(prompt_dir+'agent_reflection_prompt.txt')
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
-            self.max_agent_call_count = 8
         
         def setup_tools(self, memory: MilvusMemory):
             search_tools = create_memory_search_tools(memory)
@@ -869,6 +876,9 @@ def create_recall_last_seen_tool(memory: MilvusMemory, vlm_flex, vlm, logger=Non
             self.response_tool_definitions = [convert_to_openai_function(t) for t in self.response_tools]
 
         def agent(self, state: AgentState):
+            max_agent_call_count = 10 
+            n_reflection_intervals = 5
+            
             messages = state["messages"]
             
             additional_search_history = []
@@ -910,9 +920,13 @@ def create_recall_last_seen_tool(memory: MilvusMemory, vlm_flex, vlm, logger=Non
                     
             model = self.vlm
             model_flex = self.vlm_flex
-            if self.agent_call_count < self.max_agent_call_count:
-                prompt = self.agent_prompt
-                current_tool_defs = self.tool_definitions
+            if self.agent_call_count < max_agent_call_count:
+                if self.agent_call_count % n_reflection_intervals == 0:
+                    prompt = self.agent_reflection_prompt
+                    current_tool_defs = self.reflect_tool_definitions
+                else:
+                    prompt = self.agent_prompt
+                    current_tool_defs = self.tool_definitions
             else:
                 prompt = self.agent_gen_only_prompt
                 current_tool_defs = self.response_tool_definitions
@@ -943,10 +957,10 @@ def create_recall_last_seen_tool(memory: MilvusMemory, vlm_flex, vlm, logger=Non
                 ("human", "{caller_context_text}"),
                 ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
-            if self.agent_call_count < self.max_agent_call_count:
+            if self.agent_call_count < max_agent_call_count:
                 chat_template += [
                     ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}. You must use one of the tools to continue searching or finalize your decision without any additional explanation."),
-                    ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
+                    ("system", f"🔄 You are allowed up to **{max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
                 ]
             else:
                 chat_template += [
@@ -1220,6 +1234,7 @@ def create_recall_all_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None) -> 
             
             prompt_dir = str(os.path.dirname(__file__)) + '/../prompts/recall_all_tool/'
             self.agent_prompt = file_to_string(prompt_dir+'agent_prompt.txt')
+            self.agent_reflection_prompt = file_to_string(prompt_dir+'agent_reflection_prompt.txt')
             self.agent_gen_only_prompt = file_to_string(prompt_dir+'agent_gen_only_prompt.txt')
             
             self.agent_call_count = 0
@@ -1240,6 +1255,9 @@ def create_recall_all_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None) -> 
             self.response_tool_definitions = [convert_to_openai_function(t) for t in self.response_tools]
         
         def agent(self, state: AgentState):
+            max_agent_call_count = 10 
+            n_reflection_intervals = 5
+            
             messages = state["messages"]
             
             additional_search_history = []
@@ -1281,9 +1299,13 @@ def create_recall_all_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None) -> 
                     
             model = self.vlm
             model_flex = self.vlm_flex
-            if self.agent_call_count < self.max_agent_call_count:
-                prompt = self.agent_prompt
-                current_tool_defs = self.tool_definitions
+            if self.agent_call_count < max_agent_call_count:
+                if self.agent_call_count % n_reflection_intervals == 0:
+                    prompt = self.agent_reflection_prompt
+                    current_tool_defs = self.reflect_tool_definitions
+                else:
+                    prompt = self.agent_prompt
+                    current_tool_defs = self.tool_definitions
             else:
                 prompt = self.agent_gen_only_prompt
                 current_tool_defs = self.response_tool_definitions
@@ -1314,10 +1336,10 @@ def create_recall_all_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None) -> 
                 ("human", "{caller_context_text}"),
                 ("system", "Now decide your next action. Use tools to continue searching or terminate if you are confident. Reason carefully based on what you've done, what you know, and what the user ultimately needs. Pay attention to the time constraints if they are provided.")
             ]
-            if self.agent_call_count < self.max_agent_call_count:
+            if self.agent_call_count < max_agent_call_count:
                 chat_template += [
                     ("system", f"You must strictly follow the JSON output format. As a reminder, these are available tools: \n{tool_list_str}. You must use one of the tools to continue searching or finalize your decision without any additional explanation."),
-                    ("system", f"🔄 You are allowed up to **{self.max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
+                    ("system", f"🔄 You are allowed up to **{max_agent_call_count} iterations** total. This is iteration **#{self.agent_call_count}**.\nEach iteration consists of one full round of tool calls — even if you issue multiple tools in parallel, that still counts as one iteration.")
                 ]
             else:
                 chat_template += [

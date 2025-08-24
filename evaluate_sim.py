@@ -11,7 +11,6 @@ import os
 from evaluation.eval_utils import *
 from memory.memory import MilvusMemory
 from agent.utils.memloader import remember
-from agent.utils.skills import *
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate the agent in simulation.")
@@ -104,11 +103,8 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
                 "reasoning_toolcalls": full_result.get("toolcalls", [])
             }
 
-    if result.has_picked is None or result.instance_name is None:
-        return {"result": empty_result,
-                "reasoning_toolcalls": full_result.get("toolcalls", [])}
-    success = task["instance_name"].lower() in result.instance_name.lower()
-    
+    success = result.instance_name is not None and len(result.instance_name) > 0 and task["instance_name"].lower() in result.instance_name.lower()
+
     ref_record = result.reference_resolution_records
     ret_record = result.retrieval_grounding_records
     
@@ -276,7 +272,14 @@ def evaluate(args):
                     before_one_task_finish(results, result, pbar)
                     continue
                 
-            if "low_level" in args.agent_type and "replan" in args.agent_type:
+            if "high_level_gt_reasoning_only" == args.agent_type:
+                from agent.agent_highlevel_reasoning_only import ReasoningHighLevelAgent
+                agent = ReasoningHighLevelAgent(
+                    prompt_type=args.prompt_type,
+                    logdir=result_dir,
+                    logger_prefix=args.agent_type
+                )
+            elif "low_level" in args.agent_type and "replan" in args.agent_type:
                 from agent.agent_lowlevel_replan import ReplanLowLevelAgent
                 agent = ReplanLowLevelAgent(
                     prompt_type=args.prompt_type,
@@ -299,6 +302,7 @@ def evaluate(args):
                 )
             elif "random" == args.agent_type:
                 from agent.agent_random import RandomAgent
+                from agent.utils.skills import navigate, detect_virtual_home_object, pick_by_instance_id
                 agent = RandomAgent(
                     navigate_fn=navigate,
                     detect_fn=detect_virtual_home_object,
@@ -379,6 +383,8 @@ def evaluate(args):
                 result["task_type"] = task_type
                 result["instance_name"] = task["instance_name"]
                 result["instance_class"] = task["instance_class"]
+                if "reasoning" in args.agent_type:
+                    result["success"] = full_result["result"]["latest_retrieval_success"]
                 
                 with open(result_path, "w") as f:
                     json.dump(result, f, indent=2)
