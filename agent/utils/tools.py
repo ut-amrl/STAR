@@ -1,10 +1,7 @@
 import sys
 import os
-import re
 from typing import List, Dict, Optional
 from typing import Annotated, Sequence, TypedDict
-from PIL import Image as PILImage
-from PIL import ImageDraw, ImageFont
 from pydantic import conint
 
 from langchain.tools import StructuredTool
@@ -19,7 +16,6 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMe
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from memory.memory import MilvusMemory
-from agent.utils.function_wrapper import FunctionsWrapper
 from agent.utils.utils import *
 from agent.utils.skills import *
 
@@ -460,6 +456,76 @@ def create_recall_best_matches_terminate_tool(memory: MilvusMemory) -> Structure
     )
     
     return [terminate_tool]
+
+class ToolAgent:
+    class AgentState(TypedDict):
+        messages: Annotated[Sequence[BaseMessage], add_messages]
+        agent_history: Annotated[Sequence[BaseMessage], add_messages]
+        
+    @staticmethod
+    def from_agent_to(state: AgentState):
+        messages = state["messages"]
+        last_message = messages[-1] if messages else None
+        
+        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            for call in last_message.tool_calls:
+                if "terminate" in call.get("name"):
+                    return "next"
+                elif "pause_and_think" in call.get("name"):
+                    return "reflection"
+        return "action"
+    
+    def __init__(self, memory: MilvusMemory, vlm_flex, vlm, logger=None):
+        self.memory = memory
+        self.vlm_flex = vlm_flex
+        self.vlm = vlm
+        self.logger = logger
+        
+        self.setup_tools(memory)
+        
+        self.agent_call_count = 0
+        
+    def setup_tools(self, memory: MilvusMemory):
+        search_tools = create_memory_search_tools(memory)
+        inspect_tools = create_memory_inspection_tool(memory)
+        response_tools = create_recall_best_matches_terminate_tool(memory)
+        reflect_tools = create_pause_and_think_tool()
+
+        self.all_tools = search_tools + inspect_tools + response_tools + reflect_tools
+        self.all_tool_definitions = [convert_to_openai_function(t) for t in self.all_tools]
+
+        self.tools = search_tools + inspect_tools + response_tools
+        self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
+        
+        self.reflect_tools = reflect_tools
+        self.reflect_tool_definitions = [convert_to_openai_function(t) for t in self.reflect_tools]
+        self.response_tools = response_tools
+        self.response_tool_definitions = [convert_to_openai_function(t) for t in self.response_tools]
+        
+    def agent(self, state: AgentState):
+        raise NotImplementedError("This is a base class. Use a subclass that implements the agent logic.")
+    
+    def build_graph(self): # TODO need to fix this
+        workflow = StateGraph(ToolAgent.AgentState)
+        
+        workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
+        workflow.add_node("reflection_action", ToolNode(self.reflect_tools))
+        workflow.add_node("action", ToolNode(self.all_tools))
+
+        workflow.add_edge("action", "agent")
+        workflow.add_conditional_edges(
+            "agent",
+            ToolAgent.from_agent_to,
+            {
+                "next": END,
+                "action": "action",
+            },
+        )
+        workflow.add_edge("reflection_action", "agent")
+
+        workflow.set_entry_point("agent")
+        self.graph = workflow.compile()
+            
     
 def create_recall_best_matches_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None):
     class BestMatchAgent:
@@ -498,7 +564,10 @@ def create_recall_best_matches_tool(memory: MilvusMemory, vlm_flex, vlm, logger=
             inspect_tools = create_memory_inspection_tool(memory)
             response_tools = create_recall_best_matches_terminate_tool(memory)
             reflect_tools = create_pause_and_think_tool()
-            
+
+            self.all_tools = search_tools + inspect_tools + response_tools + reflect_tools
+            self.all_tool_definitions = [convert_to_openai_function(t) for t in self.all_tools]
+
             self.tools = search_tools + inspect_tools + response_tools
             self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
             
@@ -635,8 +704,8 @@ def create_recall_best_matches_tool(memory: MilvusMemory, vlm_flex, vlm, logger=
             workflow = StateGraph(BestMatchAgent.AgentState)
             
             workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
-            workflow.add_node("action", ToolNode(self.tools))
-            
+            workflow.add_node("action", ToolNode(self.all_tools))
+
             workflow.add_edge("action", "agent")
             workflow.add_conditional_edges(
                 "agent",
@@ -867,6 +936,9 @@ def create_recall_last_seen_tool(memory: MilvusMemory, vlm_flex, vlm, logger=Non
             response_tools = create_recall_last_seen_terminate_tool(memory)
             reflect_tools = create_pause_and_think_tool()
             
+            self.all_tools = search_tools + inspect_tools + response_tools + reflect_tools
+            self.all_tool_definitions = [convert_to_openai_function(t) for t in self.all_tools]
+            
             self.tools = search_tools + inspect_tools + response_tools
             self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
             
@@ -1003,7 +1075,7 @@ def create_recall_last_seen_tool(memory: MilvusMemory, vlm_flex, vlm, logger=Non
             workflow = StateGraph(LastSeenAgent.AgentState)
             
             workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
-            workflow.add_node("action", ToolNode(self.tools))
+            workflow.add_node("action", ToolNode(self.all_tools))
             
             workflow.add_edge("action", "agent")
             workflow.add_conditional_edges(
@@ -1246,6 +1318,9 @@ def create_recall_all_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None) -> 
             response_tools = create_recall_all_terminate_tool(memory)
             reflect_tools = create_pause_and_think_tool()
             
+            self.all_tools = search_tools + inspect_tools + response_tools + reflect_tools
+            self.all_tool_definitions = [convert_to_openai_function(t) for t in self.all_tools]
+            
             self.tools = search_tools + inspect_tools + response_tools
             self.tool_definitions = [convert_to_openai_function(t) for t in self.tools]
             
@@ -1382,7 +1457,7 @@ def create_recall_all_tool(memory: MilvusMemory, vlm_flex, vlm, logger=None) -> 
             workflow = StateGraph(RecallAllAgent.AgentState)
             
             workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
-            workflow.add_node("action", ToolNode(self.tools))
+            workflow.add_node("action", ToolNode(self.all_tools))
             
             workflow.add_edge("action", "agent")
             workflow.add_conditional_edges(
