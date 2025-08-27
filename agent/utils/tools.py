@@ -67,7 +67,7 @@ def create_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
             description=TOOL_RATIONALE_DESC
         )
         query_text: str = Field(
-            description="The class label of the object to detect. It must be one of 'book', 'magazine', 'toy', 'folder', 'cabinet'"
+            description="The class label of the object to detect. It must be one of 'book', 'magazine', 'toy', 'folder', 'cabinet', 'bananas', 'apple', 'cupcake', 'cereal', 'mincedmeat', 'creamybuns'"
         )
         
     def _detect(store: TempJsonStore, tool_rationale: str, query_text: str) -> dict:

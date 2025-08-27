@@ -144,7 +144,7 @@ Returns **bounding boxes** and **instance IDs** (needed for follow-up actions li
 - You need **visual confirmation** before deciding on next steps.
 
 **Key points**  
-- The `query_text` **must** match one of the supported classes: `'book'`, `'magazine'`, `'toy'`, `'folder'`, `'cabinet'`.  
+- The `query_text` **must** match one of the supported classes: `'book'`, `'magazine'`, `'toy'`, `'folder'`, `'cabinet'`, `'bananas'`, `'apple'`, `'cupcake'`, `'cereal'`, `'mincedmeat'`, `'creamybuns'`.  
 - Works only with the robot’s **current camera view** — **navigate first** if the target might not be visible from the current pose.  
 - Detection is **class-based**, not instance-specific — combine with memory or inspection to ensure it’s the **right object**.  
 - Review returned images to verify results before acting.
