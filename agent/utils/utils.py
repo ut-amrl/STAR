@@ -998,26 +998,51 @@ def parse_json(text: str):
     
 def safe_gpt_invoke(flex_model, nonflex_model, *args, **kwargs):
     """
-    Try flex_model.invoke(...) up to 3 times on 429; waits 1s, 2s, 4s.
-    Then fall back to nonflex_model.invoke(...).
+    Try flex_model.invoke(...) up to 3 times on transient errors (429, 5xx, timeouts, connection resets).
+    Backoff: 1s, 2s, 4s. Then fall back to nonflex_model.invoke(...).
+
     Works for both:
       - safe_gpt_invoke(vlm_flex, vlm, messages)
       - safe_gpt_invoke(vlm_flex, vlm, chat_history=..., fact_prompt=..., question=...)
     """
     delays = [1, 2, 4]
+    transient_markers = [
+        "no healthy upstream",
+        "temporarily unavailable",
+        "upstream connect error",
+        "connection reset",
+        "bad gateway",
+        "gateway timeout",
+        "timed out",
+        "timeout",
+        "server overloaded",
+        "retry later",
+        "status code: 429",
+        "rate limit",
+    ]
+
+    def is_transient(e: Exception) -> bool:
+        code = getattr(e, "status_code", None) or getattr(e, "code", None)
+        if isinstance(code, int) and (code == 429 or 500 <= code <= 599 or code in (408,)):
+            return True
+        msg = str(e).lower()
+        return any(marker in msg for marker in transient_markers)
+
+    # Try flex model with retries
     for attempt, delay in enumerate(delays, start=1):
         try:
             return flex_model.invoke(*args, **kwargs)
         except Exception as e:
-            # detect 429 across SDKs/wrappers
-            code = getattr(e, "status_code", None) or getattr(e, "code", None)
-            msg = str(e).lower()
-            is_429 = (code == 429) or ("status code: 429" in msg) or ("rate limit" in msg)
-            if is_429:
-                print(f"[WARN] 429 from flex (attempt {attempt}/3). Retrying in {delay}s...")
-                time.sleep(delay)
-                continue
-            raise  # non-429 errors bubble up
+            if is_transient(e):
+                if attempt < len(delays):
+                    print(f"[WARN] Transient error from flex (attempt {attempt}/3): {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+                    continue
+                else:
+                    print(f"[INFO] Flex still failing after {attempt} attempt(s): {e}. Falling back to non-flex.")
+                    break
+            raise  # non-transient → bubble up
 
-    print("[INFO] Switching to non-flex model after 3 failed flex attempts.")
+    # Fallback to non-flex
+    print("[INFO] Switching to non-flex model...")
     return nonflex_model.invoke(*args, **kwargs)

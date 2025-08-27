@@ -10,6 +10,9 @@ classonly/efee6025.json
 classonly/17dc51bd.json
 classonly/ea17d78b.json
 classonly/ebbd3753.json
+classonly/3377f9e2.json                                                                                                                                                                                  
+classonly/b35702fa.json
+classonly/65d39e3c.json
 classonly_interactive/17dc51bd.json                                                                                                                                                                                                                 
 classonly_interactive/04bb3696.json
 classonly_interactive/71060744.json
@@ -26,6 +29,9 @@ unambiguous/bf5085e8.json
 unambiguous/55231474.json
 unambiguous/d9d74b31.json
 unambiguous/3b85be28.json
+unambiguous/47b2c3fa.json                                                                                                                                                                                
+unambiguous/8a63b540.json
+unambiguous/3d025401.json
 unambiguous_interactive/55231474.json                                                                                                                                                                                                               
 unambiguous_interactive/2d1a09e8.json
 unambiguous_interactive/ca459de2.json
@@ -42,6 +48,9 @@ spatial/e0632042.json
 spatial/1f625c9f.json
 spatial/6a76e492.json
 spatial/dca130b0.json
+spatial/fae0f04c.json                                                                                                                                                                                    
+spatial/3d550f32.json
+spatial/c0747ca9.json
 spatial_interactive/1f625c9f.json                                                                                                                                                                                                                   
 spatial_interactive/aef9725a.json
 spatial_interactive/0d56fcf0.json
@@ -58,6 +67,9 @@ spatial_temporal/857b07a8.json
 spatial_temporal/426a1732.json
 spatial_temporal/05222ff4.json
 spatial_temporal/f0068f81.json
+spatial_temporal/482c266a.json                                                                                                                                                                           
+spatial_temporal/7b74cef5.json
+spatial_temporal/a8a6e356.json
 spatial_temporal_interactive/426a1732.json                                                                                                                                                                                                          
 spatial_temporal_interactive/97a47b2e.json
 spatial_temporal_interactive/097a941e.json
@@ -74,6 +86,9 @@ frequency/5abfe41a.json
 frequency/365ef0d0.json
 frequency/5648b8dd.json
 frequency/33edd26b.json
+frequency/182deb8b.json                                                                                                                                                                                  
+frequency/75a14c7f.json
+frequency/f16cdf43.json
 frequency_interactive/365ef0d0.json                                                                                                                                                                                                                 
 frequency_interactive/314e463f.json
 frequency_interactive/aa65894b.json
