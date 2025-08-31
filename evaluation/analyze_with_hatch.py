@@ -24,11 +24,11 @@ _OBJECT_FLAGS = [
 ]
 
 _AGENT_DISPLAY = {
-    "random": "Random",
-    "replan_low_level_gt": "Interleaving Exec.",
-    "low_level_gt": "One-shot Exec.",
-    "high_level_gt": "high-level",
-    # Add more mappings as needed
+    "random":              "Random",
+    "low_level_gt":        "One-shot GT (Low)",
+    "replan_low_level_gt": "Interleave GT (Low)",
+    "high_level_gt":       "One-shot GT (High)",
+    "low_level_caption":   "One-shot GPT (Low)",
 }
 
 _TASK_DISPLAY_TWO_LINES = {
@@ -61,8 +61,11 @@ _TASK_ORDER = [
 # Agent-specific visual style (kept consistent across all plots)
 _AGENT_STYLE = {
     "low_level_gt":       {"color": "#4a90d9"},
-    "replan_low_level_gt":{"color": "#ff9d4d"},
-    "high_level_gt":      {"color": "#58c96e"},
+    # "replan_low_level_gt":{"color": "#ff9d4d"},
+    "replan_low_level_gt":{"color": "#58c96e"},
+    # "high_level_gt":      {"color": "#58c96e"},
+    "high_level_gt":      {"color": "#ff9d4d"},
+    "low_level_caption":  {"color": "#5bc0de"},
     "random":             {"color": "#9e9e9e"},
 }
 
@@ -77,7 +80,9 @@ _TASK_HATCH = {
 def _style_for_agent(agent: str) -> dict:
     return _AGENT_STYLE.get(agent, {"color": "#999999"})
 
-def _hatch_for_task(task: str) -> str:
+def _hatch_for_task(task: str, enabled: bool) -> str:
+    if not enabled:
+        return ""
     return _TASK_HATCH.get(task, "")
 
 def _task_sort_key(t):
@@ -156,11 +161,15 @@ def parse_args():
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt")
-    parser.add_argument("--agent_types", nargs="+", default=["random", "low_level_gt", "replan_low_level_gt"])
+    parser.add_argument("--agent_types", nargs="+", default=["random", "low_level_gt", "replan_low_level_gt", "low_level_caption"])
     # NEW: toggle error bars
     parser.add_argument("--error_bars", action="store_true",
                         help="If set, draw 95% Wilson CI error bars for success rates.")
-    parser.add_argument("--cascade_error_analysis", action="store_true", help="If set, perform cascade failure analysis.")
+    # NEW: toggle hatches
+    parser.add_argument("--use_hatches", action="store_true",
+                        help="If set, apply task-type hatches to bars and show the hatch legend.")
+    parser.add_argument("--cascade_error_analysis", action="store_true",
+                        help="If set, perform cascade failure analysis.")
     return parser.parse_args()
 
 def _load_json_safe(path: str):
@@ -258,7 +267,7 @@ def analyze_results(
 
 def plot_overall_success(args, df):
     """
-    Colors encode agent; hatches encode task type.
+    Colors encode agent; hatches encode task type (only if --use_hatches).
     Pretty error bars & dynamic y-limits.
     """
     import matplotlib as mpl
@@ -311,7 +320,7 @@ def plot_overall_success(args, df):
     fig, ax = plt.subplots(figsize=(11, 6))
     max_with_err = 0.0
 
-    # Draw bars: color=agent, hatch=task
+    # Draw bars: color=agent; hatch depends on flag
     for i_agent, ag in enumerate(args.agent_types):
         color = _style_for_agent(ag)["color"]
         for i_task, task in enumerate(tasks):
@@ -325,7 +334,8 @@ def plot_overall_success(args, df):
                 xpos, val, width=width,
                 color=color, edgecolor="black", linewidth=0.7, zorder=2.5
             )[0]
-            bar.set_hatch(_hatch_for_task(task))
+            if args.use_hatches:
+                bar.set_hatch(_hatch_for_task(task, enabled=True))
             bar.set_linewidth(0.6)
 
             # error bars match agent color (slightly darker)
@@ -355,32 +365,33 @@ def plot_overall_success(args, df):
     for i in range(0, n_tasks, 2):
         ax.axvspan(i - 0.5, i + 0.5, color="#b7b7b7", alpha=0.12, zorder=0)
 
-    # Legends: (1) Agent colors, (2) Task hatches
+    # Legend(s)
     agent_handles = [
         mpatches.Patch(facecolor=_style_for_agent(ag)["color"], edgecolor="black",
                        linewidth=0.7, label=_pretty_agent(ag))
         for ag in args.agent_types
     ]
     leg_agents = ax.legend(
-        handles=agent_handles, title="Agent", title_fontsize=14, fontsize=12,
-        loc="upper right", bbox_to_anchor=(0.98, 0.98),
+        handles=agent_handles, title="Agent", title_fontsize=13, fontsize=11,
+        loc="upper right", bbox_to_anchor=(1, 1),
         frameon=True, framealpha=0.9, facecolor="white", edgecolor="lightgray"
     )
     leg_agents.get_title().set_fontweight("medium")
 
-    task_handles = [
-        mpatches.Patch(facecolor="white", edgecolor="black",
-                       hatch=_hatch_for_task(t), linewidth=0.7,
-                       label=_pretty_task(t, oneline=True))
-        for t in tasks
-    ]
-    leg_tasks = ax.legend(
-        handles=task_handles, title="Task Type (hatch)", title_fontsize=13, fontsize=11,
-        loc="upper left", bbox_to_anchor=(0.02, 0.98),
-        frameon=True, framealpha=0.9, facecolor="white", edgecolor="lightgray"
-    )
-    leg_tasks.get_title().set_fontweight("medium")
-    ax.add_artist(leg_agents)  # keep both legends
+    if args.use_hatches:
+        task_handles = [
+            mpatches.Patch(facecolor="white", edgecolor="black",
+                           hatch=_hatch_for_task(t, enabled=True), linewidth=0.7,
+                           label=_pretty_task(t, oneline=True))
+            for t in tasks
+        ]
+        leg_tasks = ax.legend(
+            handles=task_handles, title="Task Type (hatch)", title_fontsize=13, fontsize=11,
+            loc="upper left", bbox_to_anchor=(0.02, 0.98),
+            frameon=True, framealpha=0.9, facecolor="white", edgecolor="lightgray"
+        )
+        leg_tasks.get_title().set_fontweight("medium")
+        ax.add_artist(leg_agents)  # keep both legends
 
     plt.tight_layout()
     os.makedirs(args.output_dir, exist_ok=True)
@@ -393,7 +404,7 @@ def plot_overall_success(args, df):
 def plot_object_class_success(args, df):
     """
     x = instance_class; grouped bars = (task_type, agent)
-    Colors = agent; Hatches = task type. Error bars optional.
+    Colors = agent; Hatches = task type if --use_hatches. Error bars optional.
     """
     import pandas as pd
     if df.empty or "instance_class" not in df.columns:
@@ -448,7 +459,7 @@ def plot_object_class_success(args, df):
         for ag in agents:
             flat_cols.append((task, ag))
             colours.append(_style_for_agent(ag)["color"])   # color by agent
-            hatches.append(_hatch_for_task(task))           # hatch by task
+            hatches.append(_hatch_for_task(task, enabled=args.use_hatches))  # hatch conditional
 
     plot_df = plot_df.reindex(columns=pd.MultiIndex.from_tuples(flat_cols))
     col_keys = list(plot_df.columns)
@@ -465,7 +476,8 @@ def plot_object_class_success(args, df):
     for col_idx, ((task, agent), hatch) in enumerate(zip(col_keys, hatches)):
         start, end = col_idx * n_rows, (col_idx + 1) * n_rows
         for row_offset, patch in enumerate(ax.patches[start:end]):
-            patch.set_hatch(hatch)
+            if args.use_hatches and hatch:
+                patch.set_hatch(hatch)
             patch.set_linewidth(0.5)
 
             val = float(patch.get_height())
@@ -493,7 +505,7 @@ def plot_object_class_success(args, df):
     for i in range(0, n_groups, 2):
         ax.axvspan(i - 0.5, i + 0.5, color="#d6d6d6", alpha=0.15, zorder=0)
 
-    # Dual legends (Agents = colors, Tasks = hatches)
+    # Agent legend (always)
     agent_handles = [
         mpatches.Patch(facecolor=_style_for_agent(ag)["color"], edgecolor="black",
                        linewidth=0.7, label=_pretty_agent(ag))
@@ -506,19 +518,21 @@ def plot_object_class_success(args, df):
     )
     leg_agents.get_title().set_fontweight("medium")
 
-    task_handles = [
-        mpatches.Patch(facecolor="white", edgecolor="black",
-                       hatch=_hatch_for_task(t), linewidth=0.7,
-                       label=_pretty_task(t, oneline=True))
-        for t in ordered_tasks
-    ]
-    leg_tasks = ax.legend(
-        handles=task_handles, title="Task Type (hatch)", title_fontsize=12, fontsize=11,
-        loc="upper left", bbox_to_anchor=(0.02, 0.98),
-        frameon=True, framealpha=0.9, facecolor="white", edgecolor="lightgray"
-    )
-    leg_tasks.get_title().set_fontweight("medium")
-    ax.add_artist(leg_agents)
+    # Task legend only if hatches are enabled
+    if args.use_hatches:
+        task_handles = [
+            mpatches.Patch(facecolor="white", edgecolor="black",
+                           hatch=_hatch_for_task(t, enabled=True), linewidth=0.7,
+                           label=_pretty_task(t, oneline=True))
+            for t in ordered_tasks
+        ]
+        leg_tasks = ax.legend(
+            handles=task_handles, title="Task Type (hatch)", title_fontsize=12, fontsize=11,
+            loc="upper left", bbox_to_anchor=(0.02, 0.98),
+            frameon=True, framealpha=0.9, facecolor="white", edgecolor="lightgray"
+        )
+        leg_tasks.get_title().set_fontweight("medium")
+        ax.add_artist(leg_agents)
 
     plt.tight_layout()
     out_path = os.path.join(args.output_dir, "success_by_object_and_task.png")

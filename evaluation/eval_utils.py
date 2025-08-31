@@ -14,7 +14,7 @@ def load_task_metadata(
     benchmark_dir: str, 
     task_types: list[str],
     prefix: str = "tasks",
-    versions: list = ["", "_wp_only", "_recaption_wp_only"]
+    versions: list = [""]
 ):
     # Initialize the dictionary with all required keys
     

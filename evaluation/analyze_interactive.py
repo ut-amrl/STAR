@@ -27,10 +27,11 @@ _OBJECT_FLAGS = [
 ]
 
 _AGENT_DISPLAY = {
-    "random": "Random",
-    "replan_low_level_gt": "Interleaving Exec.",
-    "low_level_gt": "One-shot Exec.",
-    "high_level_gt": "high-level",
+    "random":              "Random",
+    "low_level_gt":        "One-shot GT (Low)",
+    "replan_low_level_gt": "Interleave GT (Low)",
+    "high_level_gt":       "One-shot GT (High)",
+    "low_level_caption":   "One-shot GPT (Low)",
 }
 
 _TASK_DISPLAY_TWO_LINES = {
@@ -49,14 +50,6 @@ _TASK_DISPLAY = {
     "frequency":        "spatial-freqentist",
 }
 
-_COLOR_GROUP = {
-    "classonly":        plt.cm.Oranges,
-    "unambiguous":      plt.cm.Greens,
-    "spatial_temporal": plt.cm.Blues,
-    "spatial":          plt.cm.Purples,
-    "frequency":        plt.cm.Greys,
-}
-
 _TASK_ORDER = [
     "classonly",
     "unambiguous",
@@ -67,10 +60,13 @@ _TASK_ORDER = [
 
 # Agent-specific visual style (color only; hatch now encodes variant)
 _AGENT_STYLE = {
-    "low_level_gt":        {"color": "#4a90d9"},  # lighter blue
-    "replan_low_level_gt": {"color": "#ff9d4d"},  # lighter orange
-    "high_level_gt":       {"color": "#58c96e"},  # lighter green
-    "random":              {"color": "#9e9e9e"},  # lighter gray
+    "low_level_gt":       {"color": "#4a90d9"},
+    # "replan_low_level_gt":{"color": "#ff9d4d"},
+    "replan_low_level_gt":{"color": "#58c96e"},
+    # "high_level_gt":      {"color": "#58c96e"},
+    "high_level_gt":      {"color": "#ff9d4d"},
+    "low_level_caption":  {"color": "#5bc0de"},
+    "random":             {"color": "#9e9e9e"},
 }
 
 # Variant style: hatch differentiates noninteractive vs interactive.
@@ -159,7 +155,7 @@ def parse_args():
     p.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     p.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt",)
     p.add_argument("--agent_types", nargs="+",
-                   default=["low_level_gt", "replan_low_level_gt"])
+                   default=["low_level_gt", "replan_low_level_gt", "low_level_caption"])
     p.add_argument("--paired_only", action="store_true", default=True)
     p.add_argument("--error_bars", action="store_true",
                    help="If set, draw 95% Wilson CI error bars for success rates.")
@@ -467,7 +463,7 @@ def plot_overall_avg_success(args, df):
     ax.legend(
         handles=legend_handles,
         fontsize=11,
-        loc="upper left", bbox_to_anchor=(0.27, 1.0),
+        loc="upper left", bbox_to_anchor=(0.13, 1.0),
         frameon=True, framealpha=0.9, facecolor="white", edgecolor="lightgray",
         title=None
     )

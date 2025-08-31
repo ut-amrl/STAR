@@ -16,7 +16,7 @@ def parse_args():
                    help="Root directory containing task_type/uid subfolders.")
     p.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt")
     p.add_argument("--agent_types", nargs="+",
-                   default=["low_level_gt", "replan_low_level_gt", "low_level_caption"],
+                   default=["low_level_gt", "replan_low_level_gt", "low_level_caption", "random", "high_level_gt"],
                    help="Agents to check.")
     return p.parse_args()
 
