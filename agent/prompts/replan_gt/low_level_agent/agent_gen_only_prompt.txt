@@ -19,6 +19,7 @@ Throughout the process:
 - Treat the environment as a **dynamic household/office setting**: many objects are **movable** (mugs, books, tools) and can change places, while others are likely to be **stationary** (desks, shelves). Use this common-sense distinction when reasoning — weigh appearance/context more for movable items and location/layout more for anchored ones.
 
 Before navigating, analyze memory to identify the most promising search targets — repeat identity resolution and last-seen location checks strategically until confident enough to commit to physical search. You may navigate to at most 3 distinct physical locations; do not revisit a location you have already confirmed to be empty in the current search session.
+If, after searching, you find strong evidence that the requested object has **never been seen in memory**, you should fall back to **common-sense reasoning**: infer the most likely location(s) for such an object (e.g., fruit in the kitchen, books on shelves, toys on beds) and propose a **plausible retrieval attempt** from there. This ensures progress even when memory is incomplete.
 
 ---
 

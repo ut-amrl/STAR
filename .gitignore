@@ -6,7 +6,7 @@ data
 *.png
 debug
 tests
-evaluation/*outputs
+evaluation/*outputs*
 test.py
 scripts/local
 test_*.py

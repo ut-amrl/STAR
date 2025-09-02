@@ -10,9 +10,11 @@ class ReplanLowLevelAgent(Agent):
                  prompt_type: str,
                  verbose: bool = False,
                  logdir: str = None,
-                 logger_prefix: str = "",):
-        super().__init__(verbose, logdir, logger_prefix)
+                 logger_prefix: str = "",
+                 is_interactive: bool = False):
         
+        super().__init__(verbose, logdir, logger_prefix, is_interactive)
+
         prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", f"replan_{prompt_type}", "low_level_agent")
         self.agent_prompt = file_to_string(os.path.join(prompt_dir, "agent_prompt.txt"))
         self.agent_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "agent_gen_only_prompt.txt"))

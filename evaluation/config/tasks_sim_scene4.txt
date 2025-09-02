@@ -17,6 +17,13 @@ classonly_interactive/f180fd83.json
 classonly_interactive/3dae9fb7.json
 classonly_interactive/510fa12d.json
 classonly_interactive/04d9f8da.json
+common_sense/46246667.json
+common_sense/13dfbdbd.json
+common_sense/3db947a0.json
+common_sense/bfcaba16.json
+common_sense/57ded4de.json
+common_sense/f67e3146.json
+common_sense/41e4a8d3.json
 unambiguous/46b44da6.json
 unambiguous/51818dfa.json
 unambiguous/8abab93b.json

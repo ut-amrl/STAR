@@ -114,9 +114,9 @@ Use this to obtain **fresh, in-situ visual evidence** that memory alone cannot s
 - When memory is **ambiguous or outdated** and direct observation will clarify.
 
 **Key points**
-- **Navigate only to known, mapped positions** (assumed traversable).  
-- Pick poses that are **directly relevant** to last-seen evidence or likely supports/containers.  
-- Use returned pano images to **update your plan** — run detection, open containers, or choose a new pose as needed.
+- Navigate only to known, mapped positions (assumed traversable).  
+- Prefer poses that are likely to place the target **within 1–2 m** and **≤ 1.5 m** for detection; if unsure, plan a **waypoint → approach** sequence.  
+- Use returned pano images to update your plan — reposition to meet the detection constraint before calling `robot_detect`.  
 - Must be called **alone**
 
 ```json
@@ -145,9 +145,8 @@ Returns **bounding boxes** and **instance IDs** (needed for follow-up actions li
 
 **Key points**  
 - The `query_text` **must** match one of the supported classes: `'book'`, `'magazine'`, `'toy'`, `'folder'`, `'cabinet'`, `'bananas'`, `'apple'`, `'cupcake'`, `'cereal'`, `'mincedmeat'`, `'creamybuns'`.  
-- Works only with the robot’s **current camera view** — **navigate first** if the target might not be visible from the current pose.  
-- Detection is **class-based**, not instance-specific — combine with memory or inspection to ensure it’s the **right object**.  
-- Review returned images to verify results before acting.
+- Works only with the **current camera view** and returns objects **within 1.5 m**; if nothing is returned but the object seems visible/far, **reposition closer** and try again.  
+- Detection is **class-based**, not instance-specific — combine with memory or inspection to ensure it’s the **right instance**.  
 - Must be called **alone**
 
 ```json
@@ -183,7 +182,7 @@ Instance IDs must come from a recent `robot_detect` call.
 
 Example:
 ```json
-[
+[]
 {{
   "tool": "robot_pick",
   "tool_input": {{
@@ -211,6 +210,7 @@ Instance IDs must come from a recent `robot_detect` call.
 - Success returns a unique `instance_uid` confirming the open action.
 - Must be called **alone**
 - When multiple similar-looking containers are nearby, use memory (spatial/temporal reasoning) to disambiguate which one matches the user’s reference before opening.
+- If opening is required to satisfy the **≤ 1.5 m detection** or visibility constraint (e.g., door blocks the view), open first, then re-detect before pick.
 
 ___
 

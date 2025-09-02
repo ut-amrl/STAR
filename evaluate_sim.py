@@ -84,14 +84,19 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
         question=task['task'],
     )
     result = full_result["task_result"]
+    
+    reference_resolution_successs, retrieval_grounding_successs, latest_retrieval_successs, last_known_state_success = False, False, False, False
+    if task["task_type"] == "common_sense":
+        reference_resolution_successs, retrieval_grounding_successs, latest_retrieval_successs = None, None, None
+    
     empty_result = {
         "success": False,
-        "reference_resolution_successs": False,
+        "reference_resolution_successs": reference_resolution_successs,
         "reference_resoluation_path": "",
-        "retrieval_grounding_success": False,
+        "retrieval_grounding_success": retrieval_grounding_successs,
         "retrieval_grounding_path": "",
-        "latest_retrieval_success": False,
-        "last_known_state_success": False,
+        "latest_retrieval_success": latest_retrieval_successs,
+        "last_known_state_success": last_known_state_success,
         "position": None,
         "theta": None,
         "has_picked": False,
@@ -103,7 +108,11 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
                 "reasoning_toolcalls": full_result.get("toolcalls", [])
             }
 
-    success = result.instance_name is not None and len(result.instance_name) > 0 and task["instance_name"].lower() in result.instance_name.lower()
+    success = result.instance_name is not None and len(result.instance_name) > 0
+    if "instance_name" in task:
+        success = success and task["instance_name"].lower() in result.instance_name.lower()
+    else:
+        success = success and task["instance_class"].lower() in result.instance_name.lower()
 
     ref_record = result.reference_resolution_records
     ret_record = result.retrieval_grounding_records
@@ -112,8 +121,7 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
     ref_dataname = extract_dataname_from_vidpath(ref_record["vidpath"]) if ref_record is not None else None
     ret_dataname = extract_dataname_from_vidpath(ret_record["vidpath"]) if ret_record is not None else None
     
-    reference_resolution_successs, retrieval_grounding_successs, latest_retrieval_successs, last_known_state_success = False, False, False, False
-    if ref_record is not None:
+    if task["task_type"] != "common_sense" and ref_record is not None:
         for frame_idx in range(ref_record["start_frame"], ref_record["end_frame"]+1):
             if frame_idx >= len(annotations[ref_dataname]["frames"]):
                 continue
@@ -122,7 +130,7 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
             if task["instance_name"] in all_visible_instances:
                 reference_resolution_successs = True
                 break
-    if ret_record is not None:
+    if task["task_type"] != "common_sense" and ret_record is not None:
         for frame_idx in range(ret_record["start_frame"], ret_record["end_frame"]+1):
             if frame_idx >= len(annotations[ref_dataname]["frames"]):
                 continue
@@ -162,7 +170,13 @@ def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
                                              ret_record["start_frame"], 
                                              ret_record["end_frame"]) if ret_record is not None else None
     
-    last_known_state_success = task["instance_name"] in result.visible_instances
+    if task["task_type"] != "common_sense":
+        last_known_state_success = task["instance_name"] in result.visible_instances
+    else:
+        for visible_instance in result.visible_instances:
+            if task["instance_class"].lower() in visible_instance.lower():
+                last_known_state_success = True
+                break
     
     return {
         "result": {
@@ -277,28 +291,32 @@ def evaluate(args):
                 agent = ReasoningHighLevelAgent(
                     prompt_type=args.prompt_type,
                     logdir=result_dir,
-                    logger_prefix=args.agent_type
+                    logger_prefix=args.agent_type,
+                    is_interactive=("interactive" in task_type)
                 )
             elif "low_level" in args.agent_type and "replan" in args.agent_type:
                 from agent.agent_lowlevel_replan import ReplanLowLevelAgent
                 agent = ReplanLowLevelAgent(
                     prompt_type=args.prompt_type,
                     logdir=result_dir,
-                    logger_prefix=args.agent_type
+                    logger_prefix=args.agent_type,
+                    is_interactive=("interactive" in task_type)
                 )
             elif "high_level" in args.agent_type:
                 from agent.agent_highlevel import HighLevelAgent
                 agent = HighLevelAgent(
                     prompt_type=args.prompt_type,
                     logdir=result_dir,
-                    logger_prefix=args.agent_type
+                    logger_prefix=args.agent_type,
+                    is_interactive=("interactive" in task_type)
                 )
             elif "low_level" in args.agent_type:
                 from agent.agent_lowlevel import LowLevelAgent
                 agent = LowLevelAgent(
                     prompt_type=args.prompt_type,
                     logdir=result_dir,
-                    logger_prefix=args.agent_type
+                    logger_prefix=args.agent_type,
+                    is_interactive=("interactive" in task_type)
                 )
             elif "random" == args.agent_type:
                 from agent.agent_random import RandomAgent
@@ -314,7 +332,8 @@ def evaluate(args):
                 from agent.agent_scenegraph import SceneGraphAgent
                 agent = SceneGraphAgent(
                     logdir=result_dir,
-                    logger_prefix=args.agent_type
+                    logger_prefix=args.agent_type,
+                    is_interactive=("interactive" in task_type)
                 )
             else:
                 raise ValueError(f"Unknown agent type: {args.agent_type}. Supported types are 'high_level' and 'low_level'.")
@@ -335,9 +354,12 @@ def evaluate(args):
             assert len(bag_unix_times) == len(task_data["bagnames"]), \
                 f"Number of bag names ({len(task_data['bagnames'])}) does not match number of unix times ({len(bag_unix_times)})"
                 
-            
+            mem_bagnames = task_data["bagnames"]
+            if task_type == "common_sense":
+                mem_bagnames = mem_bagnames[:-1]
+                
             if args.agent_type == "sg":
-                memory_sg = load_virtualhom_memory_sg(args.data_dir, task_data["bagnames"], bag_unix_times)
+                memory_sg = load_virtualhom_memory_sg(args.data_dir, mem_bagnames, bag_unix_times)
                 agent.set_memory_sg(memory_sg)
                 import pdb; pdb.set_trace()
                 
@@ -349,12 +371,11 @@ def evaluate(args):
                 memory.reset()
     
                 inpaths, time_offsets, viddirs = [], [], []
-                for bi, bagname in enumerate(task_data["bagnames"]):
+                for bi, bagname in enumerate(mem_bagnames):
                     inpaths.append(data_metadata[bagname])
                     time_offsets.append(bag_unix_times[bi])
                     viddirs.append(os.path.join(args.data_dir, bagname, "images"))
                 remember(memory, inpaths, time_offsets, viddirs)
-            
                 agent.set_memory(memory)
                 
             exec_bagname = task_data["bagnames"][-1]
@@ -381,7 +402,7 @@ def evaluate(args):
                 result = full_result["result"]
                 result["task"] = task["task"]
                 result["task_type"] = task_type
-                result["instance_name"] = task["instance_name"]
+                result["instance_name"] = task.get("instance_name", "")
                 result["instance_class"] = task["instance_class"]
                 if "reasoning" in args.agent_type:
                     result["success"] = full_result["result"]["latest_retrieval_success"]

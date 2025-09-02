@@ -9,9 +9,10 @@ class RandomAgent(Agent):
                  pick_fn: Callable,
                  verbose: bool = False,
                  logdir: str = None,
-                 logger_prefix: str = ""):
-        super().__init__(verbose, logdir, logger_prefix)
-        
+                 logger_prefix: str = "",
+                 is_interactive: bool = False):
+        super().__init__(verbose, logdir, logger_prefix, is_interactive)
+
         self.navigate_fn = navigate_fn
         self.detect_fn = detect_fn
         self.pick_fn = pick_fn

@@ -10,9 +10,10 @@ class LowLevelAgent(Agent):
                  prompt_type: str = "gt",  
                  verbose: bool = False,
                  logdir: str = None,
-                 logger_prefix: str = ""
+                 logger_prefix: str = "",
+                 is_interactive: bool = False
     ):
-        super().__init__(verbose, logdir, logger_prefix)
+        super().__init__(verbose, logdir, logger_prefix, is_interactive)
 
         prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", prompt_type, "low_level_agent")
         self.agent_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_prompt.txt"))

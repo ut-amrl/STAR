@@ -27,9 +27,11 @@ class Agent:
     def __init__(self,
                  verbose: bool = False,
                  logdir: str = None,
-                 logger_prefix: str = ""
+                 logger_prefix: str = "",
+                 is_interactive: bool = False,
     ):
         self.verbose = verbose
+        self.is_interactive = is_interactive
         
         self.logger = get_logger(logdir=logdir, prefix=logger_prefix, flatten=True) if logdir else get_logger(prefix=logger_prefix, flatten=True)
         
@@ -163,7 +165,10 @@ class Agent:
         raise ValueError("No terminate tool call found in the response")
     
     def search_in_space(self, state: AgentState):
-        max_search_in_space_cnt = 5
+        if self.is_interactive:
+            max_search_in_space_cnt = 5
+        else:
+            max_search_in_space_cnt = 3    
         
         messages = state["messages"]
         
