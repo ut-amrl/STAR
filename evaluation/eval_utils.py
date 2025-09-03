@@ -287,23 +287,74 @@ def resample_runs_by_arclength(
         merged = _grid_thin(merged, rmin=rmin)
     return merged
 
-def load_virtualhom_memory_sg(data_dir: str, datanames: list, bag_unix_times: list) -> list:
-    graphs = ""
-    for dataname, unix_time in zip(datanames, bag_unix_times):
-        path = os.path.join(data_dir, dataname, "0", f"graph.json")
+# def load_virtualhom_memory_sg(data_dir: str, datanames: list, bag_unix_times: list) -> list:
+#     graphs = ""
+#     for dataname, unix_time in zip(datanames, bag_unix_times):
+#         path = os.path.join(data_dir, dataname, "0", f"pruned_graph.json")
+#         with open(path, "r") as f:
+#             graph = json.load(f)
+#         if graph is None:
+#             raise ValueError(f"Graph not found in {path}")
+#         # graph["nodes"] = [{
+#         #     "id": n["id"],
+#         #     "class_name": n["class_name"],
+#         #     "object_position": [round(n["obj_transform"]["position"][0], 2),
+#         #             round(n["obj_transform"]["position"][1], 2),
+#         #             round(n["obj_transform"]["position"][2], 2)],
+#         #     "properties": n["properties"],
+#         #     "states": n["states"]
+#         # } for n in graph["nodes"]]
+#         graph["nodes"] = [{
+#             "id": n["id"],
+#             "class_name": n["class_name"],
+#             "object_position": [round(n["obj_transform"]["position"][0], 2),
+#                     round(n["obj_transform"]["position"][1], 2),
+#                     round(n["obj_transform"]["position"][2], 2)],
+#         } for n in graph["nodes"]]
+#         random.shuffle(graph["nodes"])
+#         graph_yaml = yaml.safe_dump(graph, sort_keys=False, allow_unicode=True)
+#         readable_time = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+#         graph_str = f"This is how the environment was like at {readable_time}:\n{graph_yaml}\n\n"
+#         graphs += graph_str
+#     return graphs
+
+def load_virtualhom_memory_sg(data_dir: str, datanames: list, bag_unix_times: list, is_common_sense: bool = False) -> str:
+    """Compact, labeled nodes; minimal edges; blank line between nodes and edges."""
+    parts = []
+    import copy
+    datanames_mem = copy.deepcopy(datanames)
+    bag_unix_times_mem = copy.deepcopy(bag_unix_times)
+    if is_common_sense:
+        datanames_mem, bag_unix_times_mem = datanames_mem[:-1], bag_unix_times_mem[:-1]
+    for dataname, unix_time in zip(datanames_mem, bag_unix_times_mem):
+        path = os.path.join(data_dir, dataname, "0", "pruned_graph.json")
         with open(path, "r") as f:
             graph = json.load(f)
-        if graph is None:
+        if not graph:
             raise ValueError(f"Graph not found in {path}")
-        graph["nodes"] = [{"id": n["id"],
-                           "category": n["category"],
-                           "class_name": n["class_name"],
-                           "object_position": [n["obj_transform"]["position"][0], n["obj_transform"]["position"][1], n["obj_transform"]["position"][2]],
-                           "properties": n["properties"],
-                           "states": n["states"]} for n in graph["nodes"]]
-        random.shuffle(graph["nodes"])
-        graph_yaml = yaml.safe_dump(graph, sort_keys=False, allow_unicode=True)
-        readable_time = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        graph_str = f"This is how the environment was like at {readable_time}:\n{graph_yaml}\n\n"
-        graphs += graph_str
-    return graphs
+
+        t = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Nodes
+        node_lines = []
+        for n in graph.get("nodes", []):
+            x, y, z = n["obj_transform"]["position"]
+            node_lines.append(f"id={n['id']} class={n['class_name']} pos=({round(x,2)},{round(z,2)},{round(y,2)})")
+        random.shuffle(node_lines)
+
+        # Edges (compact form)
+        edge_lines = [f"{e['from_id']} {e['relation_type']} {e['to_id']}" for e in graph.get("edges", [])]
+
+        # Assemble scene
+        scene = [f"time={t}"]
+        if node_lines:
+            scene.append("nodes:")
+            scene.extend(node_lines)
+        if edge_lines:
+            scene.append("")  # blank line between nodes and edges
+            scene.append("edges:")
+            scene.extend(edge_lines)
+
+        parts.append("\n".join(scene))
+
+    return "\n\n".join(parts)

@@ -359,9 +359,10 @@ def evaluate(args):
                 mem_bagnames = mem_bagnames[:-1]
                 
             if args.agent_type == "sg":
-                memory_sg = load_virtualhom_memory_sg(args.data_dir, mem_bagnames, bag_unix_times)
+                memory_sg = load_virtualhom_memory_sg(args.data_dir, mem_bagnames, bag_unix_times, is_common_sense=("common_sense" in task_type))
                 agent.set_memory_sg(memory_sg)
-                import pdb; pdb.set_trace()
+                # print(len(__import__("tiktoken").encoding_for_model("gpt-4o").encode(memory_sg)))
+                # import pdb; pdb.set_trace()
                 
             elif args.agent_type != "random": # Set up memory
                 db_name = f"virtualhome_{task_type}_{task_id}"
@@ -429,7 +430,7 @@ def evaluate(args):
             # Clean up memory and agent state
             agent.flush_tool_threads()
             import time; time.sleep(1)
-            if args.agent_type != "random" and utility.has_collection(db_name):
+            if args.agent_type != "random" and ("sg" not in args.agent_type) and utility.has_collection(db_name):
                 utility.drop_collection(db_name)
             import time; time.sleep(1)
             
