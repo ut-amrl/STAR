@@ -6,7 +6,7 @@ To build the image (make sure correct `CUDA_VERSION` arg is passed):
 podman build -t moma-ros-noetic:dev -f Dockerfile --build-arg CUDA_VERSION=12.6.0 --pull .
 ```
 
-To run the container, add OPENAI_API_KEY to `.env`. Then:
+To run the container, create an `.env` file under `docer` and add OPENAI_API_KEY to `.env`. Then:
 ```
 podman run --rm -it --hooks-dir=/usr/share/containers/oci/hooks.d --network host --env-file .env --env NVIDIA_VISIBLE_DEVICES=all --env NVIDIA_DRIVER_CAPABILITIES=compute,utility -v /robodata/taijing/ros_perception:/robodata/taijing/ros_perception:rw,z -v /robodata/taijing/benchmarks/virtualhome:/robodata/taijing/benchmarks/virtualhome:rw,z -v /robodata/taijing/benchmarks/MoMaBenchmark:/robodata/taijing/benchmarks/MoMaBenchmark:rw,z -e USE_PY310=1  moma-ros-noetic:dev bash
 ```
