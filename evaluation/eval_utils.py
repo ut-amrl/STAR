@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 def load_task_metadata(
     task_file_path: str, 
     benchmark_dir: str, 
-    task_types: list[str],
+    task_types: list,
     prefix: str = "tasks",
     versions: list = [""]
 ):
@@ -287,7 +287,7 @@ def resample_runs_by_arclength(
         merged = _grid_thin(merged, rmin=rmin)
     return merged
 
-def load_virtualhom_memory_sg(data_dir: str, datanames: list[str], bag_unix_times: list) -> list:
+def load_virtualhom_memory_sg(data_dir: str, datanames: list, bag_unix_times: list) -> list:
     graphs = ""
     for dataname, unix_time in zip(datanames, bag_unix_times):
         path = os.path.join(data_dir, dataname, "0", f"graph.json")

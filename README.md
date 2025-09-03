@@ -1,3 +1,18 @@
+## Docker Setup
+`cd docker` and run the following commands under the `docker` directory.
+
+To build the image (make sure correct `CUDA_VERSION` arg is passed):
+```
+podman build -t ros-noetic-cuda:dev -f Dockerfile --build-arg CUDA_VERSION=12.9.0 --pull .
+```
+
+To run the container, add OPENAI_API_KEY to `.env`. Then:
+```
+podman run --rm -it --hooks-dir=/usr/share/containers/oci/hooks.d --network host --env-file .env --env NVIDIA_VISIBLE_DEVICES=all --env NVIDIA_DRIVER_CAPABILITIES=compute,utility -v /robodata/taijing/ros_perception:/robodata/taijing/ros_perception:rw,z -v /robodata/taijing/benchmarks/virtualhome:/robodata/taijing/benchmarks/virtualhome:rw,z -v /robodata/taijing/benchmarks/MoMaBenchmark:/robodata/taijing/benchmarks/MoMaBenchmark:rw,z -e USE_PY310=1  moma-ros-noetic:dev bash
+```
+
+## Archived Instructions
+
 To install dependency, under project root directory, run:
 ```bash
 bash scripts/install_all.sh
