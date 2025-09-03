@@ -3,7 +3,7 @@
 
 To build the image (make sure correct `CUDA_VERSION` arg is passed):
 ```
-podman build -t ros-noetic-cuda:dev -f Dockerfile --build-arg CUDA_VERSION=12.9.0 --pull .
+podman build -t moma-ros-noetic:dev -f Dockerfile --build-arg CUDA_VERSION=12.6.0 --pull .
 ```
 
 To run the container, add OPENAI_API_KEY to `.env`. Then:

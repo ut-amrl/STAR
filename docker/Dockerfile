@@ -72,7 +72,7 @@ RUN /opt/py310/bin/pip install --no-cache-dir \
       langchain-milvus \
       langchain-huggingface \
       langchain-openai \
-      Pillow imageio ipython opencv-python OpenEXR Imath
+      Pillow ipython opencv-python OpenEXR Imath
 
 RUN /opt/py310/bin/pip install --no-cache-dir langchain langgraph langchain-community sentence-transformers
 
