@@ -310,7 +310,7 @@ class SceneGraphAgent(Agent):
             ]
         }
         
-        config = {"recursion_limit": 10}
+        config = {"recursion_limit": 15}
         state = self.graph.invoke(inputs, config=config)
         
         if self.logger:

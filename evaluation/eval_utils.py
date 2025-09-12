@@ -326,12 +326,30 @@ def load_virtualhom_memory_sg(data_dir: str, datanames: list, bag_unix_times: li
     bag_unix_times_mem = copy.deepcopy(bag_unix_times)
     if is_common_sense:
         datanames_mem, bag_unix_times_mem = datanames_mem[:-1], bag_unix_times_mem[:-1]
+    
+    graphs = []
+    inserted_node_classes = set(["book", "folder", "toy", "magazine", "bananas", "cupcake", "cereal", "mincedmeat", "apple", "creamybuns"])
+    inserted_nodes = {}
+    last_node_id = 400
     for dataname, unix_time in zip(datanames_mem, bag_unix_times_mem):
         path = os.path.join(data_dir, dataname, "0", "pruned_graph.json")
         with open(path, "r") as f:
             graph = json.load(f)
         if not graph:
             raise ValueError(f"Graph not found in {path}")
+
+        for node in graph["nodes"][-15:]:
+            if node["class_name"] in inserted_node_classes:
+                inserted_nodes[node["prefab_name"]] = copy.deepcopy(node)
+                inserted_nodes[node["prefab_name"]]["id"] = last_node_id
+                last_node_id += 1
+                
+        graphs.append(graph)
+        
+    for graph, unix_time in zip(graphs, bag_unix_times_mem):
+        for node in graph["nodes"][-15:]:
+            if node["class_name"] in inserted_node_classes:
+                node["id"] = inserted_nodes[node["prefab_name"]]["id"]
 
         t = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
