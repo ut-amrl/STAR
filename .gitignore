@@ -12,3 +12,4 @@ test.py
 scripts/local
 test_*.py
 evaluation/config/tasks_sim.txt
+docker_ubuntu22.04
