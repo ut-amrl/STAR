@@ -28,13 +28,13 @@ _AGENT_DISPLAY = {
     "sg":                  "SGSR (GT-Graph)",
     "low_level_gt":        "TR (GT-Cap)",
     "replan_low_level_gt": "STAR (GT-Cap)",
-    # "high_level_gt":       "One-shot GT (High)",
+    "high_level_gt":       "One-shot GT (High)",
     "low_level_caption":   "TR (Real-Cap)",
 }
 
 _TASK_DISPLAY_TWO_LINES = {
     "classonly":        "class-\nbased",
-    "common_sense":     "common\nsense",
+    # "common_sense":     "common\nsense",
     "unambiguous":      "attribute-\nbased",
     "spatial_temporal": "spatial-\ntemporal",
     "spatial":          "spatial",
@@ -44,7 +44,7 @@ _TASK_DISPLAY_TWO_LINES = {
 
 _TASK_DISPLAY = {
     "classonly":        "class-based",
-    "common_sense":     "common-sense",
+    # "common_sense":     "common-sense",
     "unambiguous":      "attribute-based",
     "spatial_temporal": "spatial-temporal",
     "spatial":          "spatial",
@@ -55,7 +55,7 @@ _TASK_DISPLAY = {
 # desired left-to-right order in every grouped plot  (raw names!)
 _TASK_ORDER = [
     "classonly",       # → “class-only”
-    "common_sense",    # → “common-sense”
+    # "common_sense",    # → “common-sense”
     "unambiguous",     # → “attribute-based”
     "spatial",         # → “spatial”
     "spatial_temporal",# → “temporal”
@@ -166,7 +166,7 @@ def parse_args():
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt")
-    parser.add_argument("--agent_types", nargs="+", default=["random", "sg", "low_level_gt", "replan_low_level_gt", "low_level_caption"])
+    parser.add_argument("--agent_types", nargs="+", default=["random", "sg", "low_level_gt", "replan_low_level_gt", "low_level_caption", "high_level_gt"])
     # NEW: toggle error bars
     parser.add_argument("--error_bars", action="store_true",
                         help="If set, draw 95% Wilson CI error bars for success rates.")
