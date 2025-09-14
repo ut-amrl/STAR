@@ -29,10 +29,12 @@ class Agent:
                  logdir: str = None,
                  logger_prefix: str = "",
                  is_interactive: bool = False,
+                 robot_model: str = ""
     ):
         self.verbose = verbose
         self.is_interactive = is_interactive
-        
+        self.robot_model = robot_model
+
         self.logger = get_logger(logdir=logdir, prefix=logger_prefix, flatten=True) if logdir else get_logger(prefix=logger_prefix, flatten=True)
         
         self.task: Task = None
@@ -44,10 +46,11 @@ class Agent:
         
         eval_prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "evaluation")
         self.eval_ref_and_ret_prompt = file_to_string(os.path.join(eval_prompt_dir, "eval_ref_and_ret_prompt.txt"))
-        
+
+        prompt_prefix = robot_model if robot_model == "" else f"{robot_model}_"
         search_in_space_prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", "search_in_space")
-        self.search_in_space_prompt = file_to_string(os.path.join(search_in_space_prompt_dir, "search_in_space_prompt.txt"))
-        
+        self.search_in_space_prompt = file_to_string(os.path.join(search_in_space_prompt_dir, f"{prompt_prefix}search_in_space_prompt.txt"))
+
         self.search_in_time_cnt = 0
         self.search_in_space_cnt = 0
         self.json_store = TempJsonStore()
@@ -61,7 +64,12 @@ class Agent:
             print(f"Task set: {task_desc}")
         
     def setup_tools(self, memory: MilvusMemory):
-        robot_tools = create_physical_skills(self.json_store)
+        if self.robot_model == "":
+            robot_tools = create_physical_skills(self.json_store)
+        elif self.robot_model == "tiago":
+            robot_tools = create_tiago_physical_skills(self.json_store)
+        else:
+            raise ValueError(f"Unsupported robot model: {self.robot_model}")
         self.search_in_space_tools = robot_tools
         self.search_in_space_tool_definitions = [convert_to_openai_function(t) for t in self.search_in_space_tools]
         
@@ -165,12 +173,16 @@ class Agent:
         raise ValueError("No terminate tool call found in the response")
     
     def search_in_space(self, state: AgentState):
-        if self.is_interactive:
+        if self.robot_model == "tiago":
+            max_search_in_space_cnt = 1
+        elif self.is_interactive:
             max_search_in_space_cnt = 5
         else:
             max_search_in_space_cnt = 3    
         
         messages = state["messages"]
+        
+        # import pdb; pdb.set_trace()
         
         additional_search_history = []
         last_tool_calls = []
@@ -249,7 +261,7 @@ class Agent:
                     normalized = last_message.content.replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}").replace("{{", "{").replace("}}", "}")
                     parsed = json.loads(normalized)
                     success = parsed.get("success", False)
-                    if not success:
+                    if not success or max_search_in_space_cnt == 1:
                         pos = [-1, -1, -1]  # Default position if no search proposal
                         theta = -1
                         if len(self.searched_poses) > 0:

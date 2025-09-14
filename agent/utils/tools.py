@@ -19,6 +19,50 @@ from memory.memory import MilvusMemory
 from agent.utils.utils import *
 from agent.utils.skills import *
 
+def create_tiago_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
+    class NavigateInput(BaseModel):
+        tool_rationale: str = Field(
+            description=TOOL_RATIONALE_DESC
+        )
+        pos: List[float] = Field(
+            description="Target position in 3D space as [x, y, z]. (Remember: you should select from the provided landmark positions.)"
+        )
+        theta: float = Field(
+            description="Orientation angle in radians. (Remember: you should select from the provided landmark orientations.)"
+        )
+        
+    def _navigate(
+        store: TempJsonStore,
+        tool_rationale: str,
+        pos: List[float],
+        theta: float
+    ) -> dict:
+        response = navigate(pos, theta)
+        images = []
+        for img_msg in response.pano_images:
+            images += ros_image_to_vlm_message(img_msg)
+        payload = {
+            "type": "navigate",
+            "success": response.success,
+            "images": images,
+        }
+        file_id = store.save(payload)
+        return {
+            "success": response.success,
+            "file_id": file_id,
+        }
+        
+    navigate_tool = StructuredTool.from_function(
+        func=lambda tool_rationale, pos, theta: _navigate(store, tool_rationale, pos, theta),
+        name="robot_navigate",
+        description=(
+            "Navigate the robot to a specific position and orientation in the environment. "
+            "This tool allows the agent to move to a desired location and capture images of the surroundings.\n\n"
+        ),
+        args_schema=NavigateInput,  
+    )
+    return [navigate_tool]
+
 def create_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
     class NavigateInput(BaseModel):
         tool_rationale: str = Field(

@@ -7,6 +7,36 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 from memory.memory import MilvusMemory
 from memory.memory import MemoryItem
 
+def remember_tiago(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: list):
+    import math
+    def quaternion_to_yaw(x: float, y: float, z: float, w: float) -> float:
+        """
+        Convert quaternion (x, y, z, w) into yaw angle (rotation around Z axis).
+        Returns yaw in radians in the range [-pi, pi].
+        """
+        # Formula for yaw
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        return math.atan2(siny_cosp, cosy_cosp)
+    
+    for inpath, time_offset, viddir in zip(inpaths, time_offsets, viddirs):
+        with open(inpath, 'r') as f:
+            for entry in json.load(f):
+                t, pos, ori, caption, text_embedding, start_frame, end_frame = entry["time"], entry["base_position"], entry["base_orientation"], entry["base_caption"], entry["base_caption_embedding"], entry["start_frame"], entry["end_frame"]
+                t += time_offset
+                start_frame, end_frame = int(start_frame), int(end_frame)
+                memory_item = MemoryItem(
+                    caption=caption,
+                    text_embedding=text_embedding,
+                    time=t,
+                    position=pos,
+                    theta=quaternion_to_yaw(*ori),
+                    vidpath=viddir,
+                    start_frame=start_frame,
+                    end_frame=end_frame
+                )
+                memory.insert(memory_item)
+
 def remember(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: list, waypoint_only: bool = False):
     for inpath, time_offset, viddir in zip(inpaths, time_offsets, viddirs):
         with open(inpath, 'r') as f:

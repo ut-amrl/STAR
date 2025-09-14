@@ -103,6 +103,19 @@ def load_virtualhome_data_metadata(data_dir: str, caption_type: str = "gt"):
             result[dataname] = caption_file
     return result
 
+def load_ahg_data_metadata(data_dir: str):
+    result = {}
+    for dataname in os.listdir(data_dir):
+        data_path = os.path.join(data_dir, dataname)
+        if not os.path.isdir(data_path):
+            continue  # skip non-directory entries
+        simulation_data_dir = os.path.join(data_path)
+
+        caption_file = os.path.join(simulation_data_dir, "caption_gpt4o_nframe1.json")
+        if os.path.exists(caption_file):
+            result[dataname] = caption_file
+    return result
+
 def load_virtualhome_annotations(data_dir: str):
     all_annotations = {}
     for dataname in os.listdir(data_dir):
@@ -128,6 +141,11 @@ def load_virtualhome_annotations(data_dir: str):
         all_annotations[dataname]["object_placements"] = object_placement
         
     return all_annotations
+
+def load_ahg_annotations(filepath: str):
+    with open(filepath, "r") as f:
+        annotations = json.load(f)
+    return annotations
 
 import rospy
 import roslib; roslib.load_manifest('amrl_msgs')
@@ -376,3 +394,41 @@ def load_virtualhom_memory_sg(data_dir: str, datanames: list, bag_unix_times: li
         parts.append("\n".join(scene))
 
     return "\n\n".join(parts)
+
+def match_ahg_waypoint(position: list[float], theta: float) -> bool:
+    def _ang_diff(a: float, b: float) -> float:
+        """Smallest signed difference a-b wrapped to [-pi, pi]."""
+        d = (a - b + math.pi) % (2 * math.pi) - math.pi
+        return d
+
+    x, y = position[0], position[1]
+    waypoints = {
+        "kitchen_counter": ((-0.88, -5.01), -1.57),
+        "bookshelf": ((-3.18, -4.77), -1.57),
+        "coffee_table_next_to_astro": ((-4.08, -4.48), 3.14),
+        "black_round_table": ((-4.18, -3.05), 1.57),
+        # "dinning_table": ((-0.78, -0.44), -1.57),
+        "round_table_btw_red_chairs": ((-3.41, 0.50), 1.57),
+        "coffee_table_btw_red_chairs": ((-0.39, 2.22), 0.0),
+        "living_room_table": ((-0.47, 6.94), -1.57),
+        "coffee_table_next_to_tv": ((0.17, 7.91), 0.0),
+        "left_corner": ((-4.29, 10.55), 1.57),
+    }
+    
+    dist_th = 1.0  # meters
+    angle_th = math.radians(45.0)  # 45 degrees -> radians
+
+    # Collect all waypoints that satisfy both distance and orientation thresholds
+    candidates = []
+    for name, ((wx, wy), wyaw) in waypoints.items():
+        dist = math.hypot(x - wx, y - wy)
+        dtheta = abs(_ang_diff(theta, wyaw))
+        if dist <= dist_th and dtheta <= angle_th:
+            candidates.append((dist, name, (wx, wy, wyaw)))
+
+    if not candidates:
+        return False
+
+    # Pick the closest by distance if multiple match
+    _, best_wp, (wx, wy, wyaw) = min(candidates, key=lambda t: t[0])
+    return best_wp

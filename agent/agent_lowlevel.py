@@ -11,15 +11,18 @@ class LowLevelAgent(Agent):
                  verbose: bool = False,
                  logdir: str = None,
                  logger_prefix: str = "",
-                 is_interactive: bool = False
+                 is_interactive: bool = False,
+                 robot_model: str = ""
     ):
-        super().__init__(verbose, logdir, logger_prefix, is_interactive)
+        super().__init__(verbose, logdir, logger_prefix, is_interactive, robot_model)
 
         prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", prompt_type, "low_level_agent")
-        self.agent_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_prompt.txt"))
-        self.agent_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_gen_only_prompt.txt"))
-        self.agent_reflect_prompt = file_to_string(os.path.join(prompt_dir, "search_in_time_reflection_prompt.txt"))
         
+        prompt_prefix = robot_model if robot_model == "" else f"{robot_model}_"
+        self.agent_prompt = file_to_string(os.path.join(prompt_dir, f"{prompt_prefix}search_in_time_prompt.txt"))
+        self.agent_gen_only_prompt = file_to_string(os.path.join(prompt_dir, f"{prompt_prefix}search_in_time_gen_only_prompt.txt"))
+        self.agent_reflect_prompt = file_to_string(os.path.join(prompt_dir, f"{prompt_prefix}search_in_time_reflection_prompt.txt"))
+
     def set_task(self, task_desc: str):
         return super().set_task(task_desc)
 
