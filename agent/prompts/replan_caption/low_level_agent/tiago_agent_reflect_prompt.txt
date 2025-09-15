@@ -173,5 +173,6 @@ You are expected to (**MUST**) call this tool often to stay strategic, deliberat
 ]
 ```
 
+
 ## 🧩 Temporary Simplification Notice
-Right now, the task is simplified: success is achieved if you can navigate to the correct waypoint and visually confirm the target object in the returned camera view. You do not need to execute robot_detect, robot_open, or robot_pick. Once you are confident the object is visible from your current pose, call terminate_task to finish.
+Right now, the task is simplified: success is achieved if you can navigate to the correct waypoint and visually confirm the target object in the returned camera view. You do not need to execute robot_detect, robot_open, or robot_pick. 

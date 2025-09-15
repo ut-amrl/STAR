@@ -332,25 +332,7 @@ Feasible navigation waypoints are:
 ]
 ```
 ___
-### ✅ `terminate_task`  
-Use this to **end the task** once you believe the robot has navigated to the correct waypoint and the required object is visible from that pose.  
 
-- **Required Fields**:  
-  - `summary`: A short explanation of what object was found and why you believe you are at the right location.  
-- **Constraints**:  
-  - Must be called **alone**  
-
-Example:  
-```json
-[
-  {{
-    "tool": "terminate_task",
-    "tool_input": {{
-      "summary": "Stopped at kitchen counter waypoint; the red mug is clearly visible in the returned camera view."
-    }}
-  }}
-]
-```
 
 ## 🧩 Temporary Simplification Notice
-Right now, the task is simplified: success is achieved if you can navigate to the correct waypoint and visually confirm the target object in the returned camera view. You do not need to execute robot_detect, robot_open, or robot_pick. Once you are confident the object is visible from your current pose, call terminate_task to finish.
+Right now, the task is simplified: success is achieved if you can navigate to the correct waypoint and visually confirm the target object in the returned camera view. You do not need to execute robot_detect, robot_open, or robot_pick. 

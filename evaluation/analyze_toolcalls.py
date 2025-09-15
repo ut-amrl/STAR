@@ -177,40 +177,44 @@ def parse_toolcall_results(args, tasks_dict: Dict[str, List[str]]) -> pd.DataFra
 
 def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min: float = 3.0):
     """
-    Donut chart per agent, aggregated into fixed groups:
+    Produce SIDE-BY-SIDE donut charts per env. pair with ONE legend per figure.
 
+    Pairs plotted (if present in args.agent_types and data):
+      - Realistic:  low_level_caption           vs replan_low_level_caption
+      - Oracle:     low_level_gt                vs replan_low_level_gt
+
+    Grouping:
       - Reflect                  := pause_and_think
-      - Memory Txt               := search_in_memory*
-      - Memory Image             := inspect_*
-      - Physical Robot Actions   := robot_*
-      - Other                    := everything else
+      - Mem: Text Descsc Replay     := search_in_memory*
+      - Mem: Image Replay        := inspect_*
+      - Physical Actions         := robot_*
+      - Other                    := else
 
-    Center text shows Method + Env. derived from the agent:
-      - low_level_*             -> TR+S
-      - replan_low_level_*      -> STAR
-      - *_gt                    -> (Oracle)
-      - *_caption               -> (Realistic)
+    Colors:
+      - Physical Actions: blue family
+      - Memory (Txt/Image): orange family (two shades)
+      - Reflect/Other: grays
 
-    Legend shows percentages only.
+    Legend (single, at figure-level): shows color → group with per-agent percentages, e.g.:
+      "Physical Actions (TR+S: 54.3%, STAR: 32.1%)"
     """
     os.makedirs(args.output_dir, exist_ok=True)
     if calls_df.empty:
         print("[WARN] No data to plot tool distributions.")
         return
 
-    # --- grouping helper ---
+    # --- helpers ---------------------------------------------------------------
     def _pie_group_for_tool(name: str) -> str:
         if name == "pause_and_think":
             return "Reflect"
         if isinstance(name, str) and name.startswith("search_in_memory"):
-            return "Mem: Txt Desc Replay"
+            return "Mem: Text Descsc Replay"
         if isinstance(name, str) and name.startswith("inspect_"):
             return "Mem: Image Replay"
         if isinstance(name, str) and name.startswith("robot_"):
             return "Physical Actions"
         return "Other"
 
-    # --- agent -> (Method, Env.) ---
     def _method_env_from_agent(agent: str) -> tuple[str, str]:
         # Method
         if agent.startswith("replan_low_level"):
@@ -218,7 +222,7 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
         elif agent.startswith("low_level"):
             method = "TR+S"
         else:
-            method = _pretty_agent(agent)  # fallback
+            method = _pretty_agent(agent)
         # Env.
         if agent.endswith("_gt"):
             env = "(Oracle)"
@@ -228,100 +232,164 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
             env = ""
         return method, env
 
-    # Fixed display order
+    def _group_counts(df_agent: pd.DataFrame) -> tuple[pd.Index, np.ndarray, pd.Series]:
+        grouped = df_agent["tool_name"].map(_pie_group_for_tool).value_counts()
+        grouped = grouped.reindex([g for g in ORDER if g in grouped.index]).astype(int)
+        names = grouped.index
+        vals  = grouped.values
+        total = max(int(np.sum(vals)), 1)
+        pct   = (pd.Series(vals, index=names) / total * 100).round(1)
+        return names, vals, pct
+
+    # Fixed display order + colors
     ORDER = [
         "Physical Actions",
-        "Mem: Txt Desc Replay",
+        "Mem: Text Descsc Replay",
         "Mem: Image Replay",
         "Reflect",
         "Other",
     ]
-
-    # Fixed colors (same family for Memory groups)
     COLORS = {
-        "Physical Actions": plt.cm.Blues(0.65),   # was Oranges
-        "Mem: Txt Desc Replay":             plt.cm.Oranges(0.55), # was Blues
-        "Mem: Image Replay":           plt.cm.Oranges(0.80), # was Blues
-        "Reflect":                (0.6, 0.6, 0.6, 1.0), # gray
-        "Other":                  (0.83, 0.83, 0.83, 1.0),
+        "Physical Actions": plt.cm.Blues(0.65),
+        "Mem: Text Descsc Replay": plt.cm.Oranges(0.55),
+        "Mem: Image Replay": plt.cm.Oranges(0.80),
+        "Reflect": (0.6, 0.6, 0.6, 1.0),
+        "Other":   (0.83, 0.83, 0.83, 1.0),
     }
 
-    for agent in args.agent_types:
-        sub = calls_df[calls_df["agent"] == agent]
-        if sub.empty:
-            print(f"[INFO] No calls for agent '{agent}', skipping pie.")
+    # Define pairs to compare side-by-side
+    pairs = [
+        ("Realistic", ["low_level_caption", "replan_low_level_caption"]),
+        ("Oracle",    ["low_level_gt",      "replan_low_level_gt"]),
+    ]
+
+    # Filter to requested agents
+    valid_agents = set(args.agent_types)
+
+    for env_label, agents_pair in pairs:
+        a_left, a_right = agents_pair
+
+        # Subsets present in args and data
+        present = []
+        for a in agents_pair:
+            if a not in valid_agents:
+                continue
+            sub = calls_df[calls_df["agent"] == a]
+            if not sub.empty:
+                present.append(a)
+
+        if len(present) < 2:
+            # If we only have one, still skip (you asked for side-by-side).
+            if len(present) == 1:
+                print(f"[INFO] Only one agent with data for {env_label} ({present[0]}). Skipping paired plot.")
+            else:
+                print(f"[INFO] No agents with data for {env_label}. Skipping.")
             continue
 
-        grouped = sub["tool_name"].map(_pie_group_for_tool).value_counts()
-        if grouped.empty or grouped.sum() == 0:
-            print(f"[INFO] No grouped calls for agent '{agent}', skipping pie.")
-            continue
-
-        # Reindex to fixed order (drop groups with 0)
-        grouped = grouped.reindex([g for g in ORDER if g in grouped.index]).astype(int)
-        names  = grouped.index.tolist()
-        values = grouped.values
-        total  = int(np.sum(values))
-
-        # Percentages
-        pct_series = (pd.Series(values, index=names) / max(total, 1) * 100).round(1)
-
-        # Percentage labels: only for sufficiently large slices
-        def _autopct(pct):
-            return f"{pct:.1f}%" if pct >= pct_label_min else ""
-
-        fig = plt.figure(figsize=(9.5, 6.2))
-        ax  = fig.add_axes([0.07, 0.18, 0.60, 0.74])
-
-        wedges, texts, autotexts = ax.pie(
-            values,
-            labels=None,
-            colors=[COLORS[g] for g in names],
-            autopct=_autopct,
-            pctdistance=0.70,
-            startangle=90,
-            counterclock=False,
-            wedgeprops=dict(linewidth=1.2, edgecolor="white"),
-            textprops=dict(color="black", fontsize=10)
+        # Build figure with two subplots (left/right in fixed order)
+        fig, axes = plt.subplots(1, 2, figsize=(9.5, 5.8))  # narrower figure
+        fig.subplots_adjust(
+            top=0.86,
+            bottom=0.20,
+            left=0.06,
+            right=0.98,
+            wspace=-0.2   # reduce from 0.18 → 0.05
         )
-        for t in autotexts:
-            t.set_fontsize(20)
 
-        # Donut hole
-        centre_circle = plt.Circle((0, 0), 0.50, fc="white")
-        ax.add_artist(centre_circle)
-        ax.axis("equal")
+        legend_labels = []   # combined legend entries per group
+        legend_handles = []  # create once from left axis wedges' colors
 
-        # Center text: Method and Env.
-        method, env = _method_env_from_agent(agent)
-        ax.text(0, 0.08, method, ha="center", va="center", fontsize=20, weight="bold")
-        if env:
-            ax.text(0, -0.08, env, ha="center", va="center", fontsize=18)
+        per_agent_pct = {}   # {group: {agent: pct}}
 
-        # Legend with percentages ONLY (no counts)
-        legend_labels = [f"{nm} ({pct_series[nm]}%)" for nm in names]
+        method_names = {}    # agent -> "TR+S"/"STAR"
+        env_names = {}       # agent -> "(Realistic)"/"(Oracle)"/""
+
+        # We want fixed (left, right) = (a_left, a_right) if both present
+        ordered_agents = [a_left, a_right]
+
+        wedges_for_left = None  # to extract handles/colors
+
+        for side_idx, agent in enumerate(ordered_agents):
+            sub = calls_df[calls_df["agent"] == agent]
+            names, vals, pct = _group_counts(sub)
+
+            # Save percentages for combined legend
+            method, env = _method_env_from_agent(agent)
+            method_names[agent] = method
+            env_names[agent] = env
+            for g in names:
+                per_agent_pct.setdefault(g, {})[agent] = pct[g]
+
+            # Draw pie
+            ax = axes[side_idx]
+            def _autopct(p):
+                return f"{p:.1f}%" if p >= pct_label_min else ""
+
+            wedges, texts, autotexts = ax.pie(
+                vals,
+                labels=None,
+                colors=[COLORS[g] for g in names],
+                autopct=_autopct,
+                pctdistance=0.70,
+                startangle=90,
+                counterclock=False,
+                wedgeprops=dict(linewidth=1.2, edgecolor="white"),
+                textprops=dict(color="black", fontsize=10),
+            )
+            for t in autotexts:
+                t.set_fontsize(18)
+
+            # Donut hole
+            centre_circle = plt.Circle((0, 0), 0.50, fc="white")
+            ax.add_artist(centre_circle)
+            ax.axis("equal")
+
+            # Center text
+            ax.text(0, 0.08, method, ha="center", va="center", fontsize=18, weight="bold")
+            if env:
+                ax.text(0, -0.08, env, ha="center", va="center", fontsize=16)
+
+            if side_idx == 0:
+                wedges_for_left = {n: w for n, w in zip(names, wedges)}
+
+        # Build a single combined legend at the figure level.
+        # For each group (in ORDER), show both agents' percentages if present; otherwise skip.
+        # Use the left plot's wedge colors for handles (create dummy patches when absent).
+        # Build a single combined legend at the figure level.
+        legend_handles = []
+        legend_labels = []
+        for g in ORDER:
+            if g not in per_agent_pct:
+                continue
+
+            # Prefer a real wedge handle from left; else make dummy patch with same color
+            if wedges_for_left and g in wedges_for_left:
+                handle = wedges_for_left[g]
+            else:
+                handle = plt.Line2D([0], [0], marker='o', linestyle='', markersize=10,
+                                    markerfacecolor=COLORS[g], markeredgecolor='white')
+            legend_handles.append(handle)
+            legend_labels.append(g)
+
+        # No figure title
+        # fig.suptitle(...)  <-- removed
+
+        # Single legend centered below plots (labels only)
         leg = fig.legend(
-            wedges, legend_labels,
-            title="Action group (%)",
+            legend_handles, legend_labels,
             loc="lower center",
-            bbox_to_anchor=(0.37, 0.0),
             ncol=2,
             frameon=True,
             fancybox=True,
             borderpad=0.4, handlelength=1.2, handletextpad=0.6, columnspacing=1.0,
-            prop={"size": 14}
+            prop={"size": 13},
         )
-        leg.get_title().set_fontsize(16)
-        leg.get_title().set_fontweight("medium")
 
-        fig.subplots_adjust(top=0.86, bottom=0.16, left=0.06, right=0.98)
-
-        out = os.path.join(args.output_dir, f"toolcalls_pie_families_{agent}.svg")
-        plt.tight_layout()
+        # Save
+        out = os.path.join(args.output_dir, f"toolcalls_pie_pairs_{env_label.lower()}.svg")
         plt.savefig(out, bbox_inches="tight", dpi=200)
-        plt.close()
-        print(f"[INFO] Saved pie: {out}")
-
+        plt.close(fig)
+        print(f"[INFO] Saved paired pie: {out}")
 
 # ────────────────────────────────────────────────────────────────────────────────
 # ANALYSIS 2: Average TOTAL tool calls per task for each agent (print)

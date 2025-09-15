@@ -80,6 +80,7 @@ def extract_dataname_from_vidpath(vidpath: str) -> str:
         return None
 
 def evaluate_one_task(agent, task: dict, annotations: dict, exec_dataname: str):
+    agent.target_wp = task["waypoint"] 
     full_result = agent.run(
         question=task['task'],
     )
@@ -230,7 +231,8 @@ def evaluate(args):
                     detect_fn=detect_virtual_home_object,
                     pick_fn=pick_by_instance_id,
                     logdir=result_dir,
-                    logger_prefix=args.agent_type
+                    logger_prefix=args.agent_type,
+                    robot_model="tiago"
                 )
             elif "sg" == args.agent_type:
                 from agent.agent_scenegraph import SceneGraphAgent
@@ -285,6 +287,7 @@ def evaluate(args):
                 agent.set_memory(memory)
                 
             exec_bagname = task_data["bagnames"][-1]
+            agent.exec_env = annotations.get(exec_bagname, {})
             
             for task in task_data["tasks"]:
                 # Reset the testing environment
@@ -300,7 +303,18 @@ def evaluate(args):
                 task["lastest_unix_time"] = lastest_unix_time
                 
                 if args.agent_type == "random":
-                    poses = load_virtualhome_poses(args.data_dir, list(set(task_data["bagnames"])))
+                    poses = [
+                        ((-0.88, -5.01, 0), -1.57),
+                        ((-3.18, -4.77, 0), -1.57),
+                        ((-4.08, -4.48, 0),  3.14),
+                        ((-4.18, -3.05, 0),  1.57),
+                        # ((-0.78, -0.44, 0), -1.57),  # dining_table, commented like original
+                        ((-3.41,  0.50, 0),  1.57),
+                        ((-0.39,  2.22, 0),  0.0),
+                        ((-0.47,  6.94, 0), -1.57),
+                        (( 0.17,  7.91, 0),  0.0),
+                        ((-4.29, 10.55, 0),  1.57),
+                    ]
                     agent.before_run(task["instance_class"], poses)
                     
                 full_result = evaluate_one_task(agent, task, annotations, exec_bagname)

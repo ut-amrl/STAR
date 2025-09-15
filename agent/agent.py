@@ -58,6 +58,8 @@ class Agent:
         self.searched_poses = []
         self.searched_visible_instances = []
         
+        self.exec_env = {} # TODO delete me
+        
     def set_task(self, task_desc: str):
         self.task = Task(task_desc)
         if self.verbose:

@@ -173,6 +173,45 @@ def _round_errcaps(eb: ErrorbarContainer):
             cap.set_solid_joinstyle("round")
     except Exception:
         pass
+    
+def print_common_sense_results(args, df):
+    """
+    Print success rates for 'common_sense' tasks.
+    If 'common_sense_interactive' exists, print that as well.
+    Respects --error_bars using Wilson 95% CI (same helper as plots).
+    """
+    import pandas as pd
+
+    if df.empty or "task_type" not in df.columns or "success" not in df.columns:
+        print("[WARN] No data available to report common_sense results.")
+        return
+
+    variants = [("common_sense", "Common-sense"),
+                ("common_sense_interactive", "Common-sense (interactive)")]
+
+    for raw_task, pretty_name in variants:
+        sub = df[df["task_type"] == raw_task].copy()
+        if sub.empty:
+            # silent skip if that variant doesn't exist in this run
+            continue
+
+        # Aggregate by agent
+        agg = (
+            sub.groupby("agent")["success"]
+               .agg(mean="mean", n="count", s="sum")
+               .reindex(args.agent_types)
+        )
+
+        print(f"\n=== {pretty_name}: Success Rate by Agent ===")
+        for ag, row in agg.dropna(subset=["mean"]).iterrows():
+            val = float(row["mean"])
+            out = f"{_pretty_agent(ag)}: {val:.2f}"
+            if args.error_bars:
+                yerr = _wilson_halfwidth(int(row["s"]), int(row["n"]))
+                if np.isfinite(yerr):
+                    out += f" ± {yerr:.2f}"
+            print(out)
+        print("===========================================\n")
 
 # ───────────────────────────────────────────────────────────────
 # CLI
@@ -689,6 +728,7 @@ def main():
         cascade_failure_analysis(df)
     plot_overall_success(args, df)
     plot_interactive_success(args, df)
+    print_common_sense_results(args, df)
     # Cascade failure analysis intentionally removed per request
 
 if __name__ == "__main__":

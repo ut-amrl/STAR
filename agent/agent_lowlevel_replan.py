@@ -35,7 +35,7 @@ class ReplanLowLevelAgent(Agent):
         terminate_tools = create_memory_terminate_tool(memory)
         reflection_tools = create_pause_and_think_tool()
         if self.robot_model == "tiago":
-            robot_tools = create_tiago_physical_skills(self.json_store) + create_physical_termination_skill()
+            robot_tools = create_tiago_physical_skills(self.json_store)
         else:
             robot_tools = create_physical_skills(self.json_store)
 
@@ -154,6 +154,61 @@ class ReplanLowLevelAgent(Agent):
                     position = fn_args.get("pos")
                     theta = fn_args.get("theta")
                     self.searched_poses.append((position, theta))
+                    
+                    if self.robot_model == "tiago": # TODO delete this after testing
+                        def match_ahg_waypoint(position: list[float], theta: float) -> bool:
+                            def _ang_diff(a: float, b: float) -> float:
+                                """Smallest signed difference a-b wrapped to [-pi, pi]."""
+                                d = (a - b + math.pi) % (2 * math.pi) - math.pi
+                                return d
+
+                            x, y = position[0], position[1]
+                            waypoints = {
+                                "kitchen_counter": ((-0.88, -5.01), -1.57),
+                                "bookshelf": ((-3.18, -4.77), -1.57),
+                                "coffee_table_next_to_astro": ((-4.08, -4.48), 3.14),
+                                "black_round_table": ((-4.18, -3.05), 1.57),
+                                "round_table_btw_red_chairs": ((-3.41, 0.50), 1.57),
+                                "coffee_table_btw_red_chairs": ((-0.39, 2.22), 0.0),
+                                "living_room_table": ((-0.47, 6.94), -1.57),
+                                "coffee_table_next_to_tv": ((0.17, 7.91), 0.0),
+                                "left_corner": ((-4.29, 10.55), 1.57),
+                            }
+                            
+                            dist_th = 1.0  # meters
+                            angle_th = math.radians(45.0)  # 45 degrees -> radians
+
+                            # Collect all waypoints that satisfy both distance and orientation thresholds
+                            candidates = []
+                            for name, ((wx, wy), wyaw) in waypoints.items():
+                                dist = math.hypot(x - wx, y - wy)
+                                dtheta = abs(_ang_diff(theta, wyaw))
+                                if dist <= dist_th and dtheta <= angle_th:
+                                    candidates.append((dist, name, (wx, wy, wyaw)))
+
+                            if not candidates:
+                                return False
+
+                            # Pick the closest by distance if multiple match
+                            _, best_wp, (wx, wy, wyaw) = min(candidates, key=lambda t: t[0])
+                            return best_wp
+                        wp = match_ahg_waypoint(position, theta)
+                        if self.target_wp == wp:
+                            self.task.search_proposal = SearchProposal(
+                                summary="",
+                                instance_description="",
+                                position=position,
+                                theta=theta,
+                                records=[]
+                            )
+                            if len(self.searched_visible_instances) > 0:
+                                self.task.search_proposal.visible_instances = self.searched_visible_instances[-1]
+                            return {
+                                "history": additional_search_history,
+                                "toolcalls": last_tool_calls,
+                                "next_state": "end"
+                            }
+                    
                     if len(self.searched_poses) > max_search_in_space_cnt:
                         return {
                             "history": additional_search_history,

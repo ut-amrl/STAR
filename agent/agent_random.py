@@ -10,8 +10,10 @@ class RandomAgent(Agent):
                  verbose: bool = False,
                  logdir: str = None,
                  logger_prefix: str = "",
-                 is_interactive: bool = False):
-        super().__init__(verbose, logdir, logger_prefix, is_interactive)
+                 is_interactive: bool = False,
+                 robot_model: str = ""
+                ):
+        super().__init__(verbose, logdir, logger_prefix, is_interactive, robot_model)
 
         self.navigate_fn = navigate_fn
         self.detect_fn = detect_fn
@@ -33,7 +35,8 @@ class RandomAgent(Agent):
                 theta=theta,
                 records=[]
             )
-        
+        if self.robot_model == "tiago":
+            return
         response_nav = self.navigate_fn(pos, theta)
         if not response_nav.success:
             import pdb; pdb.set_trace()
