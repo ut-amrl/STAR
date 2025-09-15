@@ -103,6 +103,36 @@ def parse_task_config(task_config: str) -> Dict[str, List[str]]:
     return dict(tasks)
 
 
+def build_success_df(args, tasks_dict: Dict[str, List[str]]) -> pd.DataFrame:
+    """
+    Load per-run success flags from results_{agent}_{uid}.json.
+    Returns columns: [agent, task_type, uid, variant, success] where success ∈ {0,1}.
+    Missing files => success=0.
+    """
+    rows = []
+    for task_type, uids in tasks_dict.items():
+        base_task, variant = _split_variant(task_type)
+        for uid in uids:
+            for agent in args.agent_types:
+                # results file lives next to the tool-call logs
+                fname = f"results_{agent}_{uid}.json"
+                path  = os.path.join(args.data_dir, task_type, uid, fname)
+                data  = _load_json_safe(path) or {}
+                # fall back to 0 if missing/None
+                succ  = int(bool(data.get("success", 0)))
+                rows.append({
+                    "agent": agent,
+                    "task_type": task_type,
+                    "uid": uid,
+                    "variant": variant,
+                    "success": succ,
+                })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        print("[WARN] No success rows parsed. Check your paths/args.")
+    return df
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # Parse results (ONE parser function)
 # ────────────────────────────────────────────────────────────────────────────────
@@ -287,10 +317,12 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, top_k: int = 
 # ANALYSIS 2: Average TOTAL tool calls per task for each agent (print)
 # ────────────────────────────────────────────────────────────────────────────────
 
-def print_robot_skill_call_stats(calls_df: pd.DataFrame):
+def print_robot_skill_call_stats(calls_df: pd.DataFrame, success_df: pd.DataFrame):
     """
+    SUCCESS-ONLY version.
+
     For each agent and variant (interactive vs noninteractive),
-    compute average # of robot-skill tool calls per run.
+    compute average # of robot-skill tool calls per *successful* run.
 
     Categories:
       - perception:   robot_detect
@@ -299,18 +331,30 @@ def print_robot_skill_call_stats(calls_df: pd.DataFrame):
       - overall:      any 'robot_*'
 
     A 'run' is (agent, task_type, uid, variant).
-    Runs with zero calls in a category are included with count=0.
+    Only runs with success==1 are included in the averaging domain.
+    Successful runs that never invoked a category are counted with 0.
     """
     if calls_df.empty:
         print("[WARN] No tool-call data for robot skill stats.")
         return
+    if success_df.empty or "success" not in success_df.columns:
+        print("[WARN] No success data; cannot compute success-only stats.")
+        return
 
-    # Universe of runs so we keep zeros
-    runs = calls_df[["agent", "task_type", "uid", "variant"]].drop_duplicates()
+    # --- Domain of runs: successful only ---
+    runs_success = (
+        success_df.query("success == 1")[["agent", "task_type", "uid", "variant"]]
+        .drop_duplicates()
+    )
+    if runs_success.empty:
+        print("[INFO] No successful runs found; nothing to report.")
+        return
 
+    # Helper to count tool calls per successful run for a mask
     def _count_mask(mask: pd.Series, colname: str) -> pd.DataFrame:
         return (
             calls_df[mask]
+            .merge(runs_success, on=["agent", "task_type", "uid", "variant"], how="inner")
             .groupby(["agent", "task_type", "uid", "variant"], as_index=False)
             .size()
             .rename(columns={"size": colname})
@@ -322,44 +366,49 @@ def print_robot_skill_call_stats(calls_df: pd.DataFrame):
     m_manip  = calls_df["tool_name"].isin(["robot_pick", "robot_open"])
     m_robot  = calls_df["tool_name"].str.startswith("robot_", na=False)
 
-    # Counts per run per category
+    # Counts per successful run
     df_detect = _count_mask(m_detect, "n_detect")
     df_nav    = _count_mask(m_nav,    "n_navigate")
     df_manip  = _count_mask(m_manip,  "n_manip")
     df_robot  = _count_mask(m_robot,  "n_robot_total")
 
-    # Merge all onto the run universe, fill zeros
-    merged = runs.merge(df_detect, on=["agent", "task_type", "uid", "variant"], how="left") \
-                 .merge(df_nav,    on=["agent", "task_type", "uid", "variant"], how="left") \
-                 .merge(df_manip,  on=["agent", "task_type", "uid", "variant"], how="left") \
-                 .merge(df_robot,  on=["agent", "task_type", "uid", "variant"], how="left")
-
+    # Merge onto the successful-run universe and fill zeros where a successful run didn't call a skill
+    merged = runs_success.merge(df_detect, on=["agent", "task_type", "uid", "variant"], how="left") \
+                         .merge(df_nav,    on=["agent", "task_type", "uid", "variant"], how="left") \
+                         .merge(df_manip,  on=["agent", "task_type", "uid", "variant"], how="left") \
+                         .merge(df_robot,  on=["agent", "task_type", "uid", "variant"], how="left")
     for col in ["n_detect", "n_navigate", "n_manip", "n_robot_total"]:
         merged[col] = merged[col].fillna(0).astype(float)
 
-    # === Overall per agent ===
+    # --- Overall per agent (success-only averages) ---
     avg_overall = (
         merged.groupby("agent")[["n_detect", "n_navigate", "n_manip", "n_robot_total"]]
         .mean()
         .reset_index()
     )
-    print("\n=== Average robot-skill calls per run (overall) ===")
-    print(f"{'agent':24s}  {'perception':>10s}  {'navigation':>10s}  {'manip.':>10s}  {'overall':>10s}")
-    for _, r in avg_overall.iterrows():
-        print(f"{str(r['agent']):24s}  "
-              f"{r['n_detect']:>10.2f}  {r['n_navigate']:>10.2f}  {r['n_manip']:>10.2f}  {r['n_robot_total']:>10.2f}")
+    n_success_per_agent = merged.groupby("agent").size().to_dict()
 
-    # === Per agent × variant ===
+    print("\n=== Average robot-skill calls per run (SUCCESS-ONLY, overall) ===")
+    print(f"{'agent':24s}  {'perception':>10s}  {'navigation':>10s}  {'manip.':>10s}  {'overall':>10s}  {'n_succ':>7s}")
+    for _, r in avg_overall.iterrows():
+        n_succ = int(n_success_per_agent.get(r["agent"], 0))
+        print(f"{str(r['agent']):24s}  "
+              f"{r['n_detect']:>10.2f}  {r['n_navigate']:>10.2f}  {r['n_manip']:>10.2f}  {r['n_robot_total']:>10.2f}  {n_succ:>7d}")
+
+    # --- Per agent × variant (success-only averages) ---
     avg_split = (
         merged.groupby(["agent", "variant"])[["n_detect", "n_navigate", "n_manip", "n_robot_total"]]
         .mean()
         .reset_index()
     )
-    print("\n=== Average robot-skill calls per run (by agent × variant) ===")
-    print(f"{'agent':24s}  {'variant':>13s}  {'perception':>10s}  {'navigation':>10s}  {'manip.':>10s}  {'overall':>10s}")
+    n_success_per_agent_variant = merged.groupby(["agent", "variant"]).size().to_dict()
+
+    print("\n=== Average robot-skill calls per run (SUCCESS-ONLY, by agent × variant) ===")
+    print(f"{'agent':24s}  {'variant':>13s}  {'perception':>10s}  {'navigation':>10s}  {'manip.':>10s}  {'overall':>10s}  {'n_succ':>7s}")
     for _, r in avg_split.iterrows():
+        n_succ = int(n_success_per_agent_variant.get((r["agent"], r["variant"]), 0))
         print(f"{str(r['agent']):24s}  {r['variant']:>13s}  "
-              f"{r['n_detect']:>10.2f}  {r['n_navigate']:>10.2f}  {r['n_manip']:>10.2f}  {r['n_robot_total']:>10.2f}")
+              f"{r['n_detect']:>10.2f}  {r['n_navigate']:>10.2f}  {r['n_manip']:>10.2f}  {r['n_robot_total']:>10.2f}  {n_succ:>7d}")
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Main
@@ -375,7 +424,10 @@ def main():
     calls_df = parse_toolcall_results(args, tasks)
     # Three analyses:
     plot_tool_distributions_by_agent(args, calls_df)
-    print_robot_skill_call_stats(calls_df)
+    
+    success_df = build_success_df(args, tasks)
+    # Replace old call with success-only version:
+    print_robot_skill_call_stats(calls_df, success_df)
 
 if __name__ == "__main__":
     main()
