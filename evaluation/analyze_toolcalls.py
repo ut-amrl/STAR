@@ -58,7 +58,7 @@ def parse_args():
     p.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     p.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt")
     p.add_argument("--agent_types", nargs="+",
-                   default=["low_level_gt", "replan_low_level_gt"])
+                   default=["low_level_gt", "replan_low_level_gt", "low_level_caption", "replan_low_level_caption"])
     p.add_argument("--family_only", action="store_true",
                    help="If set, aggregate tool calls by family in plots (robot/search/inspect/meta/terminate/other).")
     return p.parse_args()
@@ -287,127 +287,79 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, top_k: int = 
 # ANALYSIS 2: Average TOTAL tool calls per task for each agent (print)
 # ────────────────────────────────────────────────────────────────────────────────
 
-def print_avg_total_calls_per_agent(calls_df: pd.DataFrame):
+def print_robot_skill_call_stats(calls_df: pd.DataFrame):
     """
-    For each agent, compute mean number of tool calls per (task run), where a run is (task_type, uid).
-    """
-    if calls_df.empty:
-        print("[WARN] No tool-call data for averages.")
-        return
+    For each agent and variant (interactive vs noninteractive),
+    compute average # of robot-skill tool calls per run.
 
-    # count per run
-    per_run = (
-        calls_df
-        .groupby(["agent", "task_type", "uid"], as_index=False)
-        .size()
-        .rename(columns={"size": "n_calls"})
-    )
-    # average per agent
-    avg = per_run.groupby("agent")["n_calls"].mean().reset_index()
-    print("\n=== Average total tool calls per task (by agent) ===")
-    for _, r in avg.iterrows():
-        print(f"{r['agent']:20s}  avg calls/run: {r['n_calls']:.2f}")
+    Categories:
+      - perception:   robot_detect
+      - navigation:   robot_navigate
+      - manipulation: robot_pick + robot_open
+      - overall:      any 'robot_*'
 
-
-# ────────────────────────────────────────────────────────────────────────────────
-# ANALYSIS 3: Average 'navigate' calls for INTERACTIVE tasks (print)
-# ────────────────────────────────────────────────────────────────────────────────
-
-def print_avg_navigate_replan(calls_df: pd.DataFrame):
-    """
-    For agents whose name contains 'replan', compute average # of 'navigate'
-    tool calls per run (task_type, uid) and print:
-      - overall average
-      - interactive-only average
-      - non-interactive-only average
-
-    A 'run' here is any (agent, task_type, uid, variant) that appears in calls_df.
-    Runs with zero 'navigate' calls are included with count=0.
+    A 'run' is (agent, task_type, uid, variant).
+    Runs with zero calls in a category are included with count=0.
     """
     if calls_df.empty:
-        print("[WARN] No tool-call data for 'replan' navigate averages.")
+        print("[WARN] No tool-call data for robot skill stats.")
         return
 
-    # keep only 'replan' agents
-    mask_replan = calls_df["agent"].str.contains("replan", na=False)
-    rep = calls_df[mask_replan]
-    if rep.empty:
-        print("\n[INFO] No agents with 'replan' in name — skipping navigate averages.")
-        return
+    # Universe of runs so we keep zeros
+    runs = calls_df[["agent", "task_type", "uid", "variant"]].drop_duplicates()
 
-    # Universe of runs (so zero-navigate runs are kept)
-    runs = rep[["agent", "task_type", "uid", "variant"]].drop_duplicates()
+    def _count_mask(mask: pd.Series, colname: str) -> pd.DataFrame:
+        return (
+            calls_df[mask]
+            .groupby(["agent", "task_type", "uid", "variant"], as_index=False)
+            .size()
+            .rename(columns={"size": colname})
+        )
 
-    # Count navigate calls per run
-    nav = (
-        rep[rep["tool_name"] == "robot_navigate"]
-        .groupby(["agent", "task_type", "uid", "variant"], as_index=False)
-        .size()
-        .rename(columns={"size": "n_navigate"})
+    # Category masks
+    m_detect = calls_df["tool_name"].eq("robot_detect")
+    m_nav    = calls_df["tool_name"].eq("robot_navigate")
+    m_manip  = calls_df["tool_name"].isin(["robot_pick", "robot_open"])
+    m_robot  = calls_df["tool_name"].str.startswith("robot_", na=False)
+
+    # Counts per run per category
+    df_detect = _count_mask(m_detect, "n_detect")
+    df_nav    = _count_mask(m_nav,    "n_navigate")
+    df_manip  = _count_mask(m_manip,  "n_manip")
+    df_robot  = _count_mask(m_robot,  "n_robot_total")
+
+    # Merge all onto the run universe, fill zeros
+    merged = runs.merge(df_detect, on=["agent", "task_type", "uid", "variant"], how="left") \
+                 .merge(df_nav,    on=["agent", "task_type", "uid", "variant"], how="left") \
+                 .merge(df_manip,  on=["agent", "task_type", "uid", "variant"], how="left") \
+                 .merge(df_robot,  on=["agent", "task_type", "uid", "variant"], how="left")
+
+    for col in ["n_detect", "n_navigate", "n_manip", "n_robot_total"]:
+        merged[col] = merged[col].fillna(0).astype(float)
+
+    # === Overall per agent ===
+    avg_overall = (
+        merged.groupby("agent")[["n_detect", "n_navigate", "n_manip", "n_robot_total"]]
+        .mean()
+        .reset_index()
     )
+    print("\n=== Average robot-skill calls per run (overall) ===")
+    print(f"{'agent':24s}  {'perception':>10s}  {'navigation':>10s}  {'manip.':>10s}  {'overall':>10s}")
+    for _, r in avg_overall.iterrows():
+        print(f"{str(r['agent']):24s}  "
+              f"{r['n_detect']:>10.2f}  {r['n_navigate']:>10.2f}  {r['n_manip']:>10.2f}  {r['n_robot_total']:>10.2f}")
 
-    # Merge counts onto all runs (fill missing with 0)
-    merged = runs.merge(nav, on=["agent", "task_type", "uid", "variant"], how="left")
-    merged["n_navigate"] = merged["n_navigate"].fillna(0)
-
-    # Helper to print a group safely
-    def _safe_mean(df, label):
-        if df.empty:
-            return "n/a"
-        return f"{df['n_navigate'].mean():.2f}"
-
-    print("\n=== Average 'navigate' calls per run — replan agents ===")
-    for agent, g in merged.groupby("agent"):
-        overall = _safe_mean(g, "overall")
-        inter   = _safe_mean(g[g["variant"] == "interactive"], "interactive")
-        nonint  = _safe_mean(g[g["variant"] == "noninteractive"], "non-interactive")
-        print(f"{agent:24s}  overall: {overall:>5}   interactive: {inter:>5}   non-interactive: {nonint:>5}")
-
-def print_avg_robot_skill_calls_replan(calls_df: pd.DataFrame):
-    """
-    For agents whose name contains 'replan', compute average # of 'robot_*'
-    tool calls per run (agent, task_type, uid, variant).
-    Prints overall, interactive-only, and non-interactive-only averages.
-    Runs with zero robot calls are included with count=0.
-    """
-    if calls_df.empty:
-        print("[WARN] No tool-call data for 'replan' robot-skill averages.")
-        return
-
-    # keep only 'replan' agents
-    mask_replan = calls_df["agent"].str.contains("replan", na=False)
-    rep = calls_df[mask_replan]
-    if rep.empty:
-        print("\n[INFO] No agents with 'replan' in name — skipping robot-skill averages.")
-        return
-
-    # Universe of runs (so zero-robot runs are kept)
-    runs = rep[["agent", "task_type", "uid", "variant"]].drop_duplicates()
-
-    # Count robot_* calls per run
-    robot_mask = rep["tool_name"].str.startswith("robot_", na=False)
-    robot = (
-        rep[robot_mask]
-        .groupby(["agent", "task_type", "uid", "variant"], as_index=False)
-        .size()
-        .rename(columns={"size": "n_robot"})
+    # === Per agent × variant ===
+    avg_split = (
+        merged.groupby(["agent", "variant"])[["n_detect", "n_navigate", "n_manip", "n_robot_total"]]
+        .mean()
+        .reset_index()
     )
-
-    # Merge counts onto all runs (fill missing with 0)
-    merged = runs.merge(robot, on=["agent", "task_type", "uid", "variant"], how="left")
-    merged["n_robot"] = merged["n_robot"].fillna(0)
-
-    def _fmt_mean(df):
-        if df.empty:
-            return "n/a"
-        return f"{df['n_robot'].mean():.2f}"
-
-    print("\n=== Average 'robot_*' calls per run — replan agents ===")
-    for agent, g in merged.groupby("agent"):
-        overall = _fmt_mean(g)
-        inter   = _fmt_mean(g[g["variant"] == "interactive"])
-        nonint  = _fmt_mean(g[g["variant"] == "noninteractive"])
-        print(f"{agent:24s}  overall: {overall:>5}   interactive: {inter:>5}   non-interactive: {nonint:>5}")
+    print("\n=== Average robot-skill calls per run (by agent × variant) ===")
+    print(f"{'agent':24s}  {'variant':>13s}  {'perception':>10s}  {'navigation':>10s}  {'manip.':>10s}  {'overall':>10s}")
+    for _, r in avg_split.iterrows():
+        print(f"{str(r['agent']):24s}  {r['variant']:>13s}  "
+              f"{r['n_detect']:>10.2f}  {r['n_navigate']:>10.2f}  {r['n_manip']:>10.2f}  {r['n_robot_total']:>10.2f}")
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Main
@@ -423,9 +375,7 @@ def main():
     calls_df = parse_toolcall_results(args, tasks)
     # Three analyses:
     plot_tool_distributions_by_agent(args, calls_df)
-    print_avg_total_calls_per_agent(calls_df)
-    print_avg_navigate_replan(calls_df)
-    print_avg_robot_skill_calls_replan(calls_df)
+    print_robot_skill_call_stats(calls_df)
 
 if __name__ == "__main__":
     main()

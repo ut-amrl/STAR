@@ -31,7 +31,7 @@ _OBJECT_FLAGS = [
 # Agent display names (kept if you need to print them verbosely)
 _AGENT_DISPLAY = {
     "random":              "Random",
-    "sg":                  "SG",
+    "sg":                  "Scene Graph",
     "low_level_gt":        "TR (Oracle Cap.)",
     "replan_low_level_gt": "STAR (Oracle Cap.)",
     "low_level_caption":   "TR (Real Cap.)",
@@ -188,6 +188,8 @@ def parse_args():
     )
     parser.add_argument("--error_bars", action="store_true",
                         help="If set, draw 95% Wilson CI error bars for success rates.")
+    parser.add_argument("--cascade_error_analysis", action="store_true",
+                        help="If set, perform cascade failure analysis.")
     return parser.parse_args()
 
 # ───────────────────────────────────────────────────────────────
@@ -277,12 +279,12 @@ def analyze_results(
                     rates[agent][task_type][flag] = g[flag].mean()
 
     # pretty-print
-    for ag, per_task in rates.items():
-        print(f"\n========== {ag} ==========")
-        for task_t, stats in per_task.items():
-            print(f"\n--- {task_t} ---")
-            for flag, r in stats.items():
-                print(f"{flag:32s}: {r:.1%}")
+    # for ag, per_task in rates.items():
+    #     print(f"\n========== {ag} ==========")
+    #     for task_t, stats in per_task.items():
+    #         print(f"\n--- {task_t} ---")
+    #         for flag, r in stats.items():
+    #             print(f"{flag:32s}: {r:.1%}")
 
     return rates, df
 
@@ -290,31 +292,48 @@ def analyze_results(
 # Plot helpers / legends
 # ───────────────────────────────────────────────────────────────
 def _right_side_combined_legend(ax):
-    """Create a single legend placed to the RIGHT of the axes:
-       - 4 color entries: Random, SG, TR, STAR
-       - 2 hatch entries: Oracle Cap. (no hatch), Real Cap. (dotted)
     """
-    color_handles = [
+    Two-block legend to the RIGHT of the axes:
+      Block 1 (Approach): Random, Scene Graph, TR+S, STAR  [color-coded]
+      Block 2 (Knowledge Regime): Oracle, Realistic       [hatch-coded]
+    """
+    # ---- Block 1: Approach (colors) ----
+    approach_handles = [
         mpatches.Patch(facecolor=COLOR_RANDOM, edgecolor="black", linewidth=0.7, label="Random"),
-        mpatches.Patch(facecolor=COLOR_SG, edgecolor="black", linewidth=0.7, label="SG"),
-        mpatches.Patch(facecolor=COLOR_TR, edgecolor="black", linewidth=0.7, label="TR"),
-        mpatches.Patch(facecolor=COLOR_STAR, edgecolor="black", linewidth=0.7, label="STAR"),
+        mpatches.Patch(facecolor=COLOR_SG,     edgecolor="black", linewidth=0.7, label="SG+S"),
+        mpatches.Patch(facecolor=COLOR_TR,     edgecolor="black", linewidth=0.7, label="TR+S"),
+        mpatches.Patch(facecolor=COLOR_STAR,   edgecolor="black", linewidth=0.7, label="STAR"),
     ]
-    hatch_handles = [
-        mpatches.Patch(facecolor="white", edgecolor="black", linewidth=0.7, label="Oracle Cap.", hatch=""),
-        mpatches.Patch(facecolor="white", edgecolor="black", linewidth=0.7, label="Real Cap.", hatch=HATCH_CAPTION),
-    ]
-    handles = color_handles + hatch_handles
-
-    leg = ax.legend(
-        handles=handles,
-        title=None,
+    leg_approach = ax.legend(
+        handles=approach_handles,
+        title="Approach",
+        title_fontsize=12,
         fontsize=11,
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),   # RIGHT of the plot, centered vertically
-        frameon=True, framealpha=0.95, facecolor="white", edgecolor="lightgray"
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.00),   # right of plot, near top
+        frameon=True, framealpha=0.95, facecolor="white", edgecolor="lightgray",
+        borderaxespad=0.0
     )
-    return leg
+    leg_approach.get_title().set_fontweight("medium")
+    ax.add_artist(leg_approach)
+
+    # ---- Block 2: Knowledge Regime (hatches) ----
+    regime_handles = [
+        mpatches.Patch(facecolor="white", edgecolor="black", linewidth=0.7, label="Oracle",   hatch=""),
+        mpatches.Patch(facecolor="white", edgecolor="black", linewidth=0.7, label="Realistic", hatch=HATCH_CAPTION),
+    ]
+    leg_regime = ax.legend(
+        handles=regime_handles,
+        title="Env. Knowledge",
+        title_fontsize=12,
+        fontsize=11,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 0.71),   # right of plot, a bit lower
+        frameon=True, framealpha=0.95, facecolor="white", edgecolor="lightgray",
+        borderaxespad=0.0
+    )
+    leg_regime.get_title().set_fontweight("medium")
+    return leg_approach, leg_regime
 
 # ───────────────────────────────────────────────────────────────
 # Plots
@@ -424,10 +443,37 @@ def plot_overall_success(args, df):
 
     plt.tight_layout()
     os.makedirs(args.output_dir, exist_ok=True)
-    out_path = os.path.join(args.output_dir, "results_main.png")
-    plt.savefig(out_path, bbox_inches="tight")
+    out_png = os.path.join(args.output_dir, "results_main.png")
+    out_svg = os.path.join(args.output_dir, "results_main.svg")
+    plt.savefig(out_png, bbox_inches="tight")
+    plt.savefig(out_svg, bbox_inches="tight")
     plt.close()
-    print(f"[INFO] overall-success plot saved to {out_path}")
+    print(f"[INFO] interactive-success plot saved to {out_png} and {out_svg}")
+    
+    # ── NEW: print table of results ──────────────────────────────
+    import pandas as pd
+    print("\n=== Overall Success Rates (per task × agent) ===")
+    if args.error_bars:
+        # Reuse yerr_map if available
+        for task in tasks:
+            row_strs = []
+            for ag in args.agent_types:
+                val = agg.loc[task, ag] if ag in agg.columns else np.nan
+                if pd.isna(val):
+                    continue
+                yerr = yerr_map.get((task, ag))
+                row_strs.append(f"{_pretty_agent(ag)}: {val:.2f} ± {yerr:.2f}" if yerr else f"{_pretty_agent(ag)}: {val:.2f}")
+            print(f"{_pretty_task(task, oneline=True):20s} | " + " | ".join(row_strs))
+    else:
+        for task in tasks:
+            row_strs = []
+            for ag in args.agent_types:
+                val = agg.loc[task, ag] if ag in agg.columns else np.nan
+                if pd.isna(val):
+                    continue
+                row_strs.append(f"{_pretty_agent(ag)}: {val:.2f}")
+            print(f"{_pretty_task(task, oneline=True):20s} | " + " | ".join(row_strs))
+    print("================================================\n")
 
 def _base_task(task: str, suffix: str = "_interactive") -> str:
     """Map 'classonly_interactive' -> 'classonly'; pass through otherwise."""
@@ -435,28 +481,32 @@ def _base_task(task: str, suffix: str = "_interactive") -> str:
 
 def plot_interactive_success(args, df, suffix: str = "_interactive"):
     """
-    Plot success rates for interactive-search tasks only.
-    - Filters rows whose task_type endswith suffix (default: '_interactive')
+    Plot success rates for interactive-search tasks only, styled identically to plot_overall_success.
+    - Filters rows whose task_type endswith `suffix` (default: '_interactive')
     - Collapses labels to base task names (e.g., 'classonly')
-    - Colors = agent family (TR blue, STAR orange, SG purple, Random gray)
-    - Caption agents are dotted-hatched
-    - Legend is to the RIGHT (combined: color roles + caption type)
-    Output: <output_dir>/results_interactive.png
+    - Colors encode agent family; caption agents are dot-hatched
+    - Combined legend on the right (Approach colors + Env. Knowledge hatch)
+    Outputs:
+      <output_dir>/results_interactive.png
+      <output_dir>/results_interactive.svg
     """
     import pandas as pd
+    import matplotlib as mpl
+    mpl.rcParams["hatch.linewidth"] = 0.8
 
+    # Basic guards
     if df.empty or "task_type" not in df.columns or "success" not in df.columns:
         print("[WARN] No data for interactive-success plot")
         return
 
+    # Keep only interactive tasks and map to base task
     dfi = df[df["task_type"].astype(str).str.endswith(suffix)].copy()
     if dfi.empty:
         print(f"[INFO] No '*{suffix}' tasks found — skipping interactive plot")
         return
-
     dfi["base_task"] = dfi["task_type"].map(lambda t: _base_task(t, suffix))
 
-    # Means per (base_task, agent)
+    # Aggregate means per (base_task, agent)
     agg = (
         dfi.groupby(["base_task", "agent"])["success"]
            .mean()
@@ -468,13 +518,13 @@ def plot_interactive_success(args, df, suffix: str = "_interactive"):
         print("[WARN] Aggregation produced empty frame for interactive plot")
         return
 
-    # Order by canonical task order (only those present)
+    # Order tasks to match global order when present
     tasks_present = [t for t in _TASK_ORDER if t in agg.index]
     if not tasks_present:
         tasks_present = list(agg.index)
     agg = agg.loc[tasks_present]
 
-    # Error bars (Wilson)
+    # Error bars (Wilson 95%)
     yerr_map = {}
     if args.error_bars:
         stats_gb = (
@@ -482,15 +532,17 @@ def plot_interactive_success(args, df, suffix: str = "_interactive"):
                .dropna(subset=["success"])
                .groupby(["base_task", "agent"])
         )
-        _stats = stats_gb.agg(mean=("success", "mean"),
-                              n=("success", "count"),
-                              s=("success", "sum")).reset_index()
+        _stats = stats_gb.agg(
+            mean=("success", "mean"),
+            n=("success", "count"),
+            s=("success", "sum")
+        ).reset_index()
         yerr_map = {
             (r["base_task"], r["agent"]): _wilson_halfwidth(r["s"], int(r["n"]))
             for _, r in _stats.iterrows()
         }
 
-    # Draw bars
+    # Draw bars (same geometry & cosmetics as overall)
     n_tasks  = len(tasks_present)
     n_agents = len(args.agent_types)
     x = np.arange(n_tasks)
@@ -502,6 +554,7 @@ def plot_interactive_success(args, df, suffix: str = "_interactive"):
     for i_agent, ag in enumerate(args.agent_types):
         st = _style_for_agent(ag)
         color, hatch = st["color"], st["hatch"]
+
         for i_task, task in enumerate(tasks_present):
             val = agg.loc[task, ag] if ag in agg.columns else np.nan
             if pd.isna(val):
@@ -517,7 +570,7 @@ def plot_interactive_success(args, df, suffix: str = "_interactive"):
                 bar.set_hatch(hatch)
             bar.set_linewidth(0.7)
 
-            # Wilson 95% yerr
+            # Wilson yerr, styled identically to overall
             yerr = None
             if args.error_bars:
                 yerr = yerr_map.get((task, ag))
@@ -529,8 +582,8 @@ def plot_interactive_success(args, df, suffix: str = "_interactive"):
             top = val + (float(yerr) if (yerr is not None and np.isfinite(yerr)) else 0.0)
             max_with_err = max(max_with_err, top)
 
-    # Axes & labels
-    ax.set_ylabel("Execution Success Rate (interactive)", fontsize=16)
+    # Axes, ticks, grid, ylim — match overall style
+    ax.set_ylabel("Execution Success Rate", fontsize=16)
     ax.set_xticks(x)
     ax.set_xticklabels([_pretty_task(t) for t in tasks_present], rotation=45, ha="right")
     ax.tick_params(axis="x", labelsize=13)
@@ -539,20 +592,89 @@ def plot_interactive_success(args, df, suffix: str = "_interactive"):
     ax.grid(axis="y", alpha=0.4, zorder=0)
     ax.set_ylim(*_nice_ylim(max_with_err, pad=0.05, clamp=False))
 
-    # Shade alternate task bins
+    # Shade alternate task bins (same look)
     ax.set_xlim(-0.5, n_tasks - 0.5)
     for i in range(0, n_tasks, 2):
         ax.axvspan(i - 0.5, i + 0.5, color="#b7b7b7", alpha=0.12, zorder=0)
 
-    # Combined legend to the RIGHT
+    # Identical combined legend to the RIGHT
     _right_side_combined_legend(ax)
 
+    # Save both PNG and SVG (like overall)
     plt.tight_layout()
     os.makedirs(args.output_dir, exist_ok=True)
-    out_path = os.path.join(args.output_dir, "results_interactive.png")
-    plt.savefig(out_path, bbox_inches="tight")
+    out_png = os.path.join(args.output_dir, "results_interactive.png")
+    out_svg = os.path.join(args.output_dir, "results_interactive.svg")
+    plt.savefig(out_png, bbox_inches="tight")
+    plt.savefig(out_svg, bbox_inches="tight")
     plt.close()
-    print(f"[INFO] interactive-success plot saved to {out_path}")
+    print(f"[INFO] interactive-success plot saved to {out_png} and {out_svg}")
+    
+        # ── NEW: print table of interactive results ─────────────────
+    import pandas as pd
+    print("\n=== Interactive Success Rates (per base_task × agent) ===")
+    if args.error_bars:
+        for task in tasks_present:
+            row_strs = []
+            for ag in args.agent_types:
+                val = agg.loc[task, ag] if ag in agg.columns else np.nan
+                if pd.isna(val):
+                    continue
+                yerr = yerr_map.get((task, ag))
+                if yerr is not None and np.isfinite(yerr):
+                    row_strs.append(f"{_pretty_agent(ag)}: {val:.2f} ± {yerr:.2f}")
+                else:
+                    row_strs.append(f"{_pretty_agent(ag)}: {val:.2f}")
+            print(f"{_pretty_task(task, oneline=True):20s} | " + " | ".join(row_strs))
+    else:
+        for task in tasks_present:
+            row_strs = []
+            for ag in args.agent_types:
+                val = agg.loc[task, ag] if ag in agg.columns else np.nan
+                if pd.isna(val):
+                    continue
+                row_strs.append(f"{_pretty_agent(ag)}: {val:.2f}")
+            print(f"{_pretty_task(task, oneline=True):20s} | " + " | ".join(row_strs))
+    print("================================================\n")
+
+
+
+def cascade_failure_analysis(df, success_flags=_SUCCESS_FLAGS, group_keys=["task_type", "hash", "agent"]):
+    """
+    For each cascading success flag, print all task instances that succeeded
+    at the previous flag but failed at the current.
+    """
+    print("\n=== Cascade Failure Analysis ===")
+    # Ensure the DataFrame has all necessary columns
+    missing = [flag for flag in success_flags if flag not in df.columns]
+    if missing:
+        print(f"[WARN] Missing columns in dataframe: {missing}")
+        return
+
+    # Sort for easier reading
+    df_sorted = df.sort_values(group_keys)
+
+    first_flag = success_flags[0]
+    print(f"\n--- Tasks that FAILED at '{first_flag}' (first stage) ---")
+    mask = (df_sorted[first_flag] == 0)
+    failures = df_sorted[mask]
+    if failures.empty:
+        print("(none)")
+    else:
+        print(failures[group_keys + [first_flag]])
+
+    for i in range(1, len(success_flags)):
+        prev_flag = success_flags[i-1]
+        curr_flag = success_flags[i]
+        print(f"\n--- Tasks that SUCCEEDED at '{prev_flag}' but FAILED at '{curr_flag}' ---")
+        mask = (df_sorted[prev_flag] == 1) & (df_sorted[curr_flag] == 0)
+        failures = df_sorted[mask]
+        if failures.empty:
+            print("(none)")
+        else:
+            print(failures[group_keys + [prev_flag, curr_flag]])
+
+    print("\n=== End Cascade Failure Analysis ===")
 
 # ───────────────────────────────────────────────────────────────
 # Main
@@ -563,6 +685,8 @@ def main():
     results = parse_results(args, tasks)
 
     _, df = analyze_results(args, results, args.agent_types)
+    if args.cascade_error_analysis:
+        cascade_failure_analysis(df)
     plot_overall_success(args, df)
     plot_interactive_success(args, df)
     # Cascade failure analysis intentionally removed per request
