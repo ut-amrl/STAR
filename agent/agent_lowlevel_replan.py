@@ -3,6 +3,7 @@ from langchain.prompts import MessagesPlaceholder
 from langchain_core.messages import AIMessage, ToolMessage
 
 from agent.utils.tools import *
+from agent.utils.utils import is_task_terminate_result
 from agent.agent import Agent
 
 class ReplanLowLevelAgent(Agent):
@@ -11,15 +12,18 @@ class ReplanLowLevelAgent(Agent):
                  verbose: bool = False,
                  logdir: str = None,
                  logger_prefix: str = "",
-                 is_interactive: bool = False):
+                 is_interactive: bool = False,
+                 robot_model: str = ""
+                 ):
         
-        super().__init__(verbose, logdir, logger_prefix, is_interactive)
+        super().__init__(verbose, logdir, logger_prefix, is_interactive, robot_model)
 
         prompt_dir = os.path.join(os.path.dirname(__file__), "prompts", f"replan_{prompt_type}", "low_level_agent")
-        self.agent_prompt = file_to_string(os.path.join(prompt_dir, "agent_prompt.txt"))
-        self.agent_gen_only_prompt = file_to_string(os.path.join(prompt_dir, "agent_gen_only_prompt.txt"))
-        self.agent_reflect_prompt = file_to_string(os.path.join(prompt_dir, "agent_reflect_prompt.txt"))
-        
+        prompt_prefix = robot_model if robot_model == "" else f"{robot_model}_"
+        self.agent_prompt = file_to_string(os.path.join(prompt_dir, f"{prompt_prefix}agent_prompt.txt"))
+        self.agent_gen_only_prompt = file_to_string(os.path.join(prompt_dir, f"{prompt_prefix}agent_gen_only_prompt.txt"))
+        self.agent_reflect_prompt = file_to_string(os.path.join(prompt_dir, f"{prompt_prefix}agent_reflect_prompt.txt"))
+
     def set_task(self, task_desc: str):
         return super().set_task(task_desc)
             
@@ -30,8 +34,11 @@ class ReplanLowLevelAgent(Agent):
         inspect_tools = create_memory_inspection_tool(memory)
         terminate_tools = create_memory_terminate_tool(memory)
         reflection_tools = create_pause_and_think_tool()
-        robot_tools = create_physical_skills(self.json_store)
-        
+        if self.robot_model == "tiago":
+            robot_tools = create_tiago_physical_skills(self.json_store) + create_physical_termination_skill()
+        else:
+            robot_tools = create_physical_skills(self.json_store)
+
         self.search_tools = memory_search_tools + inspect_tools + robot_tools
         self.search_tool_definitions = [convert_to_openai_function(t) for t in self.search_tools]
         
@@ -46,8 +53,11 @@ class ReplanLowLevelAgent(Agent):
     def agent(self, state: Agent.AgentState):
         max_search_in_time_cnt = 20
         n_reflection_intervals = 5
-        max_search_in_space_cnt = 3
-        
+        if self.robot_model == "tiago":
+            max_search_in_space_cnt = 2
+        else:
+            max_search_in_space_cnt = 3
+
         messages = state["messages"]
         
         additional_search_history = []
@@ -101,6 +111,27 @@ class ReplanLowLevelAgent(Agent):
                                     msg.tool_call_id)
                                 message = HumanMessage(content=content)
                                 image_messages.append(message)
+                                
+                        elif is_task_terminate_result(msg):
+                            pos = [-1, -1, -1]  # Default position if no search proposal
+                            theta = -1
+                            if len(self.searched_poses) > 0:
+                                pos = self.searched_poses[-1][0]
+                                theta = self.searched_poses[-1][1]
+                            self.task.search_proposal = SearchProposal(
+                                summary="",
+                                instance_description="",
+                                position=pos,
+                                theta=theta,
+                                records=[]
+                            )
+                            if len(self.searched_visible_instances) > 0:
+                                self.task.search_proposal.visible_instances = self.searched_visible_instances[-1]
+                            return {
+                                "history": additional_search_history,
+                                "toolcalls": last_tool_calls,
+                                "next_state": "end"
+                            }
                                 
                         if self.logger:
                             self.logger.info(f"[SEARCH] Tool Response: {msg.content}")

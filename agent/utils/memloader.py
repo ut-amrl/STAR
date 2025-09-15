@@ -39,15 +39,19 @@ def remember_tiago(memory: MilvusMemory, inpaths: list, time_offsets: list, vidd
 
 def remember(memory: MilvusMemory, inpaths: list, time_offsets: list, viddirs: list, waypoint_only: bool = False):
     for inpath, time_offset, viddir in zip(inpaths, time_offsets, viddirs):
+        start_t = None
         with open(inpath, 'r') as f:
             for entry in json.load(f):
                 if ("waypoint" in entry) and waypoint_only and (int(entry["waypoint"]) < 0):
                     continue
                 t, pos, caption, text_embedding, start_frame, end_frame = entry["time"], entry["base_position"], entry["base_caption"], entry["base_caption_embedding"], entry["start_frame"], entry["end_frame"]
+                if start_t is None:
+                    start_t = t
+                t = t - start_t 
+                t += time_offset
                 pos = [pos[0], pos[2], pos[1]]  # convert from (x, z, y) to (x, y, z)
                 if "interactive" in inpath:
                     pos[2] += 0.5
-                t += time_offset
                 start_frame, end_frame = int(start_frame), int(end_frame)
                 memory_item = MemoryItem(
                     caption=caption,

@@ -20,6 +20,18 @@ Throughout the process:
 Before navigating, analyze memory to identify promising search targets, then **select approach poses that are likely ≤ 1.5 m from the target**; repeat identity + last-seen checks strategically until confident enough to commit to physical search. You may navigate to at most 3 distinct physical locations; **do not revisit a location you have already confirmed to be empty** in the current session.
 If, after searching, you find strong evidence that the requested object has **never been seen in memory**, you should fall back to **common-sense reasoning**: infer the most likely location(s) for such an object (e.g., fruit in the kitchen, books on shelves, toys on beds) and propose a **plausible retrieval attempt** from there. This ensures progress even when memory is incomplete.
 
+## Background — Waypoints & Actionability
+The robot moves by navigating to a fixed set of internal waypoints (`x,y,z,θ`). You will not see waypoint names, but every memory record has a position. Always ground your output in one of these reachable poses. Your final answer must be **actionable**: give a pick-feasible pose (≤1.5 m standoff if possible) and supporting record IDs that show the object there. If the last-seen view is too far, treat it as a waypoint and find a closer approach. If no memory exists, make a commonsense guess at a likely waypoint.
+Feasible navigation waypoints are:
+(-0.88,-5.01,0.0), -1.57
+(-3.18,-4.77,0.0), -1.57
+(-4.08,-4.48,0.0), 3.14
+(-4.18,-3.05,0.0), 1.57
+(-3.41,0.50,0.0), 1.57
+(-0.39,2.22,0.0), 0.0
+(-0.47,6.94,0.0), -1.57
+(0.17,7.91,0.0), 0.0
+(-4.29,10.55,0.0), 1.57
 ---
 
 ## 🧠 Core Reasoning Workflow
@@ -282,7 +294,7 @@ Example:
 ---
 
 ### 🚗 `robot_navigate`
-Move the robot to a specified **3D position + orientation** and capture **panoramic images** (`file_id` payload).  
+Move the robot to a specified **3D position + orientation** and capture **camera images** (`file_id` payload).  
 Use this to obtain **fresh, in-situ visual evidence** that memory alone cannot supply. Positions are consistently in (x, y, z) format.
 
 **When to use**
@@ -296,6 +308,17 @@ Use this to obtain **fresh, in-situ visual evidence** that memory alone cannot s
 - Use returned pano images to update your plan — reposition to meet the detection constraint before calling `robot_detect`.  
 - Must be called **alone**
 
+Feasible navigation waypoints are:
+(-0.88,-5.01,0.0), -1.57
+(-3.18,-4.77,0.0), -1.57
+(-4.08,-4.48,0.0), 3.14
+(-4.18,-3.05,0.0), 1.57
+(-3.41,0.50,0.0), 1.57
+(-0.39,2.22,0.0), 0.0
+(-0.47,6.94,0.0), -1.57
+(0.17,7.91,0.0), 0.0
+(-4.29,10.55,0.0), 1.57
+
 ```json
 [
 {{
@@ -308,85 +331,26 @@ Use this to obtain **fresh, in-situ visual evidence** that memory alone cannot s
 }}
 ]
 ```
-
 ___
+### ✅ `terminate_task`  
+Use this to **end the task** once you believe the robot has navigated to the correct waypoint and the required object is visible from that pose.  
 
-### 🎯 `robot_detect`  
-Detect **all visible instances** of a specified object class in the current environment.  
-Returns **bounding boxes** and **instance IDs** (needed for follow-up actions like `robot_pick` or `robot_open`), along with images via `file_id`.
+- **Required Fields**:  
+  - `summary`: A short explanation of what object was found and why you believe you are at the right location.  
+- **Constraints**:  
+  - Must be called **alone**  
 
-**When to use**  
-- You are **at the correct viewing position** (e.g., after navigation) and need to **confirm object presence**.  
-- You require **instance IDs** for manipulation skills (pick, open, etc.).  
-- You need **visual confirmation** before deciding on next steps.
-
-**Key points**  
-- The `query_text` **must** match one of the supported classes: `'book'`, `'magazine'`, `'toy'`, `'folder'`, `'cabinet'`, `'bananas'`, `'apple'`, `'cupcake'`, `'cereal'`, `'mincedmeat'`, `'creamybuns'`.  
-- Works only with the **current camera view** and returns objects **within 1.5 m**; if nothing is returned but the object seems visible/far, **reposition closer** and try again.  
-- Detection is **class-based**, not instance-specific — combine with memory or inspection to ensure it’s the **right instance**.  
-- Must be called **alone**
-
-```json
-Example:
+Example:  
 ```json
 [
-{{
-  "tool": "robot_detect",
-  "tool_input": {{
-    "tool_rationale": "Need instance IDs for all visible books before deciding which to pick.",
-    "query_text": "book"
+  {{
+    "tool": "terminate_task",
+    "tool_input": {{
+      "summary": "Stopped at kitchen counter waypoint; the red mug is clearly visible in the returned camera view."
+    }}
   }}
-}}
 ]
 ```
-___
 
-### 🤲 `robot_pick`  
-Pick up a specific object identified by its **instance ID**.  
-Instance IDs must come from a recent `robot_detect` call.
-
-**When to use**  
-- You have **confirmed the target object visually** and know its **instance ID**.  
-- You are **positioned to grasp** the object without further navigation.  
-- You need to retrieve the object as the next step in a task.
-
-**Key points**  
-- **Instance ID is mandatory** — obtain it via `robot_detect` if unknown.  
-- Works only if the robot’s gripper can **reach the object** from the current pose.  
-- Use after verifying **object identity and position** to avoid picking the wrong item.  
-- Success returns a unique `instance_uid` confirming the pick.
-- Must be called **alone**
-
-Example:
-```json
-[
-{{
-  "tool": "robot_pick",
-  "tool_input": {{
-    "tool_rationale": "Pick up the confirmed target book.",
-    "instance_id": 42
-  }}
-}}
-]
-```
-___
-
-### 📂 `robot_open`  
-Open a specific object (e.g., cabinet, drawer) identified by its **instance ID**.  
-Instance IDs must come from a recent `robot_detect` call.
-
-**When to use**  
-- You suspect the **target object is inside a container** (cabinet, drawer, etc.).  
-- You have **confirmed the container’s identity** and know its **instance ID**.  
-- Opening is necessary to **inspect contents** or access the target.
-
-**Key points**  
-- **Instance ID is mandatory** — obtain it via `robot_detect` if unknown.  
-- Use after confirming the container is **reachable** from the current pose.  
-- Often paired with `robot_detect` after opening to **inspect contents**.  
-- Success returns a unique `instance_uid` confirming the open action.
-- Must be called **alone**
-- When multiple similar-looking containers are nearby, use memory (spatial/temporal reasoning) to disambiguate which one matches the user’s reference before opening.
-- If opening is required to satisfy the **≤ 1.5 m detection** or visibility constraint (e.g., door blocks the view), open first, then re-detect before pick.
-
-___
+## 🧩 Temporary Simplification Notice
+Right now, the task is simplified: success is achieved if you can navigate to the correct waypoint and visually confirm the target object in the returned camera view. You do not need to execute robot_detect, robot_open, or robot_pick. Once you are confident the object is visible from your current pose, call terminate_task to finish.

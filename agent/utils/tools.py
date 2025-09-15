@@ -19,6 +19,29 @@ from memory.memory import MilvusMemory
 from agent.utils.utils import *
 from agent.utils.skills import *
 
+def create_physical_termination_skill() -> List[StructuredTool]:
+    class TerminateInput(BaseModel):
+        summary: str = Field(
+            description="A short explanation of what has been done and why the task is considered complete"
+        )
+    
+    def _terminate_fn(summary: str) -> bool:
+        # Dummy implementation: always return True
+        return True
+
+    terminate_tool = StructuredTool.from_function(
+        func=_terminate_fn,
+        name="terminate_task",
+        description=(
+            "Finalize the search task once it is complete. "
+            "You should call this tool when you have successfully completed the task and no further actions are needed (i.e., you saw the object required by task).\n\n"
+            "- Constraint: Must be called ALONE (no other tools in the same step)."
+        ),
+        args_schema=TerminateInput,
+    )
+
+    return [terminate_tool]
+
 def create_tiago_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
     class NavigateInput(BaseModel):
         tool_rationale: str = Field(

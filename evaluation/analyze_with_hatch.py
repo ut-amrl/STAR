@@ -30,6 +30,7 @@ _AGENT_DISPLAY = {
     "replan_low_level_gt": "STAR (GT-Cap)",
     "high_level_gt":       "One-shot GT (High)",
     "low_level_caption":   "TR (Real-Cap)",
+    "replan_low_level_caption": "STAR (Real-Cap)",
 }
 
 _TASK_DISPLAY_TWO_LINES = {
@@ -70,6 +71,7 @@ _AGENT_STYLE = {
     # "high_level_gt":      {"color": "#58c96e"},
     "high_level_gt":      {"color": "#ff9d4d"},
     "low_level_caption":  {"color": "#5bc0de"},
+    "replan_low_level_caption": {"color": "#7AFCB9"},
     "sg":                  {"color": "#8762a2"},
     "random":             {"color": "#9e9e9e"},
 }
@@ -166,7 +168,7 @@ def parse_args():
     parser.add_argument("--data_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--output_dir", type=str, default="evaluation/sim_outputs/")
     parser.add_argument("--task_config", type=str, default="evaluation/config/tasks_sim_all.txt")
-    parser.add_argument("--agent_types", nargs="+", default=["random", "sg", "low_level_gt", "replan_low_level_gt", "low_level_caption", "high_level_gt"])
+    parser.add_argument("--agent_types", nargs="+", default=["random", "sg", "low_level_gt", "replan_low_level_gt", "low_level_caption", "replan_low_level_caption"])
     # NEW: toggle error bars
     parser.add_argument("--error_bars", action="store_true",
                         help="If set, draw 95% Wilson CI error bars for success rates.")
