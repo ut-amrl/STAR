@@ -74,11 +74,32 @@ _TASK_ORDER = [
 # - STAR family (replan_low_level_*): orange family
 # - *_caption: same color family but with dotted hatch
 # ───────────────────────────────────────────────────────────────
-COLOR_RANDOM = "#9e9e9e"
-COLOR_SG = "#8762a2"          # purple
-COLOR_TR = "#4a90d9"          # blue family
-COLOR_STAR = "#ff9d4d"        # orange family
-HATCH_CAPTION = ".."          # dotted hatch for *_caption
+# Okabe–Ito (comment out above, use this if preferred)
+COLOR_RANDOM = "#999999"   # gray baseline
+COLOR_SG     = "#CC79A7"   # lighter magenta/purple
+COLOR_TR     = "#56B4E9"   # lighter blue
+COLOR_STAR   = "#E69F00"   # orange (same family but less dark than #FF7F00)
+HATCH_CAPTION = "///"       # dot hatch for "Realistic" (*_caption)
+
+def _preferred_agent_order(agents: List[str]) -> List[str]:
+    pref = [
+        "random",
+        "sg",
+        "low_level_gt", "low_level_caption",           # TR oracle, TR realistic
+        "replan_low_level_gt", "replan_low_level_caption",  # STAR oracle, STAR realistic
+    ]
+    return [a for a in pref if a in agents]
+
+
+def _icra_sizes(layout: str = "single"):
+    if layout == "double":
+        figsize = (7.2, 3.0)   # wider, slightly taller
+        fonts = dict(lbl=9, tick=8, legend=8, legend_title=8)
+    else:  # single-column
+        figsize = (4.2, 2.8)   # a bit wider than 3.5
+        fonts = dict(lbl=9, xtick=8, ytick=6, legend=7, legend_title=7)
+    return figsize, fonts
+
 
 def _agent_family(agent: str) -> str:
     """Return 'random', 'sg', 'tr', or 'star'."""
@@ -157,8 +178,9 @@ def _darken(hex_color, amount=0.25):
     return _mix(hex_color, "#000000", amount)
 
 def _err_style(ecolor="#333333"):
-    """Unified, nicer errorbar style."""
-    return dict(fmt="none", ecolor=ecolor, elinewidth=1.2, capsize=4, capthick=1.2, alpha=0.9, zorder=4)
+    return dict(fmt="none", ecolor=ecolor,
+                elinewidth=0.7, capsize=2.5, capthick=1.0,
+                alpha=0.9, zorder=4)
 
 def _round_errcaps(eb: ErrorbarContainer):
     """Round line caps & joins for prettier whiskers."""
@@ -399,7 +421,7 @@ def _right_side_combined_legend(ax):
     """
     # ---- Block 1: Approach (colors) ----
     approach_handles = [
-        mpatches.Patch(facecolor=COLOR_RANDOM, edgecolor="black", linewidth=0.7, label="Random"),
+        mpatches.Patch(facecolor=COLOR_RANDOM, edgecolor="black", linewidth=0.7, label="Rand."),
         mpatches.Patch(facecolor=COLOR_SG,     edgecolor="black", linewidth=0.7, label="SG+S"),
         mpatches.Patch(facecolor=COLOR_TR,     edgecolor="black", linewidth=0.7, label="TR+S"),
         mpatches.Patch(facecolor=COLOR_STAR,   edgecolor="black", linewidth=0.7, label="STAR"),
@@ -424,7 +446,7 @@ def _right_side_combined_legend(ax):
     ]
     leg_regime = ax.legend(
         handles=regime_handles,
-        title="Env. Knowledge",
+        title="Environmnt",
         title_fontsize=12,
         fontsize=11,
         loc="upper left",
@@ -439,70 +461,95 @@ def _right_side_combined_legend(ax):
 # Plots
 # ───────────────────────────────────────────────────────────────
 def plot_overall_success(args, df):
-    _TASK_DISPLAY_TWO_LINES["overall"] = "overall"
-    _TASK_DISPLAY["overall"] = "overall"
-    
     """
-    Colors encode agent family; caption agents are dot-hatched.
-    Legend is placed to the RIGHT (combined: color roles + caption type).
+    Single-column by default (ICRA-friendly); colorblind-safe palette; bars grouped
+    as [TR(Oracle), TR(Realistic), STAR(Oracle), STAR(Realistic), SG, Random];
+    combined legend placed INSIDE top-right to use whitespace.
     """
     import pandas as pd
     import matplotlib as mpl
-    mpl.rcParams["hatch.linewidth"] = 0.8
+
+    # keep SVG text and avoid Type 3 fonts
+    mpl.rcParams['pdf.fonttype'] = 42
+    mpl.rcParams['ps.fonttype']  = 42
+    mpl.rcParams['text.usetex']  = False
+    mpl.rcParams['svg.fonttype'] = 'none'
+    mpl.rcParams["hatch.linewidth"] = 0.5
 
     if df.empty or "success" not in df.columns:
         print("[WARN] No data for overall-success plot")
         return
 
-    # Error bar stats (Wilson)
-    yerr_map = {}
-    if args.error_bars:
-        stats_gb = (
-            df[["task_type", "agent", "success"]]
-              .dropna(subset=["success"])
-              .groupby(["task_type", "agent"])
-        )
-        _stats = stats_gb.agg(mean=("success", "mean"),
-                              n=("success", "count"),
-                              s=("success", "sum")).reset_index()
-        yerr_map = {
-            (r["task_type"], r["agent"]): _wilson_halfwidth(r["s"], int(r["n"]))
-            for _, r in _stats.iterrows()
-        }
-
-    # Means
-    agg = (
-        df.groupby(["task_type", "agent"])["success"]
-          .mean()
-          .reset_index()
-          .pivot(index="task_type", columns="agent", values="success")
-          .reindex(columns=args.agent_types)
-          .sort_index()
+    # Compute mean(success) per (task_type, agent) and optional Wilson yerr
+    stats = (
+        df[["task_type", "agent", "success"]]
+          .dropna(subset=["success"])
+          .groupby(["task_type", "agent"])["success"]
     )
+    agg = (stats.mean()
+           .reset_index()
+           .pivot(index="task_type", columns="agent", values="success"))
+
     if agg.empty:
         print("[WARN] Aggregation produced empty frame")
         return
 
+    # Agent order: two blues together, two oranges together, then SG, Random
+    present_agents = [a for a in args.agent_types if a in agg.columns]
+    agent_order = _preferred_agent_order(present_agents)
+    agg = agg.reindex(columns=agent_order)
+
+    # Task order + optional overall row
     tasks = [t for t in _TASK_ORDER if t in agg.index]
     if args.with_overall:
-        agg, yerr_map = _append_overall_row_for_all_tasks(df, agg, args.agent_types,
-                                                          yerr_map if args.error_bars else None)
-        tasks = tasks + (["overall"])
+        # Build overall across ALL tasks present
+        overall_series = (
+            df[["agent", "success"]]
+            .dropna(subset=["success"])
+            .groupby("agent")["success"]
+            .mean()
+            .reindex(agent_order)
+        )
+        agg.loc["overall"] = overall_series
+        tasks = tasks + ["overall"]
+
     if not tasks:
         print("[WARN] No task types from _TASK_ORDER found in data — skipping")
         return
 
+    # Wilson yerr map
+    yerr_map = {}
+    if args.error_bars:
+        _st = (df[["task_type", "agent", "success"]]
+                 .dropna(subset=["success"])
+                 .groupby(["task_type", "agent"])["success"]
+                 .agg(n="count", s="sum")
+                 .reset_index())
+        for _, r in _st.iterrows():
+            yerr_map[(r["task_type"], r["agent"])] = _wilson_halfwidth(int(r["s"]), int(r["n"]))
+        if args.with_overall:
+            _tot = (df[["agent", "success"]]
+                      .dropna(subset=["success"])
+                      .groupby("agent")["success"]
+                      .agg(n="count", s="sum")
+                      .reindex(agent_order))
+            for ag, row in _tot.dropna().iterrows():
+                yerr_map[("overall", ag)] = _wilson_halfwidth(int(row["s"]), int(row["n"]))
+
+    # Figure sizing/fonts (single-column default)
+    figsize, fonts = _icra_sizes(layout="single")
+    fig, ax = plt.subplots(figsize=figsize)
+
     n_tasks  = len(tasks)
-    n_agents = len(args.agent_types)
+    n_agents = len(agent_order)
     x = np.arange(n_tasks)
-    width = 0.8 / max(1, n_agents)
+    width = 0.80 / max(1, n_agents)  # compact bars for single column
 
-    fig, ax = plt.subplots(figsize=(12.5, 4.5))
     max_with_err = 0.0
-
-    for i_agent, ag in enumerate(args.agent_types):
+    for i_agent, ag in enumerate(agent_order):
         st = _style_for_agent(ag)
         color, hatch = st["color"], st["hatch"]
+
         for i_task, task in enumerate(tasks):
             val = agg.loc[task, ag] if ag in agg.columns else np.nan
             if pd.isna(val):
@@ -512,13 +559,11 @@ def plot_overall_success(args, df):
 
             bar = ax.bar(
                 xpos, val, width=width,
-                color=color, edgecolor="black", linewidth=0.7, zorder=2.5,
+                color=color, edgecolor="black", linewidth=0.6, zorder=2.5
             )[0]
             if hatch:
                 bar.set_hatch(hatch)
-            bar.set_linewidth(0.7)
 
-            # error bars match color (slightly darker)
             yerr = None
             if args.error_bars:
                 yerr = yerr_map.get((task, ag))
@@ -530,65 +575,85 @@ def plot_overall_success(args, df):
             top = val + (float(yerr) if (yerr is not None and np.isfinite(yerr)) else 0.0)
             max_with_err = max(max_with_err, top)
 
-    # Axes, ticks, ylim
-    ax.set_ylabel("Execution Success Rate", fontsize=16)
+    # Axes / ticks / grid
+    ax.set_ylabel("Execution Success Rate", fontsize=fonts["lbl"])
     ax.set_xticks(x)
-    ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=0, ha="center")
-    # ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=45, ha="right")
-    ax.tick_params(axis="x", labelsize=13)
-    ax.tick_params(axis="y", labelsize=13)
+    ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=0, ha="center", fontsize=fonts["xtick"])
+    ax.tick_params(axis="y", labelsize=fonts["ytick"])
     ax.set_axisbelow(True)
-    ax.grid(axis="y", alpha=0.4, zorder=0)
-    ax.set_ylim(*_nice_ylim(max_with_err, pad=0.05, clamp=False))
-
-    # Shade alternate task bins
+    ax.grid(axis="y", alpha=0.35, zorder=0)
     ax.set_xlim(-0.5, n_tasks - 0.5)
+    ax.set_ylim(*_nice_ylim(max_with_err, pad=0.04, clamp=False))
+
+    # Subtle alternating bands (very light)
     for i in range(0, n_tasks, 2):
-        ax.axvspan(i - 0.5, i + 0.5, color="#b7b7b7", alpha=0.12, zorder=0)
+        ax.axvspan(i - 0.5, i + 0.5, color="#b7b7b7", alpha=0.10, zorder=0)
 
-    # Combined legend to the RIGHT
-    _right_side_combined_legend(ax)
+    # --- Combined legend INSIDE top-right (uses white space) ---
+    # Approach (colors)
+    approach_handles = [
+        mpatches.Patch(facecolor=COLOR_RANDOM, edgecolor="black", linewidth=0.6, label="Rand."),
+        mpatches.Patch(facecolor=COLOR_SG,   edgecolor="black", linewidth=0.6, label="SG+S"),
+        mpatches.Patch(facecolor=COLOR_TR,   edgecolor="black", linewidth=0.6, label="TR+S"),
+        mpatches.Patch(facecolor=COLOR_STAR, edgecolor="black", linewidth=0.6, label="STAR"),
+    ]
+    leg1 = ax.legend(
+        handles=approach_handles,
+        title="Approach",
+        fontsize=fonts["legend"],
+        title_fontsize=fonts["legend_title"],
+        loc="upper right",
+        frameon=True, framealpha=0.7, facecolor="white", edgecolor="lightgray",
+        borderaxespad=0.05
+    )
+    leg1.get_title().set_fontweight("medium")
+    ax.add_artist(leg1)
 
-    import matplotlib as mpl
-    mpl.rcParams['pdf.fonttype'] = 42      # TrueType in PDFs (Type 42)
-    mpl.rcParams['ps.fonttype']  = 42
-    mpl.rcParams['text.usetex']  = False   # usetex often yields Type 3 via dvipng
-    mpl.rcParams['svg.fonttype'] = 'none'  # keep SVG text as text (not paths)
-    plt.tight_layout()
+    # Knowledge regime (hatches) just below it
+    regime_handles = [
+        mpatches.Patch(facecolor="white", edgecolor="black", linewidth=0.6, label="Oracle",    hatch=""),
+        mpatches.Patch(facecolor="white", edgecolor="black", linewidth=0.6, label="Realistic", hatch=HATCH_CAPTION),
+    ]
+    leg2 = ax.legend(
+        handles=regime_handles,
+        title="Environmnt",
+        fontsize=fonts["legend"],
+        title_fontsize=fonts["legend_title"],
+        loc="upper right",
+        bbox_to_anchor=(0.82, 1.0),  # nudge down so it sits under the first
+        frameon=True, framealpha=0.7, facecolor="white", edgecolor="lightgray",
+        borderaxespad=0.05
+    )
+    leg2.get_title().set_fontweight("medium")
+
+    # Save (tight, with tiny pad so legend/caps don't clip)
+    plt.tight_layout(pad=0.6)
     os.makedirs(args.output_dir, exist_ok=True)
     out_png = os.path.join(args.output_dir, "results_main.png")
     out_svg = os.path.join(args.output_dir, "results_main.svg")
     out_pdf = os.path.join(args.output_dir, "results_main.pdf")
-    plt.savefig(out_pdf, bbox_inches="tight") 
-    plt.savefig(out_png, bbox_inches="tight")
-    plt.savefig(out_svg, bbox_inches="tight")
-    plt.close()
-    print(f"[INFO] interactive-success plot saved to {out_png} and {out_svg} and {out_pdf}")
-    
-    # ── NEW: print table of results ──────────────────────────────
-    import pandas as pd
+    fig.savefig(out_pdf, bbox_inches="tight", pad_inches=0.02, dpi=300)
+    fig.savefig(out_png, bbox_inches="tight", pad_inches=0.02, dpi=300)
+    fig.savefig(out_svg, bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
+    print(f"[INFO] overall-success plot saved to {out_png} / {out_svg} / {out_pdf}")
+
+    # Compact console table (kept)
     print("\n=== Overall Success Rates (per task × agent) ===")
-    if args.error_bars:
-        # Reuse yerr_map if available
-        for task in tasks:
-            row_strs = []
-            for ag in args.agent_types:
-                val = agg.loc[task, ag] if ag in agg.columns else np.nan
-                if pd.isna(val):
-                    continue
-                yerr = yerr_map.get((task, ag))
-                row_strs.append(f"{_pretty_agent(ag)}: {val:.2f} ± {yerr:.2f}" if yerr else f"{_pretty_agent(ag)}: {val:.2f}")
-            print(f"{_pretty_task(task, oneline=True):20s} | " + " | ".join(row_strs))
-    else:
-        for task in tasks:
-            row_strs = []
-            for ag in args.agent_types:
-                val = agg.loc[task, ag] if ag in agg.columns else np.nan
-                if pd.isna(val):
-                    continue
-                row_strs.append(f"{_pretty_agent(ag)}: {val:.2f}")
-            print(f"{_pretty_task(task, oneline=True):20s} | " + " | ".join(row_strs))
+    for task in tasks:
+        parts = []
+        for ag in agent_order:
+            val = agg.loc[task, ag] if ag in agg.columns else np.nan
+            if pd.isna(val): 
+                continue
+            if args.error_bars:
+                y = yerr_map.get((task, ag))
+                parts.append(f"{_pretty_agent(ag)}: {float(val):.2f}" + (f" ± {y:.2f}" if (y is not None and np.isfinite(y)) else ""))
+            else:
+                parts.append(f"{_pretty_agent(ag)}: {float(val):.2f}")
+        print(f"{_pretty_task(task, oneline=True):20s} | " + " | ".join(parts))
     print("================================================\n")
+
 
 def _base_task(task: str, suffix: str = "_interactive") -> str:
     """Map 'classonly_interactive' -> 'classonly'; pass through otherwise."""
