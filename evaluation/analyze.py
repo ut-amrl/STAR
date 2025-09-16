@@ -549,7 +549,11 @@ def plot_overall_success(args, df):
     # Combined legend to the RIGHT
     _right_side_combined_legend(ax)
 
-    plt.rcParams['pdf.fonttype'] = 42
+    import matplotlib as mpl
+    mpl.rcParams['pdf.fonttype'] = 42      # TrueType in PDFs (Type 42)
+    mpl.rcParams['ps.fonttype']  = 42
+    mpl.rcParams['text.usetex']  = False   # usetex often yields Type 3 via dvipng
+    mpl.rcParams['svg.fonttype'] = 'none'  # keep SVG text as text (not paths)
     plt.tight_layout()
     os.makedirs(args.output_dir, exist_ok=True)
     out_png = os.path.join(args.output_dir, "results_main.png")

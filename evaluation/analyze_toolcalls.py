@@ -258,6 +258,14 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
         "Other":   (0.83, 0.83, 0.83, 1.0),
     }
 
+    def _group_counts_fixed(df_agent: pd.DataFrame) -> tuple[list, np.ndarray, pd.Series]:
+        # count by group, then align to ORDER and fill zeros for missing groups
+        counts = df_agent["tool_name"].map(_pie_group_for_tool).value_counts()
+        vals = np.array([int(counts.get(g, 0)) for g in ORDER], dtype=int)
+        total = max(int(vals.sum()), 1)
+        pct = pd.Series(vals / total * 100, index=ORDER).round(1)
+        return ORDER, vals, pct
+
     # Define pairs to compare side-by-side
     pairs = [
         ("Realistic", ["low_level_caption", "replan_low_level_caption"]),
@@ -328,27 +336,31 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
             def _autopct(p):
                 return f"{p:.1f}%" if p >= pct_label_min else ""
 
-            wedges, texts, autotexts = ax.pie(
+            names, vals, pct = _group_counts_fixed(sub)
+
+            def _autopct(p):
+                return f"{p:.1f}%" if p >= pct_label_min else ""
+
+            wedges, _, autotexts = ax.pie(
                 vals,
                 labels=None,
                 colors=[COLORS[g] for g in names],
                 autopct=_autopct,
-                pctdistance=0.70,
-                startangle=90,
+                pctdistance=0.78,          # a bit farther out (less overlap)
+                startangle=90,             # all donuts start at 12 o’clock
                 counterclock=False,
-                wedgeprops=dict(linewidth=1.2, edgecolor="white"),
-                textprops=dict(color="black", fontsize=10),
+                normalize=True,
+                wedgeprops=dict(width=0.48, linewidth=1.2, edgecolor="white"),
+                textprops=dict(color="black", fontsize=12),
             )
             for t in autotexts:
-                t.set_fontsize(18)
+                t.set_fontsize(14)
 
-            # Donut hole
-            centre_circle = plt.Circle((0, 0), 0.50, fc="white")
-            ax.add_artist(centre_circle)
-            ax.axis("equal")
+            ax.set_aspect('equal', adjustable='box')
 
-            # Center text
-            ax.text(0, 0.08, method, ha="center", va="center", fontsize=18, weight="bold")
+            # Center label
+            ax.text(0, 0, method, ha="center", va="center",
+                    fontsize=18, weight="bold")
             if env:
                 ax.text(0, -0.08, env, ha="center", va="center", fontsize=16)
 
@@ -393,6 +405,11 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
             ax.set_aspect('equal', adjustable='box')
 
         # --- save tightly without pulling in huge margins for legend -----------
+        import matplotlib as mpl
+        mpl.rcParams['pdf.fonttype'] = 42      # TrueType in PDFs (Type 42)
+        mpl.rcParams['ps.fonttype']  = 42
+        mpl.rcParams['text.usetex']  = False   # usetex often yields Type 3 via dvipng
+        mpl.rcParams['svg.fonttype'] = 'none'  # keep SVG text as text (not paths)
         out_svg = os.path.join(args.output_dir, f"toolcalls_pie_pairs_{env_label.lower()}.svg")
         out_pdf = os.path.join(args.output_dir, f"toolcalls_pie_pairs_{env_label.lower()}.pdf")
         fig.savefig(out_svg, bbox_inches="tight", pad_inches=0.02, dpi=200)
