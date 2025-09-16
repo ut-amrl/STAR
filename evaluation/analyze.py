@@ -31,7 +31,7 @@ _OBJECT_FLAGS = [
 # Agent display names (kept if you need to print them verbosely)
 _AGENT_DISPLAY = {
     "random":              "Random",
-    "sg":                  "Scene Graph",
+    "sg":                  "SG+S",
     "low_level_gt":        "TR (Oracle Cap.)",
     "replan_low_level_gt": "STAR (Oracle Cap.)",
     "low_level_caption":   "TR (Real Cap.)",
@@ -174,6 +174,65 @@ def _round_errcaps(eb: ErrorbarContainer):
     except Exception:
         pass
     
+def _append_overall_row_for_all_tasks(df, agg, agent_order, yerr_map=None):
+    """
+    Appends an 'overall' row to `agg` (index) with mean success per agent across ALL tasks in df.
+    If yerr_map is provided, adds Wilson 95% CI half-widths for ('overall', agent).
+    """
+    import pandas as pd
+
+    # mean success per agent across all tasks present in df
+    overall_series = (
+        df[["agent", "success"]]
+        .dropna(subset=["success"])
+        .groupby("agent")["success"]
+        .mean()
+        .reindex(agent_order)
+    )
+    agg.loc["overall"] = overall_series
+
+    if yerr_map is not None:
+        stats_overall = (
+            df[["agent", "success"]]
+            .dropna(subset=["success"])
+            .groupby("agent")["success"]
+            .agg(n="count", s="sum")
+            .reindex(agent_order)
+        )
+        for ag, row in stats_overall.dropna().iterrows():
+            yerr_map[("overall", ag)] = _wilson_halfwidth(int(row["s"]), int(row["n"]))
+    return agg, yerr_map
+
+
+def _append_overall_row_for_interactive(dfi, agg, agent_order, yerr_map=None):
+    """
+    Appends an 'overall' row to `agg` using only *interactive* rows (dfi).
+    If yerr_map is provided, adds Wilson 95% CI half-widths for ('overall', agent).
+    """
+    import pandas as pd
+
+    overall_series = (
+        dfi[["agent", "success"]]
+        .dropna(subset=["success"])
+        .groupby("agent")["success"]
+        .mean()
+        .reindex(agent_order)
+    )
+    agg.loc["overall"] = overall_series
+
+    if yerr_map is not None:
+        stats_overall = (
+            dfi[["agent", "success"]]
+            .dropna(subset=["success"])
+            .groupby("agent")["success"]
+            .agg(n="count", s="sum")
+            .reindex(agent_order)
+        )
+        for ag, row in stats_overall.dropna().iterrows():
+            yerr_map[("overall", ag)] = _wilson_halfwidth(int(row["s"]), int(row["n"]))
+    return agg, yerr_map
+
+    
 def print_common_sense_results(args, df):
     """
     Print success rates for 'common_sense' tasks.
@@ -229,6 +288,8 @@ def parse_args():
                         help="If set, draw 95% Wilson CI error bars for success rates.")
     parser.add_argument("--cascade_error_analysis", action="store_true",
                         help="If set, perform cascade failure analysis.")
+    parser.add_argument("--with_overall", action="store_true",
+                        help="Include an 'overall' column aggregating across tasks.")
     return parser.parse_args()
 
 # ───────────────────────────────────────────────────────────────
@@ -333,7 +394,7 @@ def analyze_results(
 def _right_side_combined_legend(ax):
     """
     Two-block legend to the RIGHT of the axes:
-      Block 1 (Approach): Random, Scene Graph, TR+S, STAR  [color-coded]
+      Block 1 (Approach): Random, SG+S, TR+S, STAR  [color-coded]
       Block 2 (Knowledge Regime): Oracle, Realistic       [hatch-coded]
     """
     # ---- Block 1: Approach (colors) ----
@@ -367,7 +428,7 @@ def _right_side_combined_legend(ax):
         title_fontsize=12,
         fontsize=11,
         loc="upper left",
-        bbox_to_anchor=(1.02, 0.71),   # right of plot, a bit lower
+        bbox_to_anchor=(1.02, 0.65),   # right of plot, a bit lower
         frameon=True, framealpha=0.95, facecolor="white", edgecolor="lightgray",
         borderaxespad=0.0
     )
@@ -378,6 +439,9 @@ def _right_side_combined_legend(ax):
 # Plots
 # ───────────────────────────────────────────────────────────────
 def plot_overall_success(args, df):
+    _TASK_DISPLAY_TWO_LINES["overall"] = "overall"
+    _TASK_DISPLAY["overall"] = "overall"
+    
     """
     Colors encode agent family; caption agents are dot-hatched.
     Legend is placed to the RIGHT (combined: color roles + caption type).
@@ -420,6 +484,10 @@ def plot_overall_success(args, df):
         return
 
     tasks = [t for t in _TASK_ORDER if t in agg.index]
+    if args.with_overall:
+        agg, yerr_map = _append_overall_row_for_all_tasks(df, agg, args.agent_types,
+                                                          yerr_map if args.error_bars else None)
+        tasks = tasks + (["overall"])
     if not tasks:
         print("[WARN] No task types from _TASK_ORDER found in data — skipping")
         return
@@ -429,7 +497,7 @@ def plot_overall_success(args, df):
     x = np.arange(n_tasks)
     width = 0.8 / max(1, n_agents)
 
-    fig, ax = plt.subplots(figsize=(12.5, 6))
+    fig, ax = plt.subplots(figsize=(12.5, 4.5))
     max_with_err = 0.0
 
     for i_agent, ag in enumerate(args.agent_types):
@@ -465,7 +533,8 @@ def plot_overall_success(args, df):
     # Axes, ticks, ylim
     ax.set_ylabel("Execution Success Rate", fontsize=16)
     ax.set_xticks(x)
-    ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=45, ha="right")
+    ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=0, ha="center")
+    # ax.set_xticklabels([_pretty_task(t) for t in tasks], rotation=45, ha="right")
     ax.tick_params(axis="x", labelsize=13)
     ax.tick_params(axis="y", labelsize=13)
     ax.set_axisbelow(True)
@@ -480,14 +549,17 @@ def plot_overall_success(args, df):
     # Combined legend to the RIGHT
     _right_side_combined_legend(ax)
 
+    plt.rcParams['pdf.fonttype'] = 42
     plt.tight_layout()
     os.makedirs(args.output_dir, exist_ok=True)
     out_png = os.path.join(args.output_dir, "results_main.png")
     out_svg = os.path.join(args.output_dir, "results_main.svg")
+    out_pdf = os.path.join(args.output_dir, "results_main.pdf")
+    plt.savefig(out_pdf, bbox_inches="tight") 
     plt.savefig(out_png, bbox_inches="tight")
     plt.savefig(out_svg, bbox_inches="tight")
     plt.close()
-    print(f"[INFO] interactive-success plot saved to {out_png} and {out_svg}")
+    print(f"[INFO] interactive-success plot saved to {out_png} and {out_svg} and {out_pdf}")
     
     # ── NEW: print table of results ──────────────────────────────
     import pandas as pd

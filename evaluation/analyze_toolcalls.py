@@ -185,7 +185,7 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
 
     Grouping:
       - Reflect                  := pause_and_think
-      - Mem: Text Descsc Replay     := search_in_memory*
+      - Mem: Text Desc Replay     := search_in_memory*
       - Mem: Image Replay        := inspect_*
       - Physical Actions         := robot_*
       - Other                    := else
@@ -208,7 +208,7 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
         if name == "pause_and_think":
             return "Reflect"
         if isinstance(name, str) and name.startswith("search_in_memory"):
-            return "Mem: Text Descsc Replay"
+            return "Mem: Text Desc Replay"
         if isinstance(name, str) and name.startswith("inspect_"):
             return "Mem: Image Replay"
         if isinstance(name, str) and name.startswith("robot_"):
@@ -224,12 +224,13 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
         else:
             method = _pretty_agent(agent)
         # Env.
-        if agent.endswith("_gt"):
-            env = "(Oracle)"
-        elif agent.endswith("_caption"):
-            env = "(Realistic)"
-        else:
-            env = ""
+        env = None
+        # if agent.endswith("_gt"):
+        #     env = "(Oracle)"
+        # elif agent.endswith("_caption"):
+        #     env = "(Realistic)"
+        # else:
+        #     env = ""
         return method, env
 
     def _group_counts(df_agent: pd.DataFrame) -> tuple[pd.Index, np.ndarray, pd.Series]:
@@ -244,14 +245,14 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
     # Fixed display order + colors
     ORDER = [
         "Physical Actions",
-        "Mem: Text Descsc Replay",
+        "Mem: Text Desc Replay",
         "Mem: Image Replay",
         "Reflect",
         "Other",
     ]
     COLORS = {
         "Physical Actions": plt.cm.Blues(0.65),
-        "Mem: Text Descsc Replay": plt.cm.Oranges(0.55),
+        "Mem: Text Desc Replay": plt.cm.Oranges(0.55),
         "Mem: Image Replay": plt.cm.Oranges(0.80),
         "Reflect": (0.6, 0.6, 0.6, 1.0),
         "Other":   (0.83, 0.83, 0.83, 1.0),
@@ -287,14 +288,16 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
             continue
 
         # Build figure with two subplots (left/right in fixed order)
-        fig, axes = plt.subplots(1, 2, figsize=(9.5, 5.8))  # narrower figure
-        fig.subplots_adjust(
-            top=0.86,
-            bottom=0.20,
-            left=0.06,
-            right=0.98,
-            wspace=-0.2   # reduce from 0.18 → 0.05
+        fig = plt.figure(figsize=(6.8, 3.9), constrained_layout=True)
+        gs = fig.add_gridspec(
+            nrows=2, ncols=2,
+            height_ratios=[1.0, 0.12],  # tiny row for legend
+            width_ratios=[1.0, 1.0]
         )
+        axes = [fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])]
+        # An invisible axis to anchor the legend so it doesn't expand canvas
+        legend_ax = fig.add_subplot(gs[1, :])
+        legend_ax.axis("off")
 
         legend_labels = []   # combined legend entries per group
         legend_handles = []  # create once from left axis wedges' colors
@@ -377,19 +380,25 @@ def plot_tool_distributions_by_agent(args, calls_df: pd.DataFrame, pct_label_min
         # Single legend centered below plots (labels only)
         leg = fig.legend(
             legend_handles, legend_labels,
-            loc="lower center",
-            ncol=2,
-            frameon=True,
-            fancybox=True,
-            borderpad=0.4, handlelength=1.2, handletextpad=0.6, columnspacing=1.0,
-            prop={"size": 13},
+            loc="center", ncol=3,
+            frameon=True, fancybox=True,
+            borderpad=0.3, handlelength=1.0, handletextpad=0.5, columnspacing=0.8,
+            prop={"size": 13},  # smaller so it fits the short legend row nicely
+            bbox_to_anchor=(0.5, 0.5),  # center of legend_ax
+            bbox_transform=legend_ax.transAxes,
         )
 
-        # Save
-        out = os.path.join(args.output_dir, f"toolcalls_pie_pairs_{env_label.lower()}.svg")
-        plt.savefig(out, bbox_inches="tight", dpi=200)
+        # make pies truly circular but let constrained_layout pack tightly
+        for ax in axes:
+            ax.set_aspect('equal', adjustable='box')
+
+        # --- save tightly without pulling in huge margins for legend -----------
+        out_svg = os.path.join(args.output_dir, f"toolcalls_pie_pairs_{env_label.lower()}.svg")
+        out_pdf = os.path.join(args.output_dir, f"toolcalls_pie_pairs_{env_label.lower()}.pdf")
+        fig.savefig(out_svg, bbox_inches="tight", pad_inches=0.02, dpi=200)
+        fig.savefig(out_pdf, bbox_inches="tight", pad_inches=0.02, dpi=200)
         plt.close(fig)
-        print(f"[INFO] Saved paired pie: {out}")
+        print(f"[INFO] Saved paired pies for {env_label}: {out_pdf}")
 
 # ────────────────────────────────────────────────────────────────────────────────
 # ANALYSIS 2: Average TOTAL tool calls per task for each agent (print)
