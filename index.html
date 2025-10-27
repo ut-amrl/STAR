@@ -5,12 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   
   <!-- Primary Meta Tags -->
-  <!-- TODO: Replace with your paper title and author names -->
-  <meta name="title" content="PAPER_TITLE - AUTHOR_NAMES">
-  <!-- TODO: Write a compelling 150-160 character description of your research -->
-  <meta name="description" content="BRIEF_DESCRIPTION_OF_YOUR_RESEARCH_CONTRIBUTION_AND_FINDINGS">
-  <!-- TODO: Add 5-10 relevant keywords for your research area -->
-  <meta name="keywords" content="KEYWORD1, KEYWORD2, KEYWORD3, machine learning, computer vision, AI">
+  <meta name="title" content="STAR">
+  <meta name="description" content="Searching in Space and Time">
+  <meta name="keywords" content="Agentic AI, Object Retrieval, Mobile Manipulation">
   <!-- TODO: List all authors -->
   <meta name="author" content="FIRST_AUTHOR_NAME, SECOND_AUTHOR_NAME">
   <meta name="robots" content="index, follow">
@@ -21,27 +18,28 @@
   <!-- TODO: Replace with your institution or lab name -->
   <meta property="og:site_name" content="INSTITUTION_OR_LAB_NAME">
   <!-- TODO: Same as paper title above -->
-  <meta property="og:title" content="PAPER_TITLE">
+  <meta property="og:title" content="STAR">
   <!-- TODO: Same as description above -->
-  <meta property="og:description" content="BRIEF_DESCRIPTION_OF_YOUR_RESEARCH_CONTRIBUTION_AND_FINDINGS">
+  <meta property="og:description" content="Searching in Space and Time">
   <!-- TODO: Replace with your actual website URL -->
-  <meta property="og:url" content="https://YOUR_DOMAIN.com/YOUR_PROJECT_PAGE">
+  <meta property="og:url" content="https://tiejean.github.io">
   <!-- TODO: Create a 1200x630px preview image and update path -->
   <meta property="og:image" content="https://YOUR_DOMAIN.com/static/images/social_preview.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="PAPER_TITLE - Research Preview">
+  <meta property="og:image:alt" content="STAR - Research Preview">
   <meta property="article:published_time" content="2024-01-01T00:00:00.000Z">
   <meta property="article:author" content="FIRST_AUTHOR_NAME">
   <meta property="article:section" content="Research">
-  <meta property="article:tag" content="KEYWORD1">
-  <meta property="article:tag" content="KEYWORD2">
+  <meta property="article:tag" content="Agentic AI">
+  <meta property="article:tag" content="Object Retrieval">
+  <meta property="article:tag" content="Mobile Manipulation">
 
   <!-- Academic/Research Specific -->
-  <meta name="citation_title" content="PAPER_TITLE">
+  <meta name="citation_title" content="STAR">
   <meta name="citation_author" content="FIRST_AUTHOR_LAST, FIRST_AUTHOR_FIRST">
   <meta name="citation_author" content="SECOND_AUTHOR_LAST, SECOND_AUTHOR_FIRST">
-  <meta name="citation_publication_date" content="2024">
+  <meta name="citation_publication_date" content="2026">
   <meta name="citation_conference_title" content="CONFERENCE_NAME">
   <meta name="citation_pdf_url" content="https://YOUR_DOMAIN.com/static/pdfs/paper.pdf">
   
@@ -165,81 +163,6 @@
   </script>
 </head>
 
-
-
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  // ---- references
-  const tabs = document.querySelectorAll('#results-tabs li');
-  const panes = {
-    visible: document.getElementById('pane-visible'),
-    interactive: document.getElementById('pane-interactive'),
-    commonsense: document.getElementById('pane-commonsense'),
-  };
-  const tabKeys = ['visible','interactive','commonsense'];
-
-  function activateByIndex(i) {
-    const key = tabKeys[i % tabKeys.length];
-
-    // tabs UI
-    tabs.forEach(t => t.classList.remove('is-active'));
-    const activeTab = Array.from(tabs).find(t => t.dataset.tab === key);
-    if (activeTab) activeTab.classList.add('is-active');
-
-    // panes UI
-    Object.values(panes).forEach(p => p.classList.remove('is-active'));
-    panes[key].classList.add('is-active');
-  }
-
-  // manual click -> activate + stop rotation
-  let autoRotate = true;
-  tabs.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      const key = tab.getAttribute('data-tab');
-      const idx = tabKeys.indexOf(key);
-      if (idx >= 0) activateByIndex(idx);
-      autoRotate = false;   // remove this line if you want it to keep rotating
-    });
-  });
-
-  // auto rotate
-  const ROTATE_MS = 5000;
-  let currentIndex = 0;
-  activateByIndex(currentIndex);
-  setInterval(() => {
-    if (!autoRotate) return;
-    currentIndex = (currentIndex + 1) % tabKeys.length;
-    activateByIndex(currentIndex);
-  }, ROTATE_MS);
-
-  // pause on any interaction (optional)
-  ['click','keydown','wheel','touchstart','mousemove'].forEach(ev =>
-    window.addEventListener(ev, () => { autoRotate = false; }, { once: true, passive: true })
-  );
-
-  // image modal
-  const modal = document.getElementById('image-modal');
-  const modalImg = document.getElementById('modal-img');
-  function openModal(src, alt) {
-    modalImg.src = src; modalImg.alt = alt || 'Result preview';
-    modal.classList.add('is-active'); document.documentElement.classList.add('is-clipped');
-  }
-  function closeModal() {
-    modal.classList.remove('is-active'); document.documentElement.classList.remove('is-clipped');
-    modalImg.src = '';
-  }
-  document.body.addEventListener('click', (e) => {
-    const img = e.target.closest('.result-img');
-    if (img) openModal(img.src, img.alt);
-  });
-  modal.querySelector('.modal-background').addEventListener('click', closeModal);
-  modal.querySelector('.modal-close').addEventListener('click', closeModal);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-});
-</script>
-
-
-
 <body>
 
 <nav class="navbar is-dark" role="navigation" aria-label="main navigation">
@@ -286,21 +209,6 @@ document.addEventListener('DOMContentLoaded', function () {
             <div class="is-size-5 publication-authors">
               <span class="author-block">Author Names Omitted for Anonymous Review</span>
             </div>
-            
-            <!-- <div class="is-size-5 publication-authors">
-              <span class="author-block">
-                <a href="FIRST AUTHOR PERSONAL LINK" target="_blank">First Author</a><sup>*</sup>,</span>
-              <span class="author-block">
-                <a href="SECOND AUTHOR PERSONAL LINK" target="_blank">Second Author</a><sup>*</sup>,</span>
-              <span class="author-block">
-                <a href="THIRD AUTHOR PERSONAL LINK" target="_blank">Third Author</a>
-              </span>
-            </div> -->
-
-                  <!-- <div class="is-size-5 publication-authors"> -->
-                    <!-- <span class="author-block">Institution Name<br>Conference name and year</span> -->
-                    <!-- <span class="eql-cntrb"><small><br><sup>*</sup>Indicates Equal Contribution</small></span> -->
-                  <!-- </div> -->
 
                   <div class="column has-text-centered">
                     <div class="publication-links">
@@ -314,17 +222,6 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span>Paper</span>
                       </a>
                     </span>
-
-                    <!-- TODO: Add your supplementary material PDF or remove this section -->
-                    <!-- <span class="link-block">
-                      <a href="static/pdfs/supplementary_material.pdf" target="_blank"
-                      class="external-link button is-normal is-rounded is-dark">
-                      <span class="icon">
-                        <i class="fas fa-file-pdf"></i>
-                      </span>
-                      <span>Supplementary</span>
-                    </a>
-                  </span> -->
 
                   <!-- TODO: Replace with your GitHub repository URL -->
                   <span class="link-block">
@@ -354,22 +251,6 @@ document.addEventListener('DOMContentLoaded', function () {
     </div>
   </div>
 </section>
-
-
-<!-- Teaser video-->
-<!-- <section class="hero teaser">
-  <div class="container is-max-desktop">
-    <div class="hero-body">
-      <video poster="" id="tree" autoplay controls muted loop height="100%" preload="metadata">
-        <source src="static/videos/banner_video.mp4" type="video/mp4">
-      </video>
-      <h2 class="subtitle has-text-centered">
-        Aliquam vitae elit ullamcorper tellus egestas pellentesque. Ut lacus tellus, maximus vel lectus at, placerat pretium mi. Maecenas dignissim tincidunt vestibulum. Sed consequat hendrerit nisl ut maximus. 
-      </h2>
-    </div>
-  </div>
-</section> -->
-<!-- End teaser video -->
 
 <!-- Paper abstract -->
 <section class="section hero is-light">
@@ -475,44 +356,6 @@ document.addEventListener('DOMContentLoaded', function () {
   </div>
 </section>
 <!-- End video carousel -->
-
-<!-- <section class="section" id="results">
-  <div class="container is-max-desktop">
-    <h2 class="title is-3 has-text-centered">STAR in Real World</h2>
-
-    <div class="tabs is-toggle is-centered results-tabs">
-      <ul id="results-tabs">
-        <li class="is-active" data-tab="visible">
-          <a><span class="icon"><i class="fas fa-eye"></i></span><span>Visible Search</span></a>
-        </li>
-        <li data-tab="interactive">
-          <a><span class="icon"><i class="fas fa-hand-pointer"></i></span><span>Interactive Search</span></a>
-        </li>
-        <li data-tab="commonsense">
-          <a><span class="icon"><i class="fas fa-lightbulb"></i></span><span>Common Sense Search</span></a>
-        </li>
-      </ul>
-    </div> -->
-
-    <!-- <div class="tab-pane is-active" id="pane-visible">
-      <figure class="image">
-        <img class="result-img" src="static/images/results/visible.jpg" alt="Visible search result">
-      </figure>
-    </div>
-
-    <div class="tab-pane" id="pane-interactive">
-      <figure class="image">
-        <img class="result-img" src="static/images/results/interactive.jpg" alt="Interactive search result">
-      </figure>
-    </div> -->
-
-    <!-- <div class="tab-pane" id="pane-commonsense">
-      <figure class="image">
-        <img class="result-img" src="static/images/results/commonsense.jpg" alt="Common sense search result">
-      </figure>
-    </div>
-  </div> -->
-<!-- </section> -->
 
 <div class="modal" id="image-modal">
   <div class="modal-background"></div>
