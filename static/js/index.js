@@ -119,24 +119,67 @@ function setupVideoCarouselAutoplay() {
     });
 }
 
-$(document).ready(function() {
-    // Check for click events on the navbar burger icon
+$(document).ready(function () {
+  // Init bulma-carousel (NOT bulma-slider)
+  const instances = bulmaCarousel.attach('#results-carousel', {
+    slidesToScroll: 1,
+    slidesToShow: 1,
+    loop: true,
+    infinite: true,
+    autoplay: false,      // we control timing via video, not a fixed timer
+    navigation: true,
+    pagination: true
+  });
+  const carousel = Array.isArray(instances) ? instances[0] : instances;
 
-    var options = {
-		slidesToScroll: 1,
-		slidesToShow: 1,
-		loop: true,
-		infinite: true,
-		autoplay: true,
-		autoplaySpeed: 40000,
-    }
+  const videos = document.querySelectorAll('#results-carousel video');
 
-	// Initialize all div with carousel class
-    var carousels = bulmaCarousel.attach('.carousel', options);
-	
-    bulmaSlider.attach();
-    
-    // Setup video autoplay for carousel
-    setupVideoCarouselAutoplay();
+  // Ensure policy-friendly autoplay
+  videos.forEach(v => {
+    v.muted = true;                     // required for autoplay
+    v.setAttribute('playsinline', '');  // iOS
+    v.removeAttribute('loop');          // we need 'ended' to fire
+  });
 
-})
+  function pauseAndResetAll() {
+    videos.forEach(v => { v.pause(); if (!v.closest('.is-active')) v.currentTime = 0; });
+  }
+
+  function getActiveVideo() {
+    // bulma-carousel marks the active slide with .is-active
+    return document.querySelector('#results-carousel .is-active video');
+  }
+
+  function playActiveVideo() {
+    const v = getActiveVideo();
+    if (!v) return;
+    // If metadata not ready, wait for it once, then play.
+    if (v.readyState >= 1) v.play().catch(() => {});
+    else v.addEventListener('loadedmetadata', () => v.play().catch(() => {}), { once: true });
+  }
+
+  // Advance when the current slide's video ends
+  videos.forEach(v => v.addEventListener('ended', () => carousel?.next && carousel.next()));
+
+  // When slide changes, switch the playing video
+  if (carousel?.on) {
+    carousel.on('before:show', () => pauseAndResetAll());
+    carousel.on('after:show', () => playActiveVideo());
+  }
+
+  // Start on load
+  pauseAndResetAll();
+  playActiveVideo();
+
+  // OPTIONAL: pause auto-advance while hovering
+  const wrap = document.getElementById('results-carousel');
+  let hoverBlocked = false;
+  if (wrap) {
+    wrap.addEventListener('mouseenter', () => { hoverBlocked = true; });
+    wrap.addEventListener('mouseleave', () => { hoverBlocked = false; });
+    videos.forEach(v => v.addEventListener('ended', () => { if (!hoverBlocked) carousel.next(); }));
+  }
+
+  // Keep your visibility-based pause if you like:
+  setupVideoCarouselAutoplay?.();
+});
