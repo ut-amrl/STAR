@@ -1,3 +1,0 @@
-pymilvus
-langchain-milvus
-langchain-huggingface

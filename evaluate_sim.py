@@ -286,25 +286,9 @@ def evaluate(args):
                     before_one_task_finish(results, result, pbar)
                     continue
                 
-            if "high_level_gt_reasoning_only" == args.agent_type:
-                from agent.agent_highlevel_reasoning_only import ReasoningHighLevelAgent
-                agent = ReasoningHighLevelAgent(
-                    prompt_type=args.prompt_type,
-                    logdir=result_dir,
-                    logger_prefix=args.agent_type,
-                    is_interactive=("interactive" in task_type)
-                )
-            elif "low_level" in args.agent_type and "replan" in args.agent_type:
+            if "low_level" in args.agent_type and "replan" in args.agent_type:
                 from agent.agent_lowlevel_replan import ReplanLowLevelAgent
                 agent = ReplanLowLevelAgent(
-                    prompt_type=args.prompt_type,
-                    logdir=result_dir,
-                    logger_prefix=args.agent_type,
-                    is_interactive=("interactive" in task_type)
-                )
-            elif "high_level" in args.agent_type:
-                from agent.agent_highlevel import HighLevelAgent
-                agent = HighLevelAgent(
                     prompt_type=args.prompt_type,
                     logdir=result_dir,
                     logger_prefix=args.agent_type,
@@ -361,8 +345,6 @@ def evaluate(args):
             if args.agent_type == "sg":
                 memory_sg = load_virtualhom_memory_sg(args.data_dir, mem_bagnames, bag_unix_times, is_common_sense=("common_sense" in task_type))
                 agent.set_memory_sg(memory_sg)
-                # print(len(__import__("tiktoken").encoding_for_model("gpt-4o").encode(memory_sg)))
-                # import pdb; pdb.set_trace()
                 
             elif args.agent_type != "random": # Set up memory
                 db_name = f"virtualhome_{task_type}_{task_id}"

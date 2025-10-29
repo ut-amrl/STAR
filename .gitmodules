@@ -1,6 +1,0 @@
-[submodule "3dparty/GroundingDINO"]
-	path = 3dparty/GroundingDINO
-	url = https://github.com/IDEA-Research/GroundingDINO.git
-[submodule "3dparty/VILA"]
-	path = 3dparty/VILA
-	url = https://github.com/NVlabs/VILA.git

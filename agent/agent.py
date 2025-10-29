@@ -39,6 +39,7 @@ class Agent:
         
         self.task: Task = None
         
+        # TODO: clean up model initialization
         self.vlm_raw = ChatOpenAI(model="o3", temperature=1, api_key=os.environ.get("OPENAI_API_KEY"))
         self.vlm = FunctionsWrapper(self.vlm_raw)
         self.vlm_raw_flex = ChatOpenAI(model="o3", temperature=1, api_key=os.environ.get("OPENAI_API_KEY"), service_tier="flex")
