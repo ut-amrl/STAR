@@ -111,7 +111,7 @@ function setupVideoCarouselAutoplay() {
             }
         });
     }, {
-        threshold: 0.5 // Trigger when 50% of the video is visible
+        threshold: 1.0 // TODO: Trigger when 100% of the video is visible
     });
     
     carouselVideos.forEach(video => {
