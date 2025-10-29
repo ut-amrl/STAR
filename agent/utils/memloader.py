@@ -20,9 +20,13 @@ def remember_tiago(memory: MilvusMemory, inpaths: list, time_offsets: list, vidd
         return math.atan2(siny_cosp, cosy_cosp)
     
     for inpath, time_offset, viddir in zip(inpaths, time_offsets, viddirs):
+        start_t = None
         with open(inpath, 'r') as f:
             for entry in json.load(f):
                 t, pos, ori, caption, text_embedding, start_frame, end_frame = entry["time"], entry["base_position"], entry["base_orientation"], entry["base_caption"], entry["base_caption_embedding"], entry["start_frame"], entry["end_frame"]
+                if start_t is None:
+                    start_t = t
+                t = t - start_t 
                 t += time_offset
                 start_frame, end_frame = int(start_frame), int(end_frame)
                 memory_item = MemoryItem(

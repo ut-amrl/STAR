@@ -1,8 +1,3 @@
-unambiguous/f22258a3.json
-unambiguous/bdccf1ad.json
-unambiguous/664bee4d.json
-unambiguous/85e1913a.json
-unambiguous/b2796ffb.json
-unambiguous/16822d07.json
-unambiguous/6ce42383.json
-unambiguous/99e48503.json
+spatial_temporal/93994bee.json
+classonly/33f12d12.json
+common_sense/9da102a2.json

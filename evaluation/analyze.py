@@ -446,7 +446,7 @@ def _right_side_combined_legend(ax):
     ]
     leg_regime = ax.legend(
         handles=regime_handles,
-        title="Environmnt",
+        title="Environment",
         title_fontsize=12,
         fontsize=11,
         loc="upper left",
@@ -616,7 +616,7 @@ def plot_overall_success(args, df):
     ]
     leg2 = ax.legend(
         handles=regime_handles,
-        title="Environmnt",
+        title="Environment",
         fontsize=fonts["legend"],
         title_fontsize=fonts["legend_title"],
         loc="upper right",
