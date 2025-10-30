@@ -6,9 +6,9 @@ from agent.utils.tools import *
 from agent.utils.utils import is_task_terminate_result
 from agent.agent import Agent
 
-class ReplanLowLevelAgent(Agent):
+class STARAgent(Agent):
     def __init__(self, 
-                 prompt_type: str,
+                 prompt_type: str = "caption",
                  verbose: bool = False,
                  logdir: str = None,
                  logger_prefix: str = "",
@@ -356,7 +356,7 @@ class ReplanLowLevelAgent(Agent):
         return super().search_in_space(state)
     
     def build_graph(self):
-        workflow = StateGraph(ReplanLowLevelAgent.AgentState)
+        workflow = StateGraph(STARAgent.AgentState)
         
         workflow.add_node("agent", lambda state: try_except_continue(state, self.agent))
         workflow.add_node("search_action", ToolNode(self.search_tools))
@@ -368,7 +368,7 @@ class ReplanLowLevelAgent(Agent):
         
         workflow.add_conditional_edges(
             "agent",
-            ReplanLowLevelAgent.from_agent_to,
+            STARAgent.from_agent_to,
             {   
                 "agent": "search_action",
                 "reflection": "reflection_action",
@@ -383,7 +383,7 @@ class ReplanLowLevelAgent(Agent):
         
         workflow.add_conditional_edges(
             "search_in_space",
-            ReplanLowLevelAgent.from_search_in_space_to,
+            STARAgent.from_search_in_space_to,
             {
                 "end": "evaluate",
                 "agent": "search_in_space_action",

@@ -86,7 +86,11 @@ def create_tiago_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
     )
     return [navigate_tool]
 
-def create_physical_skills(store: TempJsonStore) -> List[StructuredTool]:
+def create_physical_skills(
+    store: TempJsonStore
+    
+) -> List[StructuredTool]:
+    
     class NavigateInput(BaseModel):
         tool_rationale: str = Field(
             description=TOOL_RATIONALE_DESC

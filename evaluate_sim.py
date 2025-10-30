@@ -287,16 +287,16 @@ def evaluate(args):
                     continue
                 
             if "low_level" in args.agent_type and "replan" in args.agent_type:
-                from agent.agent_lowlevel_replan import ReplanLowLevelAgent
-                agent = ReplanLowLevelAgent(
+                from agent.agent_lowlevel_replan import STARAgent
+                agent = STARAgent(
                     prompt_type=args.prompt_type,
                     logdir=result_dir,
                     logger_prefix=args.agent_type,
                     is_interactive=("interactive" in task_type)
                 )
             elif "low_level" in args.agent_type:
-                from agent.agent_lowlevel import LowLevelAgent
-                agent = LowLevelAgent(
+                from agent.agent_lowlevel import TRSAgent
+                agent = TRSAgent(
                     prompt_type=args.prompt_type,
                     logdir=result_dir,
                     logger_prefix=args.agent_type,

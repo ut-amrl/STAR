@@ -1,6 +1,24 @@
 # STAR: Searching in Space and Time
 
 ## Quick Start
+```bash
+bash scripts/install/install_milvus.sh
+bash standalone_embed.sh start
+docker pull docker.io/tiejean/star-ros-noetic:dev
+podman run --rm -it \
+    --name star-ros-noetic \
+    --network host \
+    --env-file .env \
+    --env NVIDIA_VISIBLE_DEVICES=all \
+    --env NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    -v <host-start-project-root>:<client-start-project-root>:rw,z -e USE_PY310=1  \
+    star-ros-noetic:dev bash
+python quick_start_server.py # Replace the dummy service with the correct one
+```
+In another terminal:
+```bash
+docker exec -it --workdir <client-start-project-root>  -e USE_PY310=1 moma-ros-noetic bash -l
+```
 
 ## Project Directory
 TODO; all instructions, unless specified otherwise, are assumed to be run under project root directory.
@@ -19,6 +37,7 @@ To start Milvus Database (required before starting STAR):
 ```bash
 bash standalone_embed.sh start
 ```
+And you should see "Milvus is running." on terminal.
 
 #### Known Issues and Fixes
 If the container is already running but the connection is broken, restart the vector database server:
@@ -52,10 +71,11 @@ podman run --rm -it \
     --network host \
     --env-file .env \
     --env NVIDIA_VISIBLE_DEVICES=all \
+    --device /dev/nvidiactl \
+    --device /dev/nvidia-uvm \
+    --device /dev/nvidia-uvm-tools \
     --env NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     -v <host-start-project-root>:<client-start-project-root>:rw,z \
-    -v /robodata/taijing/benchmarks/virtualhome:/robodata/taijing/benchmarks/virtualhome:rw,z \
-    -v /robodata/taijing/benchmarks/MoMaBenchmark:/robodata/taijing/benchmarks/MoMaBenchmark:rw,z \
     -e USE_PY310=1  \
     star-ros-noetic:dev bash
 ```
@@ -75,46 +95,4 @@ podman run --rm -it \
 ```
 
 ## Running STAR
-
-
-## Evaluation
-You will need to first start virtualhome ros service.
-```
-git clone https://github.com/TieJean/virtualhome.git
-cd virtualhome
-git checkout develop
-```
-Follow the instruction to install virtualhome.
-
-Install arml_msgs:
-```
-git clone https://github.com/ut-amrl/amrl_msgs.git
-cd amrl_msgs
-git checkout taijing/moma/perception
-```
-Follow the instruction to install the messages and services.
-
-To start virtualhome ros service -
-1. Start ros1 in one terminal
-```
-roscore
-```
-2. Follow the instruction to start the virtualhome unity simulation in another terminal.
-3. In the virtualhome repo:
-```
-cd virtualhome/demo
-python start_ros_service.py
-```
-
-To evaluate:
-```bash
-python evaluate_sim.py --benchmark_dir <benchmark_dir> --data_dir <data_dir> --task_types <unambiguous spatial spatial_temporal ...> --agent_type <low_level_gt high_level_gt> <--force_rerun>
-```
-This script will evaluate all tasks under `config/tasks_sim.txt`. If `force_rerun` is not set, it will skip the already evaluated one.
-
-If you're using the MoMaBenchmark script, `<benchmark_dir>` referts to its `outputs` directory (the one contains annotations and tasks), and `<data_dir>` refers to the postprocessed `data` directory, containting captions and images.
-
-To visualize the result:
-```bash
-python evaluation/analyze.py
-```
+Check out the toy example. (TODO)

@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from agent.utils.tools import *
 from agent.agent import Agent
 
-class LowLevelAgent(Agent):
+class TRSAgent(Agent):
     def __init__(self,
                  prompt_type: str = "gt",  
                  verbose: bool = False,
@@ -220,7 +220,7 @@ class LowLevelAgent(Agent):
         """
         Build the graph for the agent.
         """
-        workflow = StateGraph(LowLevelAgent.AgentState)
+        workflow = StateGraph(Agent.AgentState)
         
         workflow.add_node("search_in_time", lambda state: try_except_continue(state, self.agent))
         workflow.add_node("search_in_time_action", ToolNode(self.temporal_tools))
