@@ -16,7 +16,7 @@
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="article">
   <!-- TODO: Replace with your institution or lab name -->
-  <meta property="og:site_name" content="INSTITUTION_OR_LAB_NAME">
+  <meta property="og:site_name" content="AMRL">
   <!-- TODO: Same as paper title above -->
   <meta property="og:title" content="STAR">
   <!-- TODO: Same as description above -->
@@ -29,7 +29,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="STAR - Research Preview">
   <meta property="article:published_time" content="2024-01-01T00:00:00.000Z">
-  <meta property="article:author" content="FIRST_AUTHOR_NAME">
+  <meta property="article:author" content="Taijing Chen">
   <meta property="article:section" content="Research">
   <meta property="article:tag" content="Agentic AI">
   <meta property="article:tag" content="Object Retrieval">
@@ -37,8 +37,12 @@
 
   <!-- Academic/Research Specific -->
   <meta name="citation_title" content="STAR">
-  <meta name="citation_author" content="FIRST_AUTHOR_LAST, FIRST_AUTHOR_FIRST">
-  <meta name="citation_author" content="SECOND_AUTHOR_LAST, SECOND_AUTHOR_FIRST">
+  <meta name="citation_author" content="Chen, Taijing">
+  <meta name="citation_author" content="Kumar, Sateesh">
+  <meta name="citation_author" content="Xu, Junhong">
+  <meta name="citation_author" content="Pavlakos, Georgios">
+  <meta name="citation_author" content="Biswas, Joydeep">
+  <meta name="citation_author" content="Martin-Martin, Roberto">
   <meta name="citation_publication_date" content="2026">
   <meta name="citation_conference_title" content="CONFERENCE_NAME">
   <meta name="citation_pdf_url" content="https://YOUR_DOMAIN.com/static/pdfs/paper.pdf">
@@ -58,7 +62,7 @@
 
 
   <!-- TODO: Replace with your paper title and authors -->
-  <title>PAPER_TITLE - AUTHOR_NAMES | Academic Research</title>
+  <title>STAR | Searching in Time and Space</title>
   
   <!-- Favicon and App Icons -->
   <link rel="icon" type="image/x-icon" href="static/images/favicon.ico">
@@ -152,9 +156,9 @@
   {
     "@context": "https://schema.org",
     "@type": "Organization",
-    "name": "INSTITUTION_OR_LAB_NAME",
-    "url": "https://YOUR_INSTITUTION_WEBSITE.com",
-    "logo": "https://YOUR_DOMAIN.com/static/images/favicon.ico",
+    "name": "AMRL",
+    "url": "https://amrl.cs.utexas.edu/",
+    "logo": "https://amrl.cs.utexas.edu/static/images/favicon.ico",
     "sameAs": [
       "https://twitter.com/YOUR_TWITTER_HANDLE",
       "https://github.com/YOUR_GITHUB_USERNAME"
@@ -256,6 +260,17 @@
                   <span>arXiv</span>
                 </a>
               </span>
+
+              <span class="link-block">
+                  <a href="404.html" target="_blank"
+                  class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <i class="fas fa-chart-line"></i>
+                  </span>
+                  <span>Benchmark (Coming Soon)</span>
+                </a>
+              </span>
+              
             </div>
           </div>
         </div>
@@ -353,6 +368,14 @@
   <div class="hero-body">
     <div class="container">
       <h2 class="title is-3">STAR in Real World</h2>
+
+      <p class="subtitle is-5 has-text-centered" style="margin-top: -0.5rem;">
+        Three real-world examples of STAR in action — click arrows to explore.  
+      </p>
+      <p class="subtitle is-5 has-text-centered" style="margin-top: -0.5rem;">
+        <strong>Unmute videos for more information.</strong>
+      </p>
+
       <div id="results-carousel" class="carousel results-carousel">
         <div class="item item-video1">
           <video poster="" id="video2" controls muted playsinline height="100%" preload="metadata">
@@ -385,7 +408,36 @@
   <button class="modal-close is-large" aria-label="close"></button>
 </div>
 
+<section class="section hero is-light">
+  <div class="container is-max-desktop">
+    
+    <h2 class="title is-3 has-text-centered">STAR on STARBench</h2>
 
+    <p class="subtitle is-5 has-text-centered" style="margin-top: -0.5rem;">
+      STAR achieves the highest success rates across all task families — visible, interactive, and commonsense object search
+      — demonstrating the benefit of unifying search in time and search
+      in space. 
+    </p>
+    <p class="subtitle is-5 has-text-centered" style="margin-top: -1rem;">
+      More results and ablations are in the paper.
+    </p>
+
+    <p class="has-text-centered" style="font-size: 1.6rem; font-weight: 400; margin-top: 2rem;">
+      <strong>Visible Object Search in Simulation</strong>
+    </p>
+    <figure class="image" style="margin-top: 2rem;">
+      <img src="static/images/results-main.png"
+           alt="Main STARBench results"
+           loading="lazy"
+           style="border-radius: 8px;"/>
+      <figcaption class="has-text-centered is-size-7" style="margin-top: 0.75rem;">
+        STARBench: STAR substantially outperforms scene-graph and memory-only baselines on all
+        spatiotemporal object retrieval tasks.
+      </figcaption>
+    </figure>
+
+  </div>
+</section>
 
 
 <!--BibTex citation -->
