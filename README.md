@@ -113,3 +113,16 @@ Check out the toy example. (Instructions comming soon).
 
 ## STARBench
 Comming soon.
+
+## Citation
+```
+@misc{chen2025searchingspacetimeunified,
+      title={Searching in Space and Time: Unified Memory-Action Loops for Open-World Object Retrieval}, 
+      author={Taijing Chen and Sateesh Kumar and Junhong Xu and George Pavlakos and J oydeep Biswas and Roberto Martín-Martín},
+      year={2025},
+      eprint={2511.14004},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2511.14004}, 
+}
+```
