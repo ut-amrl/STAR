@@ -1,4 +1,18 @@
-# STAR: Searching in Space and Time
+# STAR - Searching in Space and Time: Unified Memory-Action Loops for Open-World Object Retrieval
+
+<div align="center">
+
+[![Website](https://img.shields.io/badge/Website-STAR-blue.svg)](https://tiejean.github.io)
+[![arXiv](https://img.shields.io/badge/arXiv-2511.14004-b31b1b.svg)](https://arxiv.org/abs/2511.14004)
+
+
+**Taijing Chen**, **Sateesh Kumar**, **Junhong Xu**, **Georgios Pavlakos**, **Joydeep Biswas**, **Roberto Martin-Martin**
+
+<img src="static/overview.gif" alt="STAR teaser animation" width="100%">
+
+</div>
+
+---
 
 ## Quick Start
 ```bash
@@ -95,4 +109,7 @@ podman run --rm -it \
 ```
 
 ## Running STAR
-Check out the toy example. (TODO)
+Check out the toy example. (Instructions comming soon).
+
+## STARBench
+Comming soon.
