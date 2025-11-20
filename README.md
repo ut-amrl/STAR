@@ -6,7 +6,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2511.14004-b31b1b.svg)](https://arxiv.org/abs/2511.14004)
 
 
-**Taijing Chen**, **Sateesh Kumar**, **Junhong Xu**, **Georgios Pavlakos**, **Joydeep Biswas**, **Roberto Martin-Martin**
+**Taijing Chen**, **Sateesh Kumar**, **Junhong Xu**, **Georgios Pavlakos**, **Joydeep Biswas**$^*$, **Roberto Martin-Martin$^*$**
 
 <img src="static/overview.gif" alt="STAR teaser animation" width="100%">
 
