@@ -426,30 +426,60 @@
 <section class="section hero is-light">
   <div class="container is-max-desktop">
     
-    <h2 class="title is-3 has-text-centered">STAR on STARBench</h2>
+    <div class="has-text-centered" style="margin-bottom: 3rem;">
+      <h2 class="title is-3">STAR on STARBench</h2>
+      
+      <p class="subtitle is-5 has-text-centered" style="margin-top: -1rem;">
+        STAR achieves the highest success rates across all task families — visible, interactive, and commonsense object search
+        — demonstrating the benefit of unifying search in time and search in space.
+      </p>
 
-    <p class="subtitle is-5 has-text-centered" style="margin-top: -0.5rem;">
-      STAR achieves the highest success rates across all task families — visible, interactive, and commonsense object search
-      — demonstrating the benefit of unifying search in time and search
-      in space. 
-    </p>
-    <p class="subtitle is-5 has-text-centered" style="margin-top: -1rem;">
-      More results and ablations are in the paper.
-    </p>
+      <p class="subtitle is-5 has-text-centered" style="margin-top: -0.5rem;">
+        More results and ablations are in the paper.
+      </p>
 
-    <p class="has-text-centered" style="font-size: 1.6rem; font-weight: 400; margin-top: 2rem;">
-      <strong>Visible Object Search in Simulation</strong>
-    </p>
-    <figure class="image" style="margin-top: 2rem;">
-      <img src="static/images/results-main.png"
-           alt="Main STARBench results"
-           loading="lazy"
-           style="border-radius: 8px;"/>
-      <figcaption class="has-text-centered is-size-7" style="margin-top: 0.75rem;">
-        STARBench: STAR substantially outperforms scene-graph and memory-only baselines on all
-        spatiotemporal object retrieval tasks.
-      </figcaption>
-    </figure>
+      <!-- Sub-header for the specific task group -->
+      <h3 class="title is-4" style="margin-top: 2rem;">Visible Object Search in Simulation</h3>
+    </div>
+
+    <!-- TABS NAVIGATION -->
+    <div class="tabs is-centered is-boxed is-medium">
+      <ul>
+        <li class="is-active" data-tab="main-results">
+          <a>
+            <span class="icon is-small"><i class="fas fa-chart-bar"></i></span>
+            <span><strong>Main Results</strong></span>
+          </a>
+        </li>
+        <li data-tab="ablation-perception">
+          <a>
+            <span class="icon is-small"><i class="fas fa-eye"></i></span>
+            <span><strong>Ablation: Perception</strong></span>
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <!-- TAB CONTENT 1: Main Results -->
+    <div id="main-results" class="results-tab-content is-active">
+      <figure class="image">
+        <img src="static/images/results-main.png" alt="Main STARBench results" loading="lazy" style="border-radius: 8px;"/>
+        <figcaption class="has-text-centered result-caption is-size-5">
+          <strong>STARBench:</strong> STAR substantially outperforms scene-graph and memory-only baselines on all spatiotemporal object retrieval tasks.
+        </figcaption>
+      </figure>
+    </div>
+
+    <!-- TAB CONTENT 2: Ablation -->
+    <div id="ablation-perception" class="results-tab-content">
+      <figure class="image">
+        <img src="static/images/ablation_caption.png" alt="Ablation study of captioning models" loading="lazy" style="border-radius: 8px;"/>
+        <figcaption class="has-text-centered result-caption is-size-5">
+          <strong>Impact of Perception Models:</strong> We compare performance using ground-truth ("Oracle") captions versus real-world predictions from GPT-4o and Molmo. 
+          STAR (orange) maintains a consistent performance gap over baselines (blue) across all captioners, demonstrating robustness to perception noise.
+        </figcaption>
+      </figure>
+    </div>
 
   </div>
 </section>
@@ -497,5 +527,23 @@
 </div>
 </footer>
 
-  </body>
-  </html>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const tabs = document.querySelectorAll('.tabs li');
+    const boxes = document.querySelectorAll('.results-tab-content');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('is-active'));
+        tab.classList.add('is-active');
+
+        boxes.forEach(box => box.classList.remove('is-active'));
+        const target = tab.dataset.tab;
+        document.getElementById(target).classList.add('is-active');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

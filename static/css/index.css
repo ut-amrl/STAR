@@ -291,6 +291,18 @@ body {
   font-weight: 500;
 }
 
+.results-tab-content {
+      display: none;
+    }
+    .results-tab-content.is-active {
+      display: block;
+      animation: fadeIn 0.5s;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
 /* Pagination and Misc Improvements */
 .slider-pagination .slider-page {
   background: var(--primary-color);
