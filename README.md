@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Website](https://img.shields.io/badge/Website-STAR-blue.svg)]([https://tiejean.github.io](https://amrl.cs.utexas.edu/STAR/))
+[![Website](https://img.shields.io/badge/Website-STAR-blue.svg)](https://amrl.cs.utexas.edu/STAR/)
 [![arXiv](https://img.shields.io/badge/arXiv-2511.14004-b31b1b.svg)](https://arxiv.org/abs/2511.14004)
 
 
