@@ -433,10 +433,20 @@
         STAR achieves the highest success rates across all task families — visible, interactive, and commonsense object search
         — demonstrating the benefit of unifying search in time and search in space.
       </p>
-
       <p class="subtitle is-5 has-text-centered" style="margin-top: -0.5rem;">
         More results and ablations are in the paper.
       </p>
+
+      <figure class="image" style="max-width: 80%; margin: 0 auto;">
+        <figcaption class="has-text-centered" style="font-size: 22px; margin-top: 12px;">
+        <strong>Task Improvement Analysis:</strong> <br>
+          We perform a paired analysis to track how STAR alters the outcome of tasks compared to baseline methods.
+          Green bars highlight episodes where the baseline failed but STAR succeeded, while Red bars indicate regressions.
+          Overall, STAR fixes failures without breaking successes.
+        </figcaption>
+        <img src="static/images/results-all.png" alt="Main STARBench results" loading="lazy" style="border-radius: 8px; margin-top: 12px;"/>
+      </figure>
+      
 
       <!-- Sub-header for the specific task group -->
       <h3 class="title is-4" style="margin-top: 3rem; font-size: 1.8rem;">Visible Object Search in Simulation</h3>
