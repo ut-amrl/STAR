@@ -588,16 +588,63 @@
   document.addEventListener('DOMContentLoaded', () => {
     const tabs = document.querySelectorAll('.tabs li');
     const boxes = document.querySelectorAll('.results-tab-content');
+    let currentIndex = 0; // Track the current tab
+    let autoRotateInterval; // Store the timer ID
 
-    tabs.forEach(tab => {
+    // 1. Define the function to switch tabs
+    const switchTab = (index) => {
+      // Remove active class from all tabs and boxes
+      tabs.forEach(t => t.classList.remove('is-active'));
+      boxes.forEach(box => box.classList.remove('is-active'));
+
+      // Activate the specific tab and content box
+      tabs[index].classList.add('is-active');
+      const target = tabs[index].dataset.tab;
+      document.getElementById(target).classList.add('is-active');
+      
+      // Update current index tracking
+      currentIndex = index;
+    };
+
+    // 2. Start the auto-rotation
+    const startAutoRotation = () => {
+      autoRotateInterval = setInterval(() => {
+        // Calculate the next index (loop back to 0 if at the end)
+        const nextIndex = (currentIndex + 1) % tabs.length;
+        switchTab(nextIndex);
+      }, 5000); // Switch every 5000ms (5 seconds)
+    };
+
+    // 3. Stop the auto-rotation
+    const stopAutoRotation = () => {
+      if (autoRotateInterval) {
+        clearInterval(autoRotateInterval);
+        autoRotateInterval = null;
+      }
+    };
+
+    // 4. Initialize click listeners
+    tabs.forEach((tab, index) => {
       tab.addEventListener('click', () => {
-        tabs.forEach(t => t.classList.remove('is-active'));
-        tab.classList.add('is-active');
-
-        boxes.forEach(box => box.classList.remove('is-active'));
-        const target = tab.dataset.tab;
-        document.getElementById(target).classList.add('is-active');
+        // CRITICAL: Stop rotation when user clicks!
+        stopAutoRotation(); 
+        
+        // Perform the switch
+        switchTab(index);
       });
+    });
+
+    // 5. Start the loop on load
+    const contentContainer = document.querySelector('.container.is-max-desktop'); // Or a specific wrapper ID
+
+    contentContainer.addEventListener('mouseenter', () => {
+      stopAutoRotation();
+    });
+
+    contentContainer.addEventListener('mouseleave', () => {
+      // Only restart if the user hasn't manually clicked a tab yet (optional preference)
+      // Or just simply restart:
+      startAutoRotation(); 
     });
   });
 </script>
