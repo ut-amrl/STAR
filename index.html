@@ -426,7 +426,7 @@
 <section class="section hero is-light">
   <div class="container is-max-desktop">
     
-    <div class="has-text-centered" style="margin-bottom: 3rem;">
+    <div class="has-text-centered" style="margin-bottom: 1rem;">
       <h2 class="title is-3">STAR on STARBench</h2>
       
       <p class="subtitle is-5 has-text-centered" style="margin-top: -1rem;">
@@ -439,7 +439,7 @@
       </p>
 
       <!-- Sub-header for the specific task group -->
-      <h3 class="title is-4" style="margin-top: 2rem;">Visible Object Search in Simulation</h3>
+      <h3 class="title is-4" style="margin-top: 3rem; font-size: 1.8rem;">Visible Object Search in Simulation</h3>
     </div>
 
     <!-- TABS NAVIGATION -->
@@ -454,7 +454,7 @@
         <li data-tab="ablation-perception">
           <a>
             <span class="icon is-small"><i class="fas fa-eye"></i></span>
-            <span><strong>Ablation: Perception</strong></span>
+            <span><strong>Ablation: Captioners</strong></span>
           </a>
         </li>
       </ul>
@@ -462,10 +462,11 @@
 
     <!-- TAB CONTENT 1: Main Results -->
     <div id="main-results" class="results-tab-content is-active">
-      <figure class="image">
+      <figure class="image" style="max-width: 80%; margin: 0 auto;">
         <img src="static/images/results-main.png" alt="Main STARBench results" loading="lazy" style="border-radius: 8px;"/>
-        <figcaption class="has-text-centered result-caption is-size-5">
-          <strong>STARBench:</strong> STAR substantially outperforms scene-graph and memory-only baselines on all spatiotemporal object retrieval tasks.
+        <figcaption class="has-text-centered result-caption is-size-5" style="margin-top: 2rem;">
+          <strong>Comparison against Random and Scene Graph Search:</strong> <br>
+          STAR outperforms scene-graph and memory-only baselines on all spatio-temporal object retrieval tasks.
         </figcaption>
       </figure>
     </div>
@@ -474,11 +475,57 @@
     <div id="ablation-perception" class="results-tab-content">
       <figure class="image">
         <img src="static/images/ablation_caption.png" alt="Ablation study of captioning models" loading="lazy" style="border-radius: 8px;"/>
-        <figcaption class="has-text-centered result-caption is-size-5">
-          <strong>Impact of Perception Models:</strong> We compare performance using ground-truth ("Oracle") captions versus real-world predictions from GPT-4o and Molmo. 
-          STAR (orange) maintains a consistent performance gap over baselines (blue) across all captioners, demonstrating robustness to perception noise.
+        <figcaption class="has-text-centered result-caption is-size-5" style="margin-top: 2rem;">
+          <strong>Impact of Captioners used in Long-term Memory:</strong> <br>
+          To test the sensitivity of performance to the choice of captioners, we evaluate STAR with different captioning models: 1) GPT-4o (commercial API, light shade) and 2) Molmo-7B (open-source, dark shade). 
+          Overall, STAR is robust to the noise in the long-term memory captioning step.
         </figcaption>
       </figure>
+
+      <div class="table-container" style="margin-top: 2rem; max-width: 800px; margin-left: auto; margin-right: auto;">
+      <h4 class="title is-5 has-text-centered">Example Performance Difference of STAR: GPT-4o vs. Molmo + Realistic Captions</h4>
+      <table class="table is-striped is-hoverable is-fullwidth">
+      <thead>
+        <tr>
+          <th class="has-text-left">Task Category</th>
+          <th class="has-text-centered">Success Rate Gap<br><span style="font-weight:normal; font-size:0.85em">(STAR w/ GPT-4o vs. Molmo Cap.)</span></th>
+          <th class="has-text-centered">P-Value<br><span style="font-weight:normal; font-size:0.85em">(McNemar's)</span></th>
+          <th class="has-text-left">Interpretation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="has-text-weight-medium">Class-based</td>
+          <td class="has-text-centered">&asymp; 8%</td>
+          <td class="has-text-centered">0.13</td>
+          <td style="color: #c62828;">Better performance with GPT-4o captions</td>
+        </tr>
+        <tr>
+          <td class="has-text-weight-medium">Attribute-based</td>
+          <td class="has-text-centered">&asymp; 2%</td>
+          <td class="has-text-centered">0.85</td>
+          <td style="color: #2e7d32;">Statistically Equivalent</td>
+        </tr>
+        <tr>
+          <td class="has-text-weight-medium">Spatial</td>
+          <td class="has-text-centered">&lt; 1%</td>
+          <td class="has-text-centered">0.84</td>
+          <td style="color: #2e7d32;">Statistically Equivalent</td>
+        </tr>
+        <tr>
+          <td class="has-text-weight-medium">Spatial-Temporal</td>
+          <td class="has-text-centered">&asymp; 5%</td>
+          <td class="has-text-centered">0.38</td>
+          <td style="color: #f57f17;">Comparable (No Sig. Difference)</td>
+        </tr>
+        <tr>
+          <td class="has-text-weight-medium">Frequency</td>
+          <td class="has-text-centered">&lt; 1%</td>
+          <td class="has-text-centered">0.86</td>
+          <td style="color: #2e7d32;">Statistically Equivalent</td>
+        </tr>
+      </tbody>
+    </table>
     </div>
 
   </div>

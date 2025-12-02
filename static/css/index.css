@@ -292,16 +292,39 @@ body {
 }
 
 .results-tab-content {
-      display: none;
-    }
-    .results-tab-content.is-active {
-      display: block;
-      animation: fadeIn 0.5s;
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
+    display: none;
+  }
+  .results-tab-content.is-active {
+    display: block;
+    /* Subtle fade-in animation for a polished feel */
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* 2. Fix the Active Tab - "Safe & Professional" Style */
+  .tabs.is-boxed li.is-active a {
+      background-color: #ffffff !important; /* White background blends with content */
+      color: #2563eb !important; /* Royal Blue (matches your site theme) */
+      font-weight: 600 !important; /* Semi-bold for clear hierarchy */
+      border: 1px solid #dbdbdb !important;
+      border-bottom-color: transparent !important; /* Open bottom connects to the image */
+  }
+
+  /* 3. Style the Inactive tabs (Clean, readable grey) */
+  .tabs.is-boxed li:not(.is-active) a {
+      background-color: #fafafa; /* Very subtle off-white */
+      color: #666666; /* Neutral grey text */
+      border-bottom: 1px solid #dbdbdb;
+  }
+  
+  /* 4. Hover State - Subtle feedback */
+  .tabs.is-boxed li:not(.is-active) a:hover {
+      background-color: #f0f0f0; /* Slightly darker grey on hover */
+      color: #363636; /* Darker text on hover */
+  }
 
 /* Pagination and Misc Improvements */
 .slider-pagination .slider-page {
