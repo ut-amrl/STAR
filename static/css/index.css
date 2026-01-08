@@ -243,6 +243,32 @@ body {
     border-radius: var(--border-radius-lg);
 }
 
+/* 1. Container: Removed background and allowed overflow for shadows */
+.poster-video {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: transparent !important; 
+  overflow: visible; 
+}
+
+/* 2. Video: Increased height limit and forced width */
+.poster-video video {
+  display: block;
+  width: 100% !important;    /* Forces it to fill the column width */
+  height: auto !important;   /* Keeps the ratio perfect */
+  max-height: 200vh;          /* The 'Size Knob': increase this to make it bigger */
+  max-width: 800px;          /* Prevents it from becoming giant on huge monitors */
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-xl);
+}
+
+/* 3. Helper: Remove Bulma's side-padding to reclaim space */
+#starbench-overview .column {
+  padding: 0 !important;
+}
+
 .publication-body img {
   border-radius: var(--border-radius);
   box-shadow: var(--shadow-md);
